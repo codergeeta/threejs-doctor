@@ -139,6 +139,14 @@ function withFloorFailedFinding(findings: Finding[], sample?: MetricsSample): Fi
   return [...findings, floorFailedFinding(sample)]
 }
 
+function withoutFloorFailedFinding(findings: Finding[]): Finding[] {
+  return findings.filter((f) => f.id !== 'quality/floor-failed')
+}
+
+function meetsFpsTarget(sample: MetricsSample): boolean {
+  return sample.p95FrameTimeMs <= HYSTERESIS.dropP95Ms && sample.avgFps >= HYSTERESIS.targetFps
+}
+
 function hasGeometry(sample: MetricsSample): boolean {
   return sample.drawCalls > 0 || sample.triangles > 0
 }
@@ -740,7 +748,12 @@ export class QualityController {
       appliedKnobs = []
       floorFailed = floorFailed || last.tier === 'potato' || state.tier === 'potato'
     }
-    const findings = floorFailed ? withFloorFailedFinding(last.findings, after ?? baseline) : last.findings
+    if (!incomplete && after !== undefined && meetsFpsTarget(after)) {
+      floorFailed = false
+    }
+    const findings = floorFailed
+      ? withFloorFailedFinding(last.findings, after ?? baseline)
+      : withoutFloorFailedFinding(last.findings)
     const report: QualityLadderReport = {
       profile: last.profile,
       mode: last.mode,

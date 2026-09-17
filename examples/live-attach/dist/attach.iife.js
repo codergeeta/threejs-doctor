@@ -1756,6 +1756,12 @@ ${line2}` : line1;
     if (findings.some((f) => f.id === "quality/floor-failed")) return findings;
     return [...findings, floorFailedFinding(sample)];
   }
+  function withoutFloorFailedFinding(findings) {
+    return findings.filter((f) => f.id !== "quality/floor-failed");
+  }
+  function meetsFpsTarget(sample) {
+    return sample.p95FrameTimeMs <= HYSTERESIS.dropP95Ms && sample.avgFps >= HYSTERESIS.targetFps;
+  }
   function hasGeometry(sample) {
     return sample.drawCalls > 0 || sample.triangles > 0;
   }
@@ -2277,7 +2283,10 @@ ${line2}` : line1;
         appliedKnobs = [];
         floorFailed = floorFailed || last.tier === "potato" || state.tier === "potato";
       }
-      const findings = floorFailed ? withFloorFailedFinding(last.findings, after ?? baseline) : last.findings;
+      if (!incomplete && after !== void 0 && meetsFpsTarget(after)) {
+        floorFailed = false;
+      }
+      const findings = floorFailed ? withFloorFailedFinding(last.findings, after ?? baseline) : withoutFloorFailedFinding(last.findings);
       const report = {
         profile: last.profile,
         mode: last.mode,
