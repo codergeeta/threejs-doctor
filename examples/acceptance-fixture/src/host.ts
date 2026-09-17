@@ -1,13 +1,14 @@
 import {
   AmbientLight,
+  BoxGeometry,
   DirectionalLight,
+  Light,
   Mesh,
   MeshStandardMaterial,
   PerspectiveCamera,
   PlaneGeometry,
   Scene,
   SphereGeometry,
-  BoxGeometry,
 } from 'three'
 
 export const DOCTOR_HOST_KEY = '__THREEJS_DOCTOR_HOST__' as const
@@ -86,8 +87,9 @@ export function createAcceptanceScene(): AcceptanceScene {
     }
   }
 
+  const sphereGeo = new SphereGeometry(1.6, SPHERE_WIDTH_SEGMENTS, SPHERE_HEIGHT_SEGMENTS)
   const sphere = new Mesh(
-    new SphereGeometry(1.6, SPHERE_WIDTH_SEGMENTS, SPHERE_HEIGHT_SEGMENTS),
+    sphereGeo,
     new MeshStandardMaterial({ color: 0xf0c36a, roughness: 0.35, metalness: 0.2 }),
   )
   sphere.position.set(0, 2.2, 0)
@@ -114,15 +116,29 @@ export function createAcceptanceScene(): AcceptanceScene {
   fill.castShadow = true
   scene.add(fill)
 
-  const meshCount = 1 + GRID_SIZE * GRID_SIZE + 1
+  let meshCount = 0
+  let sphereWidthSegments = 0
+  let sphereHeightSegments = 0
+  let shadowCastingLightCount = 0
+  scene.traverse((obj) => {
+    if (obj instanceof Mesh) {
+      meshCount += 1
+      if (obj.geometry instanceof SphereGeometry) {
+        sphereWidthSegments = Math.max(sphereWidthSegments, obj.geometry.parameters.widthSegments)
+        sphereHeightSegments = Math.max(sphereHeightSegments, obj.geometry.parameters.heightSegments)
+      }
+    }
+    if (obj instanceof Light && obj.castShadow) shadowCastingLightCount += 1
+  })
+
   return {
     scene,
     camera,
     stats: {
       meshCount,
-      sphereWidthSegments: SPHERE_WIDTH_SEGMENTS,
-      sphereHeightSegments: SPHERE_HEIGHT_SEGMENTS,
-      shadowCastingLightCount: 2,
+      sphereWidthSegments,
+      sphereHeightSegments,
+      shadowCastingLightCount,
     },
   }
 }

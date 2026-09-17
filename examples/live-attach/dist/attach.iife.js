@@ -2997,7 +2997,9 @@ ${line2}` : line1;
     qcOpts.onReport = persist;
     const ladder = new QualityController(doctor, qcOpts);
     const debug = getPelagicDebug(root);
-    if (debug) ladder.registerAdapter(createOceanAdapter(debug));
+    if (debug && (found.scene === debug.scene || found.renderer === debug.renderer)) {
+      ladder.registerAdapter(createOceanAdapter(debug));
+    }
     if (options.mountOverlay !== false && typeof document !== "undefined" && document.body) {
       doctor.mountOverlay();
     }

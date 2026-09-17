@@ -121,7 +121,12 @@ export async function attachQualityLadder(
 
   const ladder = new QualityController(doctor, qcOpts)
   const debug = getPelagicDebug(root)
-  if (debug) ladder.registerAdapter(createOceanAdapter(debug))
+  if (
+    debug &&
+    (found.scene === debug.scene || found.renderer === debug.renderer)
+  ) {
+    ladder.registerAdapter(createOceanAdapter(debug))
+  }
 
   if (
     options.mountOverlay !== false &&

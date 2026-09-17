@@ -203,6 +203,32 @@ describe('attachQualityLadder', () => {
     parseLoggedReport(log)
   })
 
+  it('does not register the ocean adapter when __THREEJS_DOCTOR_HOST__ wins over pelagic', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const debug = pelagicDebug()
+    const scene = fakeScene()
+    const camera = fakeCamera()
+    const renderer = fakeRenderer()
+    let t = 0
+    const report = await attachQualityLadder({
+      root: {
+        __THREEJS_DOCTOR_HOST__: { scene, camera, renderer },
+        pelagic: { debug },
+      },
+      mode: 'safe-auto',
+      now: () => {
+        t += 16
+        return t
+      },
+      windowFrames: 3,
+      measureFrames: 3,
+      mountOverlay: false,
+    })
+    expect(report.appliedKnobs).toEqual([])
+    expect(report.adapterUnavailable).toBeUndefined()
+    parseLoggedReport(log)
+  })
+
   it('discovers window.__THREEJS_DOCTOR_HOST__ without pelagic and runs generic caps only', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
     const scene = fakeScene()

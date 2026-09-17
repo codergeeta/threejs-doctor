@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { Light, Mesh, SphereGeometry } from 'three'
 import {
   DOCTOR_HOST_KEY,
   assignDoctorHost,
@@ -44,10 +45,33 @@ describe('acceptance fixture host contract', () => {
     const { scene, camera, stats } = createAcceptanceScene()
     expect((scene as { isScene?: boolean }).isScene).toBe(true)
     expect((camera as { isCamera?: boolean }).isCamera).toBe(true)
-    expect(stats.meshCount).toBeGreaterThanOrEqual(24)
-    expect(stats.sphereWidthSegments).toBeGreaterThanOrEqual(64)
-    expect(stats.sphereHeightSegments).toBeGreaterThanOrEqual(64)
-    expect(stats.shadowCastingLightCount).toBeGreaterThanOrEqual(1)
+
+    let meshCount = 0
+    let sphereWidthSegments = 0
+    let sphereHeightSegments = 0
+    let shadowCastingLightCount = 0
+    scene.traverse((obj) => {
+      if (obj instanceof Mesh) {
+        meshCount += 1
+        if (obj.geometry instanceof SphereGeometry) {
+          sphereWidthSegments = Math.max(sphereWidthSegments, obj.geometry.parameters.widthSegments)
+          sphereHeightSegments = Math.max(
+            sphereHeightSegments,
+            obj.geometry.parameters.heightSegments,
+          )
+        }
+      }
+      if (obj instanceof Light && obj.castShadow) shadowCastingLightCount += 1
+    })
+
+    expect(meshCount).toBeGreaterThanOrEqual(24)
+    expect(sphereWidthSegments).toBeGreaterThanOrEqual(64)
+    expect(sphereHeightSegments).toBeGreaterThanOrEqual(64)
+    expect(shadowCastingLightCount).toBeGreaterThanOrEqual(1)
+    expect(stats.meshCount).toBe(meshCount)
+    expect(stats.sphereWidthSegments).toBe(sphereWidthSegments)
+    expect(stats.sphereHeightSegments).toBe(sphereHeightSegments)
+    expect(stats.shadowCastingLightCount).toBe(shadowCastingLightCount)
     expect(stats).not.toHaveProperty('avgFps')
     expect(stats).not.toHaveProperty('ttfiMs')
   })
