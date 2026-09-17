@@ -60,7 +60,7 @@ function createHarness(opts?: {
         lightCount: 3,
         shadowCastingLightCount: lights.filter((l) => l.castShadow).length,
       })),
-    setFrameloop: opts?.setFrameloop,
+    ...(opts?.setFrameloop ? { setFrameloop: opts.setFrameloop } : {}),
   })
   return { doctor, renderer, lights }
 }

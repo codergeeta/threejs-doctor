@@ -13,8 +13,9 @@ export const distanceCullPass: OptimizePass = {
       ctx.scene.traverse((obj) => {
         if (!obj.isMesh || !obj.position) return
         const dist = obj.position.distanceTo(cam)
-        if (dist > maxDist && obj.visible !== false) {
-          touched.push({ obj, prev: obj.visible !== false })
+        const wasVisible = obj.visible !== false
+        if (dist > maxDist && wasVisible) {
+          touched.push({ obj, prev: wasVisible })
           obj.visible = false
         }
       })

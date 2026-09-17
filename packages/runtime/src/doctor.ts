@@ -70,10 +70,13 @@ const PASS_REGISTRY: Record<PassId, OptimizePass> = {
   'material-downgrade': materialDowngradePass,
 }
 
-function diffMetrics(baseline: MetricsSample, after: MetricsSample): DoctorReport['deltas'] {
-  const deltas: DoctorReport['deltas'] = {}
+function diffMetrics(
+  baseline: MetricsSample,
+  after: MetricsSample,
+): Partial<Record<keyof MetricsSample, number>> {
+  const deltas: Partial<Record<keyof MetricsSample, number>> = {}
   ;(Object.keys(baseline) as Array<keyof MetricsSample>).forEach((key) => {
-    deltas![key] = after[key] - baseline[key]
+    deltas[key] = after[key] - baseline[key]
   })
   return deltas
 }
