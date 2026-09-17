@@ -407,7 +407,7 @@ export class QualityController {
       incomplete = true
       after = undefined
     }
-    const report = this.finalize(state, baseline ?? this.last!.baseline, after, incomplete)
+    const report = this.finalize(state, baseline ?? this.last!.baseline, after, incomplete, holdsAtTarget)
     this.publish(report)
     return report
   }
@@ -729,6 +729,7 @@ export class QualityController {
     baseline: MetricsSample,
     after: MetricsSample | undefined,
     incomplete: boolean,
+    holdsAtTarget = 0,
   ): QualityLadderReport {
     const last = this.last!
     const geometryBaseline = hasGeometry(baseline)
@@ -748,7 +749,7 @@ export class QualityController {
       appliedKnobs = []
       floorFailed = floorFailed || last.tier === 'potato' || state.tier === 'potato'
     }
-    if (!incomplete && after !== undefined && meetsFpsTarget(after)) {
+    if (!incomplete && after !== undefined && holdsAtTarget >= 3 && meetsFpsTarget(after)) {
       floorFailed = false
     }
     const findings = floorFailed

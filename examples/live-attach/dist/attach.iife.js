@@ -1995,7 +1995,7 @@ ${line2}` : line1;
         incomplete = true;
         after = void 0;
       }
-      const report = this.finalize(state, baseline ?? this.last.baseline, after, incomplete);
+      const report = this.finalize(state, baseline ?? this.last.baseline, after, incomplete, holdsAtTarget);
       this.publish(report);
       return report;
     }
@@ -2268,7 +2268,7 @@ ${line2}` : line1;
       }
       return thisRungFailed;
     }
-    finalize(state, baseline, after, incomplete) {
+    finalize(state, baseline, after, incomplete, holdsAtTarget = 0) {
       const last = this.last;
       const geometryBaseline = hasGeometry(baseline) ? baseline : hasGeometry(last.baseline) ? last.baseline : baseline;
       let applyFailed = last.applyFailed;
@@ -2283,7 +2283,7 @@ ${line2}` : line1;
         appliedKnobs = [];
         floorFailed = floorFailed || last.tier === "potato" || state.tier === "potato";
       }
-      if (!incomplete && after !== void 0 && meetsFpsTarget(after)) {
+      if (!incomplete && after !== void 0 && holdsAtTarget >= 3 && meetsFpsTarget(after)) {
         floorFailed = false;
       }
       const findings = floorFailed ? withFloorFailedFinding(last.findings, after ?? baseline) : withoutFloorFailedFinding(last.findings);

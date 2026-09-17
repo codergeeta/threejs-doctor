@@ -166,18 +166,21 @@ Read-only. `appliedPasses` empty. Overlay stays advise.
 
 Advise did not improve FPS (12.906 → 13.332). Score 100 is hygiene, not a win.
 
-### Fixture Pass B — `safe-auto` (cold reload, after potato-floor nudge)
+### Fixture Pass B — `safe-auto` (cold reload, after potato-floor work)
 
 `window.__THREEJS_DOCTOR_ATTACH__ = { mode: 'safe-auto' }` then paste IIFE.
 Generic caps only. Settled tier **potato**. Overlay/report `floorFailed: false`.
 After `avgFps` 52.313 ≥ 30 and `p95FrameTimeMs` 29.2 ≤ 33.4 — **this remeasure
-cleared 30 FPS**.
+cleared 30 FPS**. That clearance is the **0.5 second-stage floor plus clearing a
+stale `floorFailed` latch** after later windows held the target. After
+`drawingBufferPixels` 256000 is still 0.5 DPR (1280×800×0.5²). The high-20s
+**0.4 near-miss did not fire** on this session (settled avgFps was already
+above 30). Not proof that 0.4 DPR would have rescued the earlier 28.275 /
+p95 83.6 miss.
 
 Applied passes: `dpr-cap`, `pixel-budget`, `shadow-budget`, `postfx-budget`,
 `tone-map-lite`, `anisotropy-cap`, `frameloop-demand`, `distance-cull`.
-No adapter knobs. After `drawingBufferPixels` 256000 (second-stage 0.5 DPR
-ceiling; the high-20s 0.4 near-miss did not fire because settled avgFps was
-already above 30).
+No adapter knobs.
 
 | Field | Baseline | After |
 |-------|----------|-------|

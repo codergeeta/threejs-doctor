@@ -672,7 +672,7 @@ describe('QualityController.runLadder', () => {
       now: (() => {
         let t = 0
         return () => {
-          t += afterBoot ? 16 : 50
+          t += afterBoot ? 28 : 50
           return t
         }
       })(),
