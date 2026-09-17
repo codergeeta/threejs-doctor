@@ -79,16 +79,19 @@ those guards. No extra FPS numbers from the broken runs are recorded here.
 
 ## Additional hosts (box-desktop)
 
-No FPS / after metrics are recorded for these hosts. Discovery did not yield
-injectable `scene` / `camera` / `renderer`, so they are not ladder captures.
+No FPS / after metrics are recorded for these hosts. They are not ladder
+captures.
 
 ### Claude-of-Tanks (https://cot.kevinliu.studio/)
 
-- Status: **BLOCKED** on scene discovery
+- Status: **BLOCKED** on scene discovery **and** box resources
 - Error: could not find scene/camera/renderer (bundled closures). Improved
   live-attach discovery still may miss fully closed-over handles; explicit
   `attachQualityLadder({ scene, camera, renderer })` required from page console
   until host hooks exist.
+- Additional note (second attempt): combat rendered, then ~125 canvases, then
+  Chrome discarded the tab under memory pressure during attach evaluation —
+  **no report**. Treat as box-resource blocked as well as discovery-blocked.
 
 ### Kinema (https://kinema-play.vercel.app/?forceWebGL=1)
 
@@ -99,6 +102,15 @@ injectable `scene` / `camera` / `renderer`, so they are not ladder captures.
 - Not a valid WebGL ladder capture until WebGL path is confirmed and handles
   are injectable.
 
+### Alternate host under trial
+
+Candidate when tanks/kinema are not injectable on this environment:
+
+- [threejs-catapult-game](https://sina-ghiasi.github.io/threejs-catapult-game/)
+  — live URL **HTTP 200** (Three.js & Cannon-es catapult). No attach evaluation
+  and no FPS / after metrics recorded here.
+- Not used: `https://izzoizzoizzo.github.io/Apophenoth/` — live URL **404**.
+
 ## Remaining gates
 
 This file does not close acceptance. Still required:
@@ -107,7 +119,9 @@ This file does not close acceptance. Still required:
   [live-ocean-capture.md](./live-ocean-capture.md) §1, same TTFI-then-30 FPS bar,
   real `baseline` / `after` only
 - Injectable [Claude-of-Tanks](https://cot.kevinliu.studio/) /
-  [Kinema](https://kinema-play.vercel.app/?forceWebGL=1) (or an alternate third
-  demo with enumerable Three.js roots)
+  [Kinema](https://kinema-play.vercel.app/?forceWebGL=1), or the alternate
+  [catapult](https://sina-ghiasi.github.io/threejs-catapult-game/) host (or
+  another demo with enumerable Three.js roots) when tanks/kinema are not
+  injectable on this environment
 
 Save those JSON files off-repo. Never invent after metrics.
