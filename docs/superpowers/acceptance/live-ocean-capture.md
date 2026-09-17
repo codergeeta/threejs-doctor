@@ -29,7 +29,7 @@ Acceptance is **not** complete with ocean-simulation alone. After the ocean capt
 
 Use the unpublished IIFE in [`examples/live-attach`](../../../examples/live-attach/README.md): paste `examples/live-attach/dist/attach.iife.js` into DevTools on the live URL. It constructs `Doctor` + `QualityController` (`profile: 'game'`), registers `createOceanAdapter` only when `window.pelagic.debug` exists, then `boot()` + `runLadder()`. Default mode is `advise`. For Pass B, reload and set `window.__THREEJS_DOCTOR_ATTACH__ = { mode: 'safe-auto' }` before pasting again.
 
-The helper logs `console.log(JSON.stringify(report))`. Do not invent `avgFps` / `ttfiMs` / `after` / `simPassCount`. Paste-after-load omits `ttfiMs` (it is not cold-load TTFI). Pass a `waitForFirstInteractive` hook only if you attached from document-start.
+The helper logs `console.log(JSON.stringify(report))` and assigns `window.__THREEJS_DOCTOR_LAST_REPORT__` after boot and after `runLadder()` so a dropped console line can still be copied. Do not invent `avgFps` / `ttfiMs` / `after` / `simPassCount`. Paste-after-load omits `ttfiMs` (it is not cold-load TTFI). Pass a `waitForFirstInteractive` hook only if you attached from document-start.
 
 Equivalent TypeScript (if you construct it yourself):
 
@@ -60,7 +60,7 @@ Cold load on the device class above.
 1. Construct `new QualityController(doctor, { mode: 'advise' })`.
 2. `registerAdapter(createOceanAdapter(getPelagicDebug()))`.
 3. `await ladder.boot()` then `await ladder.runLadder()`.
-4. `JSON.stringify(report)` and save the file **off-repo** (phone Files app / AirDrop). Do not commit it.
+4. `JSON.stringify(report)` and save the file **off-repo** (phone Files app / AirDrop), or `copy(JSON.stringify(window.__THREEJS_DOCTOR_LAST_REPORT__))` after a live-attach paste. Do not commit it.
 
 Expect score may already be high; FPS (and TTFI when captured from document-start) are the story. Overlay stays read-only. `advise` must not mutate the scene.
 

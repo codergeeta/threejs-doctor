@@ -33,6 +33,14 @@ export async function attachQualityLadder(
   options: AttachQualityLadderOptions = {},
 ): Promise<QualityLadderReport> {
   const root = options.root ?? globalThis
+  const persist = (report: QualityLadderReport) => {
+    const g = globalThis as { __THREEJS_DOCTOR_LAST_REPORT__?: QualityLadderReport }
+    g.__THREEJS_DOCTOR_LAST_REPORT__ = report
+    if (root !== globalThis) {
+      ;(root as { __THREEJS_DOCTOR_LAST_REPORT__?: QualityLadderReport }).__THREEJS_DOCTOR_LAST_REPORT__ =
+        report
+    }
+  }
   const explicit: ExplicitHandles = {}
   if (options.scene !== undefined) explicit.scene = options.scene
   if (options.camera !== undefined) explicit.camera = options.camera
@@ -73,6 +81,7 @@ export async function attachQualityLadder(
   if (options.waitForFirstInteractive) {
     qcOpts.waitForFirstInteractive = options.waitForFirstInteractive
   }
+  qcOpts.onReport = persist
 
   const ladder = new QualityController(doctor, qcOpts)
   const debug = getPelagicDebug(root)
@@ -88,6 +97,7 @@ export async function attachQualityLadder(
 
   await ladder.boot()
   const report = await ladder.runLadder()
+  persist(report)
   const line = JSON.stringify(report)
   ;(options.log ?? console.log)(line)
   return report

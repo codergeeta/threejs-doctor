@@ -69,8 +69,9 @@ function parseLoggedReport(log: ReturnType<typeof vi.spyOn>): QualityLadderRepor
 
 afterEach(() => {
   vi.restoreAllMocks()
-  const g = globalThis as { pelagic?: unknown }
+  const g = globalThis as { pelagic?: unknown; __THREEJS_DOCTOR_LAST_REPORT__?: unknown }
   delete g.pelagic
+  delete g.__THREEJS_DOCTOR_LAST_REPORT__
 })
 
 describe('attachQualityLadder', () => {
@@ -100,6 +101,40 @@ describe('attachQualityLadder', () => {
     expect(logged.baseline.avgFps).toBe(report.baseline.avgFps)
     expect(logged.baseline.avgFps).toBe(62.5)
     expect(Object.prototype.hasOwnProperty.call(report, 'ttfiMs')).toBe(false)
+    expect(
+      (globalThis as { __THREEJS_DOCTOR_LAST_REPORT__?: QualityLadderReport }).__THREEJS_DOCTOR_LAST_REPORT__,
+    ).toEqual(report)
+  })
+
+  it('persists LAST_REPORT after boot even when runLadder later throws', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    let t = 0
+    let frames = 0
+    await expect(
+      attachQualityLadder({
+        scene: fakeScene(),
+        camera: fakeCamera(),
+        renderer: fakeRenderer(),
+        mode: 'safe-auto',
+        now: () => t,
+        waitFrame: async () => {
+          frames += 1
+          if (frames <= 3) {
+            t += 80
+            return
+          }
+          throw new TypeError("Cannot read properties of null (reading 'pack')")
+        },
+        windowFrames: 3,
+        measureFrames: 3,
+        mountOverlay: false,
+      }),
+    ).resolves.toMatchObject({ startTier: expect.any(String) })
+    const last = (globalThis as { __THREEJS_DOCTOR_LAST_REPORT__?: QualityLadderReport })
+      .__THREEJS_DOCTOR_LAST_REPORT__
+    expect(last).toBeDefined()
+    expect(last!.baseline.p95FrameTimeMs).toBeGreaterThanOrEqual(50)
+    parseLoggedReport(log)
   })
 
   it('registers the ocean adapter when window.pelagic.debug exists', async () => {

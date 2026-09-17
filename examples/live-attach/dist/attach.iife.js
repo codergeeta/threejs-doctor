@@ -87,12 +87,22 @@
   }
   function applyKnobs(debug, knobs) {
     const rollbacks = [];
-    if (knobs.fftSize) rollbacks.push(applyFft(debug, knobs.fftSize));
-    if (knobs.rtScale !== void 0) rollbacks.push(applyRtScale(debug, knobs.rtScale));
-    if (knobs.meshLod !== void 0) rollbacks.push(applyMeshLod(debug, knobs.meshLod));
-    if (knobs.deferredHdr !== void 0) rollbacks.push(applyHdr(debug, knobs.deferredHdr));
-    if (knobs.spectrumEveryNFrames !== void 0) {
-      rollbacks.push(applySpectrumCadence(debug, knobs.spectrumEveryNFrames));
+    try {
+      if (knobs.fftSize) rollbacks.push(applyFft(debug, knobs.fftSize));
+      if (knobs.rtScale !== void 0) rollbacks.push(applyRtScale(debug, knobs.rtScale));
+      if (knobs.meshLod !== void 0) rollbacks.push(applyMeshLod(debug, knobs.meshLod));
+      if (knobs.deferredHdr !== void 0) rollbacks.push(applyHdr(debug, knobs.deferredHdr));
+      if (knobs.spectrumEveryNFrames !== void 0) {
+        rollbacks.push(applySpectrumCadence(debug, knobs.spectrumEveryNFrames));
+      }
+    } catch (err) {
+      for (let i = rollbacks.length - 1; i >= 0; i--) {
+        try {
+          rollbacks[i]();
+        } catch {
+        }
+      }
+      throw err;
     }
     return {
       rollback() {
@@ -139,6 +149,30 @@
       else delete debug.runPass;
     };
   }
+  function isCascadeTouchSafe(cascade) {
+    if (cascade == null) return false;
+    const bag = cascade;
+    if (bag.texture === null) return false;
+    if (Object.prototype.hasOwnProperty.call(bag, "framebuffer") && bag.framebuffer === null) return false;
+    return true;
+  }
+  function isRtTouchSafe(target) {
+    const bag = target;
+    if (bag.texture === null) return false;
+    if (Object.prototype.hasOwnProperty.call(bag, "framebuffer") && bag.framebuffer === null) return false;
+    return true;
+  }
+  function disabledCascade() {
+    return {
+      size: 1,
+      pack() {
+      },
+      dispose() {
+      },
+      resize() {
+      }
+    };
+  }
   function applyFft(debug, fftSize) {
     const cascades = debug.cascades;
     if (!cascades) return () => {
@@ -149,39 +183,63 @@
     });
     const bag = debug;
     if (!bag.blackBinds) bag.blackBinds = [];
-    fftSize.forEach((n, i) => {
-      if (n === 0) {
-        const cascade2 = cascades[i];
-        cascade2?.dispose?.();
-        bag.blackBinds.push(`cascade-${i}:1x1`);
-        cascades[i] = null;
-        return;
-      }
-      const cascade = cascades[i];
-      if (!cascade) return;
-      if (cascade.resize) cascade.resize(n);
-      else cascade.size = n;
-    });
-    return () => {
+    const restore = () => {
       snaps.forEach((snap, i) => {
         if (snap.cascade) {
           cascades[i] = snap.cascade;
           if (snap.size !== void 0) {
-            if (snap.cascade.resize) snap.cascade.resize(snap.size);
-            else snap.cascade.size = snap.size;
+            if (snap.cascade.resize) {
+              try {
+                snap.cascade.resize(snap.size);
+              } catch {
+                snap.cascade.size = snap.size;
+              }
+            } else snap.cascade.size = snap.size;
           }
           return;
         }
         if (i < cascades.length) cascades[i] = snap.cascade ?? null;
       });
     };
+    try {
+      fftSize.forEach((n, i) => {
+        if (n === 0) {
+          const cascade2 = cascades[i];
+          try {
+            cascade2?.dispose?.();
+          } catch {
+          }
+          bag.blackBinds.push(`cascade-${i}:1x1`);
+          cascades[i] = disabledCascade();
+          return;
+        }
+        const cascade = cascades[i];
+        if (!isCascadeTouchSafe(cascade)) return;
+        if (cascade.resize) cascade.resize(n);
+        else cascade.size = n;
+      });
+    } catch (err) {
+      restore();
+      throw err;
+    }
+    return restore;
   }
   function applyRtScale(debug, scale) {
     const ops = [];
-    scaleRt(debug.reflectionTarget, "reflectionTarget", DESKTOP_RT.reflection, scale, ops);
-    scaleRt(debug.refractionTarget, "refractionTarget", DESKTOP_RT.refraction, scale, ops);
-    scaleRt(debug.causticWide, "causticWide", DESKTOP_RT.causticWide, scale, ops);
-    scaleRt(debug.causticDetail, "causticDetail", DESKTOP_RT.causticDetail, scale, ops);
+    try {
+      scaleRt(debug.reflectionTarget, "reflectionTarget", DESKTOP_RT.reflection, scale, ops);
+      scaleRt(debug.refractionTarget, "refractionTarget", DESKTOP_RT.refraction, scale, ops);
+      scaleRt(debug.causticWide, "causticWide", DESKTOP_RT.causticWide, scale, ops);
+      scaleRt(debug.causticDetail, "causticDetail", DESKTOP_RT.causticDetail, scale, ops);
+    } catch (err) {
+      for (let i = ops.length - 1; i >= 0; i--) {
+        try {
+          ops[i]();
+        } catch {
+        }
+      }
+      throw err;
+    }
     return () => {
       for (let i = ops.length - 1; i >= 0; i--) ops[i]();
     };
@@ -191,10 +249,19 @@
     if (typeof target.setSize !== "function") {
       throw new Error(`setSize missing on ${name}`);
     }
+    if (!isRtTouchSafe(target)) return;
     const prevW = target.width;
     const prevH = target.height;
     const next = Math.round(desktop * scale);
-    target.setSize(next, next);
+    try {
+      target.setSize(next, next);
+    } catch (err) {
+      try {
+        target.setSize(prevW, prevH);
+      } catch {
+      }
+      throw err;
+    }
     ops.push(() => {
       target.setSize(prevW, prevH);
     });
@@ -1637,6 +1704,9 @@ ${line2}` : line1;
     if (typeof extras.compileMs === "number") next.compileMs = extras.compileMs;
     return next;
   }
+  function isUsableSample(sample) {
+    return !!sample && sample.p95FrameTimeMs > 0;
+  }
   function diffMetrics2(baseline, after) {
     const deltas = {};
     Object.keys(baseline).forEach((key) => {
@@ -1788,8 +1858,7 @@ ${line2}` : line1;
       if (adapterUnavailable) report.adapterUnavailable = true;
       if (this.mode === "advise") report.recommendedTier = startTier;
       this.booted = true;
-      this.last = report;
-      this.doctor.refreshOverlay();
+      this.publish(report);
       return report;
     }
     async runLadder() {
@@ -1805,57 +1874,61 @@ ${line2}` : line1;
       let incomplete = this.last.incomplete;
       let holdsAtTarget = 0;
       let pendingApplyFailed = this.last.applyFailed;
+      const bootSample = this.mergeExtras(this.last.baseline);
+      if (isUsableSample(bootSample) && this.shouldSeedBootWindow(bootSample, pendingApplyFailed)) {
+        baseline = bootSample;
+        const seeded = this.applyWindowDecision(state, bootSample, pendingApplyFailed, baseline, incomplete, {
+          allowStop: false,
+          holdsAtTarget
+        });
+        state = seeded.state;
+        pendingApplyFailed = seeded.pendingApplyFailed;
+        holdsAtTarget = seeded.holdsAtTarget;
+      }
       const maxWindows = 12;
       try {
         for (let w = 0; w < maxWindows; w++) {
           if (this.mode !== "advise") this.clampCeiling(state.tier);
-          const sample = await this.doctor.measure(windowFrames);
-          if (!baseline) baseline = this.mergeExtras(sample);
-          after = this.mergeExtras(sample);
-          const decision = evaluateWindow(state, sample.p95FrameTimeMs, {
-            applyFailed: pendingApplyFailed
-          });
-          pendingApplyFailed = false;
-          if (this.mode === "advise") {
-            state = { ...decision.next, tier: state.tier };
-            const last = this.last;
-            const advised = {
-              ...last,
-              recommendedTier: decision.next.tier,
-              baseline,
-              incomplete
-            };
-            this.last = advised;
-            if (sample.p95FrameTimeMs <= HYSTERESIS.dropP95Ms) holdsAtTarget += 1;
-            else holdsAtTarget = 0;
-            if (holdsAtTarget >= 3 || decision.reason === "floor") break;
-            continue;
-          }
-          if (decision.action === "drop" || decision.action === "climb") {
-            pendingApplyFailed = this.applyRung(decision.next.tier);
-            state = decision.next;
-            holdsAtTarget = 0;
-            continue;
-          }
-          state = decision.next;
-          if (decision.reason === "floor") {
-            const last = this.last;
-            this.last = { ...last, floorFailed: true, tier: "potato" };
+          let sample;
+          try {
+            sample = this.mergeExtras(await this.doctor.measure(windowFrames));
+          } catch {
+            const fallback = after ?? baseline ?? this.last?.baseline;
+            if (isUsableSample(fallback)) {
+              if (!baseline) baseline = fallback;
+              const recovered = this.applyWindowDecision(
+                state,
+                fallback,
+                pendingApplyFailed,
+                baseline,
+                true,
+                { holdsAtTarget }
+              );
+              state = recovered.state;
+            }
+            incomplete = true;
+            after = void 0;
             break;
           }
-          const atTarget = sample.p95FrameTimeMs <= HYSTERESIS.dropP95Ms;
-          const waitingToClimb = sample.p95FrameTimeMs <= HYSTERESIS.climbP95Ms && decision.reason !== "ceiling";
-          if (atTarget && !waitingToClimb) holdsAtTarget += 1;
-          else holdsAtTarget = 0;
-          if (holdsAtTarget >= 3) break;
+          if (!isUsableSample(sample)) {
+            continue;
+          }
+          if (!baseline) baseline = sample;
+          after = sample;
+          const stepped = this.applyWindowDecision(state, sample, pendingApplyFailed, baseline, incomplete, {
+            holdsAtTarget
+          });
+          state = stepped.state;
+          pendingApplyFailed = stepped.pendingApplyFailed;
+          holdsAtTarget = stepped.holdsAtTarget;
+          if (stepped.stop) break;
         }
       } catch {
         incomplete = true;
         after = void 0;
       }
       const report = this.finalize(state, baseline ?? this.last.baseline, after, incomplete);
-      this.last = report;
-      this.doctor.refreshOverlay();
+      this.publish(report);
       return report;
     }
     dispose() {
@@ -1872,6 +1945,89 @@ ${line2}` : line1;
       } catch {
       }
       this.exclusive = void 0;
+    }
+    publish(report) {
+      this.last = report;
+      this.doctor.refreshOverlay();
+      this.options.onReport?.(report);
+    }
+    shouldSeedBootWindow(sample, applyFailed) {
+      if (sample.p95FrameTimeMs >= HYSTERESIS.emergencyP95Ms) return true;
+      return applyFailed && sample.p95FrameTimeMs > HYSTERESIS.dropP95Ms;
+    }
+    applyWindowDecision(state, sample, pendingApplyFailed, baseline, incomplete, opts2 = {}) {
+      const allowStop = opts2.allowStop !== false;
+      let holdsAtTarget = opts2.holdsAtTarget ?? 0;
+      const decision = evaluateWindow(state, sample.p95FrameTimeMs, {
+        applyFailed: pendingApplyFailed
+      });
+      const last = this.last;
+      if (this.mode === "advise") {
+        const nextState = { ...decision.next, tier: state.tier };
+        const advised = {
+          ...last,
+          recommendedTier: decision.next.tier,
+          baseline,
+          incomplete
+        };
+        if (!incomplete) {
+          advised.after = sample;
+          advised.deltas = diffMetrics2(baseline, sample);
+        }
+        this.publish(advised);
+        holdsAtTarget = sample.p95FrameTimeMs <= HYSTERESIS.dropP95Ms ? holdsAtTarget + 1 : 0;
+        const stop = allowStop && (holdsAtTarget >= 3 || decision.reason === "floor");
+        return { state: nextState, pendingApplyFailed: false, holdsAtTarget, stop };
+      }
+      if (decision.action === "drop" || decision.action === "climb") {
+        const rungFailed = this.applyRung(decision.next.tier);
+        if (this.last) {
+          const published = { ...this.last, baseline, incomplete };
+          if (!incomplete) {
+            published.after = sample;
+            published.deltas = diffMetrics2(baseline, sample);
+          }
+          this.publish(published);
+        }
+        return {
+          state: decision.next,
+          pendingApplyFailed: rungFailed,
+          holdsAtTarget: 0,
+          stop: false
+        };
+      }
+      const nextLast = {
+        ...last,
+        tier: decision.next.tier,
+        baseline,
+        incomplete
+      };
+      if (decision.reason === "floor") {
+        nextLast.floorFailed = true;
+        nextLast.tier = "potato";
+      }
+      if (!incomplete) {
+        nextLast.after = sample;
+        nextLast.deltas = diffMetrics2(baseline, sample);
+      }
+      this.publish(nextLast);
+      if (decision.reason === "floor") {
+        return {
+          state: decision.next,
+          pendingApplyFailed: false,
+          holdsAtTarget: 0,
+          stop: allowStop
+        };
+      }
+      const atTarget = sample.p95FrameTimeMs <= HYSTERESIS.dropP95Ms;
+      const waitingToClimb = sample.p95FrameTimeMs <= HYSTERESIS.climbP95Ms && decision.reason !== "ceiling";
+      holdsAtTarget = atTarget && !waitingToClimb ? holdsAtTarget + 1 : 0;
+      return {
+        state: decision.next,
+        pendingApplyFailed: false,
+        holdsAtTarget,
+        stop: allowStop && holdsAtTarget >= 3
+      };
     }
     hudState() {
       if (!this.last) return void 0;
@@ -2281,6 +2437,14 @@ ${line2}` : line1;
   // src/attach.ts
   async function attachQualityLadder(options = {}) {
     const root = options.root ?? globalThis;
+    const persist = (report2) => {
+      const g2 = globalThis;
+      g2.__THREEJS_DOCTOR_LAST_REPORT__ = report2;
+      if (root !== globalThis) {
+        ;
+        root.__THREEJS_DOCTOR_LAST_REPORT__ = report2;
+      }
+    };
     const explicit = {};
     if (options.scene !== void 0) explicit.scene = options.scene;
     if (options.camera !== void 0) explicit.camera = options.camera;
@@ -2315,6 +2479,7 @@ ${line2}` : line1;
     if (options.waitForFirstInteractive) {
       qcOpts.waitForFirstInteractive = options.waitForFirstInteractive;
     }
+    qcOpts.onReport = persist;
     const ladder = new QualityController(doctor, qcOpts);
     const debug = getPelagicDebug(root);
     if (debug) ladder.registerAdapter(createOceanAdapter(debug));
@@ -2323,6 +2488,7 @@ ${line2}` : line1;
     }
     await ladder.boot();
     const report = await ladder.runLadder();
+    persist(report);
     const line = JSON.stringify(report);
     (options.log ?? console.log)(line);
     return report;
