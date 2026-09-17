@@ -21,11 +21,12 @@ describe('QualityController adapter wiring', () => {
     const boot = await ladder.boot()
     expect(seen).toHaveLength(1)
     expect(seen[0]!.meshLod).toBeUndefined()
-    expect(seen[0]!.spectrumEveryNFrames).toBe(2)
+    expect(seen[0]!.spectrumEveryNFrames).toBe(4)
     expect(seen[0]!.deferredHdr).toBe(true)
-    expect(seen[0]!.rtScale).toBe(0.35)
+    expect(seen[0]!.rtScale).toBeUndefined()
     expect(seen[0]!.fftSize).toEqual([64, 0, 0])
     expect(boot.appliedKnobs.some((k) => k.capability === 'meshLod')).toBe(false)
+    expect(boot.appliedKnobs.some((k) => k.capability === 'rtScale')).toBe(false)
   })
 
   it('passes only advertised knobs and records unsupportedKnob for unknown keys on the adapter side', async () => {
@@ -44,14 +45,11 @@ describe('QualityController adapter wiring', () => {
     ladder.registerAdapter(adapter)
     const boot = await ladder.boot()
     expect(seen).toHaveLength(1)
-    expect(seen[0]!.rtScale).toBe(0.35)
+    expect(seen[0]!.rtScale).toBeUndefined()
     expect(seen[0]!.deferredHdr).toBe(true)
     expect(seen[0]!.fftSize).toBeUndefined()
     expect(seen[0]!.meshLod).toBeUndefined()
-    expect(boot.appliedKnobs.map((k) => k.capability).sort()).toEqual([
-      'deferredHdr',
-      'rtScale',
-    ])
+    expect(boot.appliedKnobs.map((k) => k.capability).sort()).toEqual(['deferredHdr'])
     expect(boot.unsupportedKnobs.sort()).toEqual(['fftSize'])
     expect(boot.unsupportedKnobs).not.toContain('meshLod')
   })
@@ -78,6 +76,7 @@ describe('QualityController adapter wiring', () => {
     expect(boot.unsupportedKnobs).toContain('deferredHdr')
     expect(boot.appliedKnobs.some((k) => k.capability === 'fftSize')).toBe(false)
     expect(boot.appliedKnobs.some((k) => k.capability === 'meshLod')).toBe(false)
+    expect(boot.appliedKnobs.some((k) => k.capability === 'rtScale')).toBe(false)
   })
 
   it('advise never calls adapter.apply', async () => {
@@ -200,7 +199,7 @@ describe('QualityController adapter wiring', () => {
     const boot = await ladder.boot()
     expect(boot.applyFailed).toBe(true)
     expect(renderer.pixelRatio).toBeLessThanOrEqual(1.0)
-    expect(boot.appliedKnobs.some((k) => k.capability === 'rtScale')).toBe(true)
+    expect(boot.appliedKnobs.some((k) => k.capability === 'rtScale')).toBe(false)
     expect(() => ladder.dispose()).not.toThrow()
   })
 
@@ -238,7 +237,7 @@ describe('QualityController adapter wiring', () => {
     const ladder = new QualityController(doctor, { mode: 'safe-auto' })
     ladder.registerAdapter(adapter)
     const boot = await ladder.boot()
-    expect(boot.appliedKnobs.some((k) => k.capability === 'rtScale')).toBe(true)
+    expect(boot.appliedKnobs.some((k) => k.capability === 'rtScale')).toBe(false)
     expect(Object.prototype.hasOwnProperty.call(boot.baseline, 'simPassCount')).toBe(false)
     expect(boot.findings.some((f) => f.id === 'quality/heavy-sim-passes')).toBe(false)
   })

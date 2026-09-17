@@ -209,4 +209,19 @@ describe('quality HUD second line', () => {
     expect(line1).toContain('takeover')
     expect(line1).toContain('exclusive')
   })
+
+  it('does not imply success via score alone when floorFailed', () => {
+    const { line1 } = formatQualityHud({
+      score: 100,
+      profile: 'game',
+      qualityMode: 'safe-auto',
+      startTier: 'potato',
+      tier: 'potato',
+      floorFailed: true,
+      avgFps: 0.58,
+      p95FrameTimeMs: 4846,
+    })
+    expect(line1).toMatch(/floor failed/i)
+    expect(line1.startsWith('Doctor Score 100')).toBe(false)
+  })
 })

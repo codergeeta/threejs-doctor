@@ -19,6 +19,8 @@ export function createLadderDoctor(opts?: {
       : never
     : never
   measureFrames?: number
+  postfxEnabled?: boolean
+  setPostfxEnabled?: (enabled: boolean) => void
 }) {
   const info: RendererInfoLike = {
     render: { calls: 40, triangles: 8000 },
@@ -98,6 +100,8 @@ export function createLadderDoctor(opts?: {
         shadowCastingLightCount: lights.filter((l) => l.castShadow).length,
       })),
     ...(opts?.waitFrame ? { waitFrame: opts.waitFrame } : {}),
+    ...(opts?.postfxEnabled !== undefined ? { postfxEnabled: opts.postfxEnabled } : {}),
+    ...(opts?.setPostfxEnabled ? { setPostfxEnabled: opts.setPostfxEnabled } : {}),
   })
   return { doctor, renderer, lights, info }
 }

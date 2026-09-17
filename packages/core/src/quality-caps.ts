@@ -52,11 +52,18 @@ export const GENERIC_CAPS: Record<QualityTier, GenericTierCaps> = {
   },
 }
 
+/** Extra generic caps applied once when potato still misses 30 FPS. */
+export const POTATO_FLOOR_CAPS = {
+  pixelRatio: 0.5,
+  drawingBufferPixels: 6e5,
+  shadowCasters: 0,
+  postfxOff: true,
+} as const
+
 export const ADAPTER_KNOBS: Record<QualityTier, QualityKnobSet> = {
   potato: {
     fftSize: [64, 0, 0],
-    spectrumEveryNFrames: 2,
-    rtScale: 0.35,
+    spectrumEveryNFrames: 4,
     deferredHdr: true,
   },
   low: {

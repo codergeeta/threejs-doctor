@@ -82,7 +82,7 @@ describe('QualityController.boot', () => {
     expect(applyCalls).toHaveLength(1)
     const knobs = (applyCalls[0] as { knobs: QualityKnobSet }).knobs
     expect(knobs.fftSize).toEqual([64, 0, 0])
-    expect(knobs.spectrumEveryNFrames).toBe(2)
+    expect(knobs.spectrumEveryNFrames).toBe(4)
     expect(knobs.rtScale).toBeUndefined()
     expect(knobs.meshLod).toBeUndefined()
     expect(knobs.deferredHdr).toBeUndefined()

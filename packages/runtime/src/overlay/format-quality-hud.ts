@@ -12,12 +12,14 @@ export interface QualityHudState {
   simPassCount?: number
   bytesLoaded?: number
   exclusive?: boolean
+  floorFailed?: boolean
 }
 
 export function formatQualityHud(state: QualityHudState): { line1: string; line2: string } {
   const tierPath =
     state.startTier === state.tier ? state.tier : `${state.startTier}→${state.tier}`
   let line1 = `Doctor Score ${state.score} · ${state.profile} · ${state.qualityMode} · ${tierPath}`
+  if (state.floorFailed) line1 = `FLOOR FAILED · ${line1}`
   if (state.qualityMode === 'advise') line1 = `ADVISE ${line1}`
   if (state.qualityMode === 'takeover' && state.exclusive) line1 += ' · exclusive'
   const parts: string[] = []

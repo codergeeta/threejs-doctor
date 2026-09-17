@@ -2,6 +2,7 @@ import {
   ADAPTER_KNOBS,
   GENERIC_CAPS,
   HYSTERESIS,
+  POTATO_FLOOR_CAPS,
   SAFE_PASSES,
   createHysteresisState,
   evaluateWindow,
@@ -108,6 +109,32 @@ function isUsableSample(sample: MetricsSample | undefined): sample is MetricsSam
 function isBrokenAfterGeometry(baseline: MetricsSample, after: MetricsSample): boolean {
   const hadGeometry = baseline.drawCalls > 0 || baseline.triangles > 0
   return hadGeometry && after.drawCalls === 0 && after.triangles === 0
+}
+
+function floorFailedFinding(sample?: MetricsSample): Finding {
+  const evidence: Record<string, number | string | boolean> = {
+    floorFailed: true,
+    targetFps: HYSTERESIS.targetFps,
+  }
+  if (sample && typeof sample.p95FrameTimeMs === 'number') {
+    evidence.p95FrameTimeMs = sample.p95FrameTimeMs
+  }
+  if (sample && typeof sample.avgFps === 'number') {
+    evidence.avgFps = sample.avgFps
+  }
+  return {
+    id: 'quality/floor-failed',
+    severity: 'warn',
+    evidence,
+    message: 'Quality ladder floor failed; still below target FPS after potato caps',
+    suggestedFix:
+      'Prefer FPS recovery over fidelity: skip RT resizes, raise spectrumEveryNFrames, keep generic caps tight',
+  }
+}
+
+function withFloorFailedFinding(findings: Finding[], sample?: MetricsSample): Finding[] {
+  if (findings.some((f) => f.id === 'quality/floor-failed')) return findings
+  return [...findings, floorFailedFinding(sample)]
 }
 
 function hasGeometry(sample: MetricsSample): boolean {
@@ -477,6 +504,7 @@ export class QualityController {
     if (decision.reason === 'floor') {
       nextLast.floorFailed = true
       nextLast.tier = 'potato'
+      nextLast.findings = withFloorFailedFinding(nextLast.findings, sample)
     }
     if (!reportIncomplete) {
       nextLast.after = sample
@@ -532,6 +560,7 @@ export class QualityController {
     if (typeof sample.simPassCount === 'number') state.simPassCount = sample.simPassCount
     if (typeof sample.bytesLoaded === 'number') state.bytesLoaded = sample.bytesLoaded
     if (this.exclusive) state.exclusive = true
+    if (this.last.floorFailed) state.floorFailed = true
     return state
   }
 
@@ -550,7 +579,10 @@ export class QualityController {
   }
 
   private tightenPotatoFloor(): void {
-    this.doctor.reclampPixelRatioCeiling(0.5)
+    this.doctor.reclampPixelRatioCeiling(POTATO_FLOOR_CAPS.pixelRatio)
+    this.doctor.forceDrawingBufferPixels(POTATO_FLOOR_CAPS.drawingBufferPixels)
+    this.doctor.forcePostfxOff()
+    this.doctor.forceShadowsOff()
   }
 
   private rollbackAdapterKnobs(): void {
@@ -567,13 +599,20 @@ export class QualityController {
   private markCollapsedAfter(geometryBaseline: MetricsSample): void {
     this.rollbackAdapterKnobs()
     if (!this.last) return
+    const floorFailed = this.last.floorFailed || this.last.tier === 'potato'
     const next: QualityLadderReport = {
       ...this.last,
       baseline: geometryBaseline,
       applyFailed: true,
       incomplete: true,
       appliedKnobs: [],
-      floorFailed: this.last.floorFailed || this.last.tier === 'potato',
+      floorFailed,
+    }
+    if (floorFailed) {
+      next.findings = withFloorFailedFinding(
+        this.last.findings,
+        this.last.after ?? geometryBaseline,
+      )
     }
     delete next.after
     delete next.deltas
@@ -670,6 +709,7 @@ export class QualityController {
       appliedKnobs = []
       floorFailed = floorFailed || last.tier === 'potato' || state.tier === 'potato'
     }
+    const findings = floorFailed ? withFloorFailedFinding(last.findings, after ?? baseline) : last.findings
     const report: QualityLadderReport = {
       profile: last.profile,
       mode: last.mode,
@@ -679,7 +719,7 @@ export class QualityController {
       startTier: last.startTier,
       maxTier: last.maxTier,
       score: last.score,
-      findings: last.findings,
+      findings,
       baseline,
       appliedPasses: last.appliedPasses,
       appliedKnobs,

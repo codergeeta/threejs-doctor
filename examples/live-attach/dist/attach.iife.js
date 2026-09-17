@@ -505,11 +505,16 @@
       postfxOff: false
     }
   };
+  var POTATO_FLOOR_CAPS = {
+    pixelRatio: 0.5,
+    drawingBufferPixels: 6e5,
+    shadowCasters: 0,
+    postfxOff: true
+  };
   var ADAPTER_KNOBS = {
     potato: {
       fftSize: [64, 0, 0],
-      spectrumEveryNFrames: 2,
-      rtScale: 0.35,
+      spectrumEveryNFrames: 4,
       deferredHdr: true
     },
     low: {
@@ -1256,6 +1261,7 @@
   function formatQualityHud(state) {
     const tierPath = state.startTier === state.tier ? state.tier : `${state.startTier}\u2192${state.tier}`;
     let line1 = `Doctor Score ${state.score} \xB7 ${state.profile} \xB7 ${state.qualityMode} \xB7 ${tierPath}`;
+    if (state.floorFailed) line1 = `FLOOR FAILED \xB7 ${line1}`;
     if (state.qualityMode === "advise") line1 = `ADVISE ${line1}`;
     if (state.qualityMode === "takeover" && state.exclusive) line1 += " \xB7 exclusive";
     const parts = [];
@@ -1591,6 +1597,45 @@ ${line2}` : line1;
         this.opts.renderer.setPixelRatio(maxRatio);
       }
     }
+    forceDrawingBufferPixels(maxPixels) {
+      const renderer = this.opts.renderer;
+      const width = renderer.drawingBufferWidth;
+      const height = renderer.drawingBufferHeight;
+      if (width === void 0 || height === void 0) return;
+      const current = width * height;
+      if (!(current > maxPixels)) return;
+      if (typeof renderer.setDrawingBufferSize !== "function") return;
+      const scale = Math.sqrt(maxPixels / current);
+      const newW = Math.max(1, Math.floor(width * scale));
+      const newH = Math.max(1, Math.floor(height * scale));
+      const prevRatio = renderer.pixelRatio;
+      try {
+        renderer.setDrawingBufferSize(newW, newH, prevRatio);
+      } catch {
+        try {
+          renderer.setDrawingBufferSize(width, height, prevRatio);
+        } catch {
+        }
+      }
+    }
+    forcePostfxOff() {
+      this.postfxEnabled = false;
+      try {
+        this.opts.setPostfxEnabled?.(false);
+      } catch {
+      }
+    }
+    forceShadowsOff() {
+      try {
+        if (this.opts.renderer.shadowMap) {
+          this.opts.renderer.shadowMap.enabled = false;
+        }
+        this.opts.scene.traverse((obj) => {
+          if (obj.castShadow) obj.castShadow = false;
+        });
+      } catch {
+      }
+    }
     async optimize(options = {}) {
       const diagnosed = await this.buildDiagnoseReport();
       const passIds = resolvePassIds(options.apply ?? ["safe"]);
@@ -1679,6 +1724,29 @@ ${line2}` : line1;
   function isBrokenAfterGeometry(baseline, after) {
     const hadGeometry = baseline.drawCalls > 0 || baseline.triangles > 0;
     return hadGeometry && after.drawCalls === 0 && after.triangles === 0;
+  }
+  function floorFailedFinding(sample) {
+    const evidence = {
+      floorFailed: true,
+      targetFps: HYSTERESIS.targetFps
+    };
+    if (sample && typeof sample.p95FrameTimeMs === "number") {
+      evidence.p95FrameTimeMs = sample.p95FrameTimeMs;
+    }
+    if (sample && typeof sample.avgFps === "number") {
+      evidence.avgFps = sample.avgFps;
+    }
+    return {
+      id: "quality/floor-failed",
+      severity: "warn",
+      evidence,
+      message: "Quality ladder floor failed; still below target FPS after potato caps",
+      suggestedFix: "Prefer FPS recovery over fidelity: skip RT resizes, raise spectrumEveryNFrames, keep generic caps tight"
+    };
+  }
+  function withFloorFailedFinding(findings, sample) {
+    if (findings.some((f) => f.id === "quality/floor-failed")) return findings;
+    return [...findings, floorFailedFinding(sample)];
   }
   function hasGeometry(sample) {
     return sample.drawCalls > 0 || sample.triangles > 0;
@@ -2002,6 +2070,7 @@ ${line2}` : line1;
       if (decision.reason === "floor") {
         nextLast.floorFailed = true;
         nextLast.tier = "potato";
+        nextLast.findings = withFloorFailedFinding(nextLast.findings, sample);
       }
       if (!reportIncomplete) {
         nextLast.after = sample;
@@ -2055,6 +2124,7 @@ ${line2}` : line1;
       if (typeof sample.simPassCount === "number") state.simPassCount = sample.simPassCount;
       if (typeof sample.bytesLoaded === "number") state.bytesLoaded = sample.bytesLoaded;
       if (this.exclusive) state.exclusive = true;
+      if (this.last.floorFailed) state.floorFailed = true;
       return state;
     }
     mergeExtras(sample) {
@@ -2070,7 +2140,10 @@ ${line2}` : line1;
       this.doctor.reclampPixelRatioCeiling(GENERIC_CAPS[tier].pixelRatio);
     }
     tightenPotatoFloor() {
-      this.doctor.reclampPixelRatioCeiling(0.5);
+      this.doctor.reclampPixelRatioCeiling(POTATO_FLOOR_CAPS.pixelRatio);
+      this.doctor.forceDrawingBufferPixels(POTATO_FLOOR_CAPS.drawingBufferPixels);
+      this.doctor.forcePostfxOff();
+      this.doctor.forceShadowsOff();
     }
     rollbackAdapterKnobs() {
       for (let i = this.knobHandles.length - 1; i >= 0; i--) {
@@ -2084,14 +2157,21 @@ ${line2}` : line1;
     markCollapsedAfter(geometryBaseline) {
       this.rollbackAdapterKnobs();
       if (!this.last) return;
+      const floorFailed = this.last.floorFailed || this.last.tier === "potato";
       const next = {
         ...this.last,
         baseline: geometryBaseline,
         applyFailed: true,
         incomplete: true,
         appliedKnobs: [],
-        floorFailed: this.last.floorFailed || this.last.tier === "potato"
+        floorFailed
       };
+      if (floorFailed) {
+        next.findings = withFloorFailedFinding(
+          this.last.findings,
+          this.last.after ?? geometryBaseline
+        );
+      }
       delete next.after;
       delete next.deltas;
       this.last = next;
@@ -2171,6 +2251,7 @@ ${line2}` : line1;
         appliedKnobs = [];
         floorFailed = floorFailed || last.tier === "potato" || state.tier === "potato";
       }
+      const findings = floorFailed ? withFloorFailedFinding(last.findings, after ?? baseline) : last.findings;
       const report = {
         profile: last.profile,
         mode: last.mode,
@@ -2180,7 +2261,7 @@ ${line2}` : line1;
         startTier: last.startTier,
         maxTier: last.maxTier,
         score: last.score,
-        findings: last.findings,
+        findings,
         baseline,
         appliedPasses: last.appliedPasses,
         appliedKnobs,

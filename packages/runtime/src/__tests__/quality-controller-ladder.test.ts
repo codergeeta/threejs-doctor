@@ -632,6 +632,52 @@ describe('QualityController.runLadder', () => {
     expect(renderer.pixelRatio).toBeLessThanOrEqual(0.5)
   })
 
+  it('applies second-stage potato floor once: lower drawingBufferPixels, postfx/shadows off, floor-failed finding', async () => {
+    let postfx = true
+    const { doctor, renderer, lights } = createLadderDoctor({
+      now: (() => {
+        let t = 0
+        return () => {
+          t += 50
+          return t
+        }
+      })(),
+      measureFrames: 4,
+      postfxEnabled: true,
+      setPostfxEnabled(enabled) {
+        postfx = enabled
+      },
+    })
+    const ladder = new QualityController(doctor, {
+      mode: 'safe-auto',
+      startTier: 'potato',
+      maxTier: 'potato',
+      windowFrames: 4,
+      waitForFirstInteractive: async () => {},
+    })
+    await ladder.boot()
+    const pixelsAfterBoot =
+      (renderer.drawingBufferWidth ?? 0) * (renderer.drawingBufferHeight ?? 0)
+    expect(pixelsAfterBoot).toBeGreaterThan(0)
+    expect(pixelsAfterBoot).toBeLessThanOrEqual(1.2e6)
+    renderer.shadowMap.enabled = true
+    for (const light of lights) light.castShadow = true
+    postfx = true
+
+    const settled = await ladder.runLadder()
+    expect(settled.floorFailed).toBe(true)
+    expect(settled.tier).toBe('potato')
+    expect(renderer.pixelRatio).toBeLessThanOrEqual(0.5)
+    const pixelsAfterFloor =
+      (renderer.drawingBufferWidth ?? 0) * (renderer.drawingBufferHeight ?? 0)
+    expect(pixelsAfterFloor).toBeLessThan(pixelsAfterBoot)
+    expect(renderer.shadowMap.enabled).toBe(false)
+    expect(lights.every((l) => l.castShadow === false)).toBe(true)
+    expect(postfx).toBe(false)
+    expect(settled.findings.some((f) => f.id === 'quality/floor-failed')).toBe(true)
+    expect(settled.score).toBeDefined()
+  })
+
   it('reclamps DPR if the host raises it above the safe-auto ceiling', async () => {
     const { doctor, renderer } = createLadderDoctor({ measureFrames: 4 })
     const ladder = new QualityController(doctor, {

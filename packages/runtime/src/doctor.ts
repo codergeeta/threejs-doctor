@@ -397,6 +397,51 @@ export class Doctor {
     }
   }
 
+  forceDrawingBufferPixels(maxPixels: number): void {
+    const renderer = this.opts.renderer
+    const width = renderer.drawingBufferWidth
+    const height = renderer.drawingBufferHeight
+    if (width === undefined || height === undefined) return
+    const current = width * height
+    if (!(current > maxPixels)) return
+    if (typeof renderer.setDrawingBufferSize !== 'function') return
+    const scale = Math.sqrt(maxPixels / current)
+    const newW = Math.max(1, Math.floor(width * scale))
+    const newH = Math.max(1, Math.floor(height * scale))
+    const prevRatio = renderer.pixelRatio
+    try {
+      renderer.setDrawingBufferSize(newW, newH, prevRatio)
+    } catch {
+      try {
+        renderer.setDrawingBufferSize(width, height, prevRatio)
+      } catch {
+        // best-effort restore; do not destroy the context
+      }
+    }
+  }
+
+  forcePostfxOff(): void {
+    this.postfxEnabled = false
+    try {
+      this.opts.setPostfxEnabled?.(false)
+    } catch {
+      // best-effort
+    }
+  }
+
+  forceShadowsOff(): void {
+    try {
+      if (this.opts.renderer.shadowMap) {
+        this.opts.renderer.shadowMap.enabled = false
+      }
+      this.opts.scene.traverse((obj) => {
+        if (obj.castShadow) obj.castShadow = false
+      })
+    } catch {
+      // best-effort
+    }
+  }
+
   async optimize(options: { apply?: Array<'safe' | PassId> } = {}): Promise<DoctorReport> {
     const diagnosed = await this.buildDiagnoseReport()
     const passIds = resolvePassIds(options.apply ?? ['safe'])
