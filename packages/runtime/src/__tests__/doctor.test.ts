@@ -245,4 +245,50 @@ describe('Doctor', () => {
     doctor.rollbackAll()
     expect(renderer.pixelRatio).toBe(before)
   })
+
+  it('forceDrawingBufferPixels treats setDrawingBufferSize args as CSS size (Three.js)', () => {
+    const renderer = {
+      info: {
+        render: { calls: 1, triangles: 1 },
+        memory: { geometries: 1, textures: 1 },
+      },
+      pixelRatio: 0.5,
+      drawingBufferWidth: 2000,
+      drawingBufferHeight: 2000,
+      setPixelRatio(v: number) {
+        this.pixelRatio = v
+      },
+      setDrawingBufferSize(width: number, height: number, pixelRatio: number) {
+        this.pixelRatio = pixelRatio
+        this.drawingBufferWidth = Math.max(1, Math.floor(width * pixelRatio))
+        this.drawingBufferHeight = Math.max(1, Math.floor(height * pixelRatio))
+      },
+    }
+    const doctor = new Doctor({
+      scene: { children: [], traverse() {} } as never,
+      camera: {},
+      renderer: renderer as never,
+      profile: 'game',
+      mode: 'optimize',
+      measureFrames: 1,
+      now: (() => {
+        let t = 0
+        return () => {
+          t += 16
+          return t
+        }
+      })(),
+      getSceneStats: () => ({
+        textureCount: 0,
+        estimatedVramBytes: 0,
+        geometryCount: 0,
+        lightCount: 0,
+        shadowCastingLightCount: 0,
+      }),
+    })
+    doctor.forceDrawingBufferPixels(6e5)
+    const pixels = renderer.drawingBufferWidth * renderer.drawingBufferHeight
+    expect(pixels).toBeLessThanOrEqual(6e5)
+    expect(pixels).toBeGreaterThan(6e5 * 0.5)
+  })
 })

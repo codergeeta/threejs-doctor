@@ -1609,11 +1609,12 @@ ${line2}` : line1;
       const newW = Math.max(1, Math.floor(width * scale));
       const newH = Math.max(1, Math.floor(height * scale));
       const prevRatio = renderer.pixelRatio;
+      const pr = prevRatio > 0 ? prevRatio : 1;
       try {
-        renderer.setDrawingBufferSize(newW, newH, prevRatio);
+        renderer.setDrawingBufferSize(newW / pr, newH / pr, pr);
       } catch {
         try {
-          renderer.setDrawingBufferSize(width, height, prevRatio);
+          renderer.setDrawingBufferSize(width / pr, height / pr, pr);
         } catch {
         }
       }
@@ -2137,7 +2138,8 @@ ${line2}` : line1;
       return copyExtras(sample, extras);
     }
     clampCeiling(tier) {
-      this.doctor.reclampPixelRatioCeiling(GENERIC_CAPS[tier].pixelRatio);
+      const cap = this.potatoFloorTightened && tier === "potato" ? POTATO_FLOOR_CAPS.pixelRatio : GENERIC_CAPS[tier].pixelRatio;
+      this.doctor.reclampPixelRatioCeiling(cap);
     }
     tightenPotatoFloor() {
       this.doctor.reclampPixelRatioCeiling(POTATO_FLOOR_CAPS.pixelRatio);

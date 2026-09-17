@@ -106,7 +106,7 @@ describe('createOceanAdapter', () => {
     delete g.pelagic
   })
 
-  it('applies potato fftSize [64,0,0], rtScale 0.35, meshLod 0, deferredHdr true', () => {
+  it('applies fftSize [64,0,0], rtScale, meshLod, deferredHdr when those knobs are passed', () => {
     const debug = fakeDebug()
     const adapter = createOceanAdapter(debug)
     expect(adapter.capabilities().sort()).toEqual(

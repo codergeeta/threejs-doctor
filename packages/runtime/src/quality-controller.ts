@@ -575,7 +575,11 @@ export class QualityController {
   }
 
   private clampCeiling(tier: QualityTier): void {
-    this.doctor.reclampPixelRatioCeiling(GENERIC_CAPS[tier].pixelRatio)
+    const cap =
+      this.potatoFloorTightened && tier === 'potato'
+        ? POTATO_FLOOR_CAPS.pixelRatio
+        : GENERIC_CAPS[tier].pixelRatio
+    this.doctor.reclampPixelRatioCeiling(cap)
   }
 
   private tightenPotatoFloor(): void {

@@ -43,9 +43,9 @@ export function createLadderDoctor(opts?: {
       this.pixelRatio = v
     },
     setDrawingBufferSize(width: number, height: number, pixelRatio: number) {
-      this.drawingBufferWidth = width
-      this.drawingBufferHeight = height
       this.pixelRatio = pixelRatio
+      this.drawingBufferWidth = Math.max(1, Math.floor(width * pixelRatio))
+      this.drawingBufferHeight = Math.max(1, Math.floor(height * pixelRatio))
     },
   }
   const scene = {

@@ -409,11 +409,12 @@ export class Doctor {
     const newW = Math.max(1, Math.floor(width * scale))
     const newH = Math.max(1, Math.floor(height * scale))
     const prevRatio = renderer.pixelRatio
+    const pr = prevRatio > 0 ? prevRatio : 1
     try {
-      renderer.setDrawingBufferSize(newW, newH, prevRatio)
+      renderer.setDrawingBufferSize(newW / pr, newH / pr, pr)
     } catch {
       try {
-        renderer.setDrawingBufferSize(width, height, prevRatio)
+        renderer.setDrawingBufferSize(width / pr, height / pr, pr)
       } catch {
         // best-effort restore; do not destroy the context
       }

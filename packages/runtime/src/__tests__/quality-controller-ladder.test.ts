@@ -671,11 +671,38 @@ describe('QualityController.runLadder', () => {
     const pixelsAfterFloor =
       (renderer.drawingBufferWidth ?? 0) * (renderer.drawingBufferHeight ?? 0)
     expect(pixelsAfterFloor).toBeLessThan(pixelsAfterBoot)
+    expect(pixelsAfterFloor).toBeLessThanOrEqual(6e5)
+    expect(pixelsAfterFloor).toBeGreaterThan(6e5 * 0.5)
     expect(renderer.shadowMap.enabled).toBe(false)
     expect(lights.every((l) => l.castShadow === false)).toBe(true)
     expect(postfx).toBe(false)
     expect(settled.findings.some((f) => f.id === 'quality/floor-failed')).toBe(true)
     expect(settled.score).toBeDefined()
+  })
+
+  it('keeps second-stage pixelRatio ceiling after potato floor tighten', async () => {
+    const { doctor, renderer } = createLadderDoctor({
+      now: (() => {
+        let t = 0
+        return () => {
+          t += 50
+          return t
+        }
+      })(),
+      measureFrames: 4,
+    })
+    const ladder = new QualityController(doctor, {
+      mode: 'safe-auto',
+      startTier: 'potato',
+      maxTier: 'potato',
+      windowFrames: 4,
+      waitForFirstInteractive: async () => {},
+    })
+    await ladder.runLadder()
+    expect(renderer.pixelRatio).toBeLessThanOrEqual(0.5)
+    renderer.pixelRatio = 0.8
+    await ladder.runLadder()
+    expect(renderer.pixelRatio).toBeLessThanOrEqual(0.5)
   })
 
   it('reclamps DPR if the host raises it above the safe-auto ceiling', async () => {
