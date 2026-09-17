@@ -18,6 +18,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@threejs-doctor/core": "workspace:*",
     "@threejs-doctor/runtime": "workspace:*"
   },
   "peerDependencies": {
@@ -27,14 +28,16 @@
     "@react-three/fiber": ">=8"
   },
   "devDependencies": {
-    "three": "^0.172.0",
-    "@types/three": "^0.172.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@react-three/fiber": "^8.17.10",
-    "typescript": "^5.7.3",
-    "vitest": "^3.0.5"
+    "three": "^0.172.0",
+    "@types/three": "^0.172.0",
+    "@testing-library/react": "^16.1.0",
+    "jsdom": "^26.0.0",
+    "vitest": "^3.0.5",
+    "typescript": "^5.7.3"
   }
 }
