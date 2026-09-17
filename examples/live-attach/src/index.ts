@@ -1,6 +1,6 @@
 export { attachQualityLadder } from './attach.js'
 export type { AttachQualityLadderOptions } from './attach.js'
-export { discoverThreeHandles } from './discover.js'
+export { discoverThreeHandles, DOCTOR_HOST_KEY } from './discover.js'
 export type { DiscoveredHandles, ExplicitHandles } from './discover.js'
 export { wrapRenderer } from './wrap-renderer.js'
 export { collectSceneStats } from './scene-stats.js'

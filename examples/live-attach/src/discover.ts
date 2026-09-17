@@ -2,8 +2,10 @@ export interface DiscoveredHandles {
   scene: unknown
   camera: unknown
   renderer: unknown
-  source: 'explicit' | 'pelagic' | 'walk' | 'canvas'
+  source: 'explicit' | 'host' | 'pelagic' | 'walk' | 'canvas'
 }
+
+export const DOCTOR_HOST_KEY = '__THREEJS_DOCTOR_HOST__' as const
 
 export interface ExplicitHandles {
   scene?: unknown
@@ -151,6 +153,14 @@ function findCameraInScene(scene: unknown): unknown {
     if (!camera && isCamera(obj)) camera = obj
   })
   return camera
+}
+
+function fromDoctorHost(root: unknown): DiscoveredHandles | undefined {
+  if (!isRecord(root)) return undefined
+  const host = readKey(root, DOCTOR_HOST_KEY)
+  if (!isRecord(host) || host.scene == null || host.renderer == null) return undefined
+  const camera = host.camera ?? findCameraInScene(host.scene) ?? {}
+  return { scene: host.scene, camera, renderer: host.renderer, source: 'host' }
 }
 
 function fromPelagic(root: unknown): DiscoveredHandles | undefined {
@@ -438,6 +448,7 @@ export function formatDiscoveryError(probe: DiscoveryProbe): string {
   }
   parts.push("Pass them explicitly from this page's console once located:")
   parts.push('  await ThreejsDoctorLiveAttach.attachQualityLadder({ scene, camera, renderer })')
+  parts.push('Or expose window.__THREEJS_DOCTOR_HOST__ = { scene, camera, renderer } before pasting.')
   return parts.join(' ')
 }
 
@@ -449,6 +460,7 @@ export function attemptDiscovery(root: unknown = globalThis, explicit: ExplicitH
     if (peekWebGLContext(canvas)) probe.webglContextCount += 1
   }
   probe.tried.push(
+    '__THREEJS_DOCTOR_HOST__',
     'pelagic.debug',
     'canvas (__THREE__/userData/internals)',
     'bundle roots (app, game, __THREE__)',
@@ -469,10 +481,18 @@ export function attemptDiscovery(root: unknown = globalThis, explicit: ExplicitH
   let source: DiscoveredHandles['source'] | undefined =
     found.scene != null && found.renderer != null ? 'explicit' : undefined
 
-  const pelagic = fromPelagic(root)
-  if (pelagic) {
-    mergeHandles(found, pelagic)
-    source ??= 'pelagic'
+  const host = fromDoctorHost(root)
+  if (host) {
+    mergeHandles(found, host)
+    source ??= 'host'
+  }
+
+  if (found.scene == null || found.renderer == null) {
+    const pelagic = fromPelagic(root)
+    if (pelagic) {
+      mergeHandles(found, pelagic)
+      source ??= 'pelagic'
+    }
   }
 
   if (found.scene == null || found.renderer == null) {

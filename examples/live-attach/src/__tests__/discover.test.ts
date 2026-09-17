@@ -57,6 +57,54 @@ describe('discoverThreeHandles', () => {
     expect(found?.camera).toBe(camera)
   })
 
+  it('reads window.__THREEJS_DOCTOR_HOST__ without pelagic', () => {
+    const scene = fakeScene('host')
+    const camera = fakeCamera()
+    const renderer = fakeRenderer('host')
+    const root = {
+      __THREEJS_DOCTOR_HOST__: { scene, camera, renderer },
+    }
+    const found = discoverThreeHandles(root)
+    expect(found?.source).toBe('host')
+    expect(found?.scene).toBe(scene)
+    expect(found?.camera).toBe(camera)
+    expect(found?.renderer).toBe(renderer)
+  })
+
+  it('prefers __THREEJS_DOCTOR_HOST__ over pelagic.debug', () => {
+    const scene = fakeScene('host')
+    const camera = fakeCamera()
+    const renderer = fakeRenderer('host')
+    const root = {
+      __THREEJS_DOCTOR_HOST__: { scene, camera, renderer },
+      pelagic: {
+        debug: {
+          scene: fakeScene('ocean'),
+          camera: fakeCamera(),
+          renderer: fakeRenderer('ocean'),
+        },
+      },
+    }
+    const found = discoverThreeHandles(root)
+    expect(found?.source).toBe('host')
+    expect(found?.scene).toBe(scene)
+    expect(found?.renderer).toBe(renderer)
+  })
+
+  it('falls through when __THREEJS_DOCTOR_HOST__ is missing renderer', () => {
+    const scene = fakeScene('ocean')
+    const camera = fakeCamera()
+    const renderer = fakeRenderer('ocean')
+    const root = {
+      __THREEJS_DOCTOR_HOST__: { scene: fakeScene('incomplete'), camera },
+      pelagic: { debug: { scene, renderer, camera } },
+    }
+    const found = discoverThreeHandles(root)
+    expect(found?.source).toBe('pelagic')
+    expect(found?.scene).toBe(scene)
+    expect(found?.renderer).toBe(renderer)
+  })
+
   it('finds isScene / isCamera / isWebGLRenderer on the root object', () => {
     const scene = fakeScene('walk')
     const camera = fakeCamera()

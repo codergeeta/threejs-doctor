@@ -69,9 +69,14 @@ function parseLoggedReport(log: ReturnType<typeof vi.spyOn>): QualityLadderRepor
 
 afterEach(() => {
   vi.restoreAllMocks()
-  const g = globalThis as { pelagic?: unknown; __THREEJS_DOCTOR_LAST_REPORT__?: unknown }
+  const g = globalThis as {
+    pelagic?: unknown
+    __THREEJS_DOCTOR_LAST_REPORT__?: unknown
+    __THREEJS_DOCTOR_HOST__?: unknown
+  }
   delete g.pelagic
   delete g.__THREEJS_DOCTOR_LAST_REPORT__
+  delete g.__THREEJS_DOCTOR_HOST__
 })
 
 describe('attachQualityLadder', () => {
@@ -195,6 +200,29 @@ describe('attachQualityLadder', () => {
     expect(report.adapterUnavailable).not.toBe(true)
     expect(report.appliedKnobs.length).toBeGreaterThan(0)
     expect(report.appliedKnobs.some((k) => k.capability === 'fftSize')).toBe(true)
+    parseLoggedReport(log)
+  })
+
+  it('discovers window.__THREEJS_DOCTOR_HOST__ without pelagic and runs generic caps only', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const scene = fakeScene()
+    const camera = fakeCamera()
+    const renderer = fakeRenderer()
+    let t = 0
+    const report = await attachQualityLadder({
+      root: { __THREEJS_DOCTOR_HOST__: { scene, camera, renderer } },
+      mode: 'safe-auto',
+      now: () => {
+        t += 16
+        return t
+      },
+      windowFrames: 3,
+      measureFrames: 3,
+      mountOverlay: false,
+    })
+    expect(report.adapterUnavailable).toBeUndefined()
+    expect(report.appliedKnobs).toEqual([])
+    expect(report.appliedPasses.length).toBeGreaterThan(0)
     parseLoggedReport(log)
   })
 

@@ -2301,6 +2301,7 @@ ${line2}` : line1;
   };
 
   // src/discover.ts
+  var DOCTOR_HOST_KEY = "__THREEJS_DOCTOR_HOST__";
   var SKIP_KEYS = /* @__PURE__ */ new Set([
     "document",
     "location",
@@ -2412,6 +2413,13 @@ ${line2}` : line1;
       if (!camera && isCamera(obj)) camera = obj;
     });
     return camera;
+  }
+  function fromDoctorHost(root) {
+    if (!isRecord(root)) return void 0;
+    const host = readKey(root, DOCTOR_HOST_KEY);
+    if (!isRecord(host) || host.scene == null || host.renderer == null) return void 0;
+    const camera = host.camera ?? findCameraInScene(host.scene) ?? {};
+    return { scene: host.scene, camera, renderer: host.renderer, source: "host" };
   }
   function fromPelagic(root) {
     const debug = pelagicDebug(root);
@@ -2654,6 +2662,7 @@ ${line2}` : line1;
     }
     parts.push("Pass them explicitly from this page's console once located:");
     parts.push("  await ThreejsDoctorLiveAttach.attachQualityLadder({ scene, camera, renderer })");
+    parts.push("Or expose window.__THREEJS_DOCTOR_HOST__ = { scene, camera, renderer } before pasting.");
     return parts.join(" ");
   }
   function attemptDiscovery(root = globalThis, explicit = {}) {
@@ -2664,6 +2673,7 @@ ${line2}` : line1;
       if (peekWebGLContext(canvas)) probe.webglContextCount += 1;
     }
     probe.tried.push(
+      "__THREEJS_DOCTOR_HOST__",
       "pelagic.debug",
       "canvas (__THREE__/userData/internals)",
       "bundle roots (app, game, __THREE__)",
@@ -2680,10 +2690,17 @@ ${line2}` : line1;
       renderer: explicit.renderer
     };
     let source = found.scene != null && found.renderer != null ? "explicit" : void 0;
-    const pelagic = fromPelagic(root);
-    if (pelagic) {
-      mergeHandles(found, pelagic);
-      source ??= "pelagic";
+    const host = fromDoctorHost(root);
+    if (host) {
+      mergeHandles(found, host);
+      source ??= "host";
+    }
+    if (found.scene == null || found.renderer == null) {
+      const pelagic = fromPelagic(root);
+      if (pelagic) {
+        mergeHandles(found, pelagic);
+        source ??= "pelagic";
+      }
     }
     if (found.scene == null || found.renderer == null) {
       const canvasFound = fromCanvases(root);

@@ -102,14 +102,26 @@ captures.
 - Not a valid WebGL ladder capture until WebGL path is confirmed and handles
   are injectable.
 
-### Alternate host under trial
+### Catapult (https://sina-ghiasi.github.io/threejs-catapult-game/)
 
-Candidate when tanks/kinema are not injectable on this environment:
+- Status: **BLOCKED** on scene discovery
+- Observed: canvas present, **no** discoverable scene/camera/renderer handles
+- No FPS / after metrics recorded
+- Needs explicit `attachQualityLadder({ scene, camera, renderer })` or a
+  `window.__THREEJS_DOCTOR_HOST__` hook
 
-- [threejs-catapult-game](https://sina-ghiasi.github.io/threejs-catapult-game/)
-  — live URL **HTTP 200** (Three.js & Cannon-es catapult). No attach evaluation
-  and no FPS / after metrics recorded here.
-- Not used: `https://izzoizzoizzo.github.io/Apophenoth/` — live URL **404**.
+### Apophenoth (https://izzoizzoizzo.github.io/Apophenoth/)
+
+- Not used: live URL **404**
+
+### What is injectable on this box today
+
+Among **external** hosts tried here, **only ocean-simulation is fully
+injectable** (`window.pelagic.debug`). Tanks, Kinema, and catapult are not:
+they need explicit inject or host hooks. That is separate from the unpublished
+local [acceptance-fixture](../../../examples/acceptance-fixture/README.md),
+which exposes `window.__THREEJS_DOCTOR_HOST__` so live-attach can discover
+scene/camera/renderer **without pelagic**.
 
 ## Remaining gates
 
@@ -117,11 +129,18 @@ This file does not close acceptance. Still required:
 
 - Phone-class ocean Pass A (`advise`) and Pass B (`safe-auto`) on the device in
   [live-ocean-capture.md](./live-ocean-capture.md) §1, same TTFI-then-30 FPS bar,
-  real `baseline` / `after` only
-- Injectable [Claude-of-Tanks](https://cot.kevinliu.studio/) /
-  [Kinema](https://kinema-play.vercel.app/?forceWebGL=1), or the alternate
-  [catapult](https://sina-ghiasi.github.io/threejs-catapult-game/) host (or
-  another demo with enumerable Three.js roots) when tanks/kinema are not
-  injectable on this environment
+  real `baseline` / `after` only. The local acceptance-fixture does **not**
+  replace that §3 bar.
+- Run live-attach against the unpublished local
+  [acceptance-fixture](../../../examples/acceptance-fixture/README.md)
+  (`pnpm --filter @threejs-doctor/acceptance-fixture dev`, then paste
+  `examples/live-attach/dist/attach.iife.js`). Save JSON off-repo. Do not invent
+  FPS.
+- External [Claude-of-Tanks](https://cot.kevinliu.studio/) /
+  [Kinema](https://kinema-play.vercel.app/?forceWebGL=1) /
+  [catapult](https://sina-ghiasi.github.io/threejs-catapult-game/) still need
+  explicit `attachQualityLadder({ scene, camera, renderer })` or a
+  `window.__THREEJS_DOCTOR_HOST__` hook; they are not fully injectable on box
+  today.
 
 Save those JSON files off-repo. Never invent after metrics.

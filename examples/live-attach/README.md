@@ -78,25 +78,30 @@ cold TTFI (it will be absent by default).
 
 | Host | URL | Adapter |
 |------|-----|---------|
-| ocean-simulation | https://iamtechartist.github.io/ocean-simulation/ | Registers `createOceanAdapter` when `window.pelagic.debug` exists. If it is missing, the IIFE skips `registerAdapter` and runs generic Three.js caps only. |
-| claude-of-tanks | https://cot.kevinliu.studio/ | Generic caps. No ocean adapter. Discovery may still miss closed-over scene/camera/renderer — see below. |
-| Kinema | https://kinema-play.vercel.app/?forceWebGL=1 | Generic caps. Use the documented WebGL compatibility query so the capture stays on WebGL. Homepage: https://kinema-play.vercel.app |
+| ocean-simulation | https://iamtechartist.github.io/ocean-simulation/ | Registers `createOceanAdapter` when `window.pelagic.debug` exists. If it is missing, the IIFE skips `registerAdapter` and runs generic Three.js caps only. Among **external** hosts, this is the only fully injectable one on box-desktop today. |
+| acceptance-fixture (unpublished, local) | `pnpm --filter @threejs-doctor/acceptance-fixture dev` → http://localhost:5174/ | Generic caps. Discovers `window.__THREEJS_DOCTOR_HOST__`. No pelagic. Local injectability check only — **not** spec §3 / phone-class proof. |
+| claude-of-tanks | https://cot.kevinliu.studio/ | Generic caps. No ocean adapter. Discovery may still miss closed-over scene/camera/renderer — see below. Needs explicit inject or a host hook. |
+| Kinema | https://kinema-play.vercel.app/?forceWebGL=1 | Generic caps. Use the documented WebGL compatibility query so the capture stays on WebGL. Homepage: https://kinema-play.vercel.app. Needs explicit inject or a host hook. |
+| catapult | https://sina-ghiasi.github.io/threejs-catapult-game/ | Generic caps. Canvas present; no discoverable handles on box-desktop. Needs explicit inject or a host hook. |
 
 ## If discovery cannot find scene / camera / renderer
 
 Bundled apps (Claude-of-Tanks, many Vite/webpack games) often keep Three.js
 objects in module closures, **not** on `window`. The IIFE now tries, in order:
 
-1. `window.pelagic.debug` (ocean)
-2. **Canvas walk** — `document.querySelectorAll('canvas')`, then `__THREE__`,
+1. Explicit `attachQualityLadder({ scene, camera, renderer })`
+2. `window.__THREEJS_DOCTOR_HOST__` (`{ scene, camera, renderer }` — used by the
+   unpublished local [acceptance-fixture](../acceptance-fixture/README.md); no pelagic required)
+3. `window.pelagic.debug` (ocean)
+4. **Canvas walk** — `document.querySelectorAll('canvas')`, then `__THREE__`,
    `userData`, `_renderer` / `__renderer`, and a WebGL context bag if Three (or
    the host) stored a renderer there. Three.js itself does **not** always attach
    a reverse mapping on the canvas.
-3. **Bundle roots** — `window.app`, `window.game`, `window.__THREE__`, and
+5. **Bundle roots** — `window.app`, `window.game`, `window.__THREE__`, and
    module-like `default` / `exports` singletons (non-enumerable keys included;
    throwing getters are skipped)
-4. Shallow enumerable global walk
-5. If a `WebGLRenderer` is found but scene/camera are missing: renderer
+6. Shallow enumerable global walk
+7. If a `WebGLRenderer` is found but scene/camera are missing: renderer
    properties (`scene`, `_scene`, `userData`, …) then a temporary `render()`
    hook for a few frames
 
