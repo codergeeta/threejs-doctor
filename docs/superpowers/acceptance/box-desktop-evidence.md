@@ -77,20 +77,37 @@ those guards. No extra FPS numbers from the broken runs are recorded here.
    `Doctor Score …` and the report sets `floorFailed` (plus
    `quality/floor-failed`) so a hygiene score of 100 cannot fake a win.
 
+## Additional hosts (box-desktop)
+
+No FPS / after metrics are recorded for these hosts. Discovery did not yield
+injectable `scene` / `camera` / `renderer`, so they are not ladder captures.
+
+### Claude-of-Tanks (https://cot.kevinliu.studio/)
+
+- Status: **BLOCKED** on scene discovery
+- Error: could not find scene/camera/renderer (bundled closures). Improved
+  live-attach discovery still may miss fully closed-over handles; explicit
+  `attachQualityLadder({ scene, camera, renderer })` required from page console
+  until host hooks exist.
+
+### Kinema (https://kinema-play.vercel.app/?forceWebGL=1)
+
+- Status: **BLOCKED**
+- Observed: canvas/WebGL context present but no discoverable
+  renderer/scene/camera; console showed WebGPU initialization despite
+  `forceWebGL=1` query.
+- Not a valid WebGL ladder capture until WebGL path is confirmed and handles
+  are injectable.
+
 ## Remaining gates
 
-This file does not close acceptance. Still required on the **phone-class**
-device in [live-ocean-capture.md](./live-ocean-capture.md) §1, same TTFI-then-30
-FPS bar, real `baseline` / `after` only:
+This file does not close acceptance. Still required:
 
-- Phone-class ocean Pass A (`advise`)
-- Phone-class ocean Pass B (`safe-auto`)
-- [Kinema](https://kinema-play.vercel.app/?forceWebGL=1)
-- [Claude-of-Tanks](https://cot.kevinliu.studio/) — **blocked on live-attach
-  discovery**, not on invented metrics. Scene/camera/renderer are not on
-  `window`; canvas/`__THREE__`/bundle-root walks plus a `render()` hook are
-  best-effort. Until richer host hooks exist, paste still requires an explicit
-  `{ scene, camera, renderer }` from that page’s console when discovery throws.
-  Do not vendor the demo.
+- Phone-class ocean Pass A (`advise`) and Pass B (`safe-auto`) on the device in
+  [live-ocean-capture.md](./live-ocean-capture.md) §1, same TTFI-then-30 FPS bar,
+  real `baseline` / `after` only
+- Injectable [Claude-of-Tanks](https://cot.kevinliu.studio/) /
+  [Kinema](https://kinema-play.vercel.app/?forceWebGL=1) (or an alternate third
+  demo with enumerable Three.js roots)
 
 Save those JSON files off-repo. Never invent after metrics.
