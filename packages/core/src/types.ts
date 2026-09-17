@@ -25,6 +25,13 @@ export interface DeviceCapabilities {
   webgpu: boolean
   devicePixelRatio: number
   hardwareConcurrency: number
+  deviceMemory?: number
+  maxTouchPoints?: number
+  coarsePointer?: boolean
+  prefersReducedData?: boolean
+  colorBufferFloat?: boolean
+  floatLinear?: boolean
+  maxRenderbufferSize?: number
 }
 
 export interface MetricsSample {

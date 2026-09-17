@@ -6,6 +6,13 @@ export interface DeviceProbeInput {
   maxTextureSize: number
   webgl: boolean
   webgpu: boolean
+  deviceMemory?: number
+  maxTouchPoints?: number
+  coarsePointer?: boolean
+  prefersReducedData?: boolean
+  colorBufferFloat?: boolean
+  floatLinear?: boolean
+  maxRenderbufferSize?: number
 }
 
 function classifyTier(input: DeviceProbeInput): DeviceTier {
@@ -19,6 +26,23 @@ function classifyTier(input: DeviceProbeInput): DeviceTier {
   return 'low'
 }
 
+function assignOptional(
+  caps: DeviceCapabilities,
+  partial: Partial<DeviceProbeInput>,
+): void {
+  if (partial.deviceMemory !== undefined) caps.deviceMemory = partial.deviceMemory
+  if (partial.maxTouchPoints !== undefined) caps.maxTouchPoints = partial.maxTouchPoints
+  if (partial.coarsePointer !== undefined) caps.coarsePointer = partial.coarsePointer
+  if (partial.prefersReducedData !== undefined) {
+    caps.prefersReducedData = partial.prefersReducedData
+  }
+  if (partial.colorBufferFloat !== undefined) caps.colorBufferFloat = partial.colorBufferFloat
+  if (partial.floatLinear !== undefined) caps.floatLinear = partial.floatLinear
+  if (partial.maxRenderbufferSize !== undefined) {
+    caps.maxRenderbufferSize = partial.maxRenderbufferSize
+  }
+}
+
 export function probeDevice(partial: Partial<DeviceProbeInput> = {}): DeviceCapabilities {
   const input: DeviceProbeInput = {
     devicePixelRatio: partial.devicePixelRatio ?? 1,
@@ -27,12 +51,24 @@ export function probeDevice(partial: Partial<DeviceProbeInput> = {}): DeviceCapa
     webgl: partial.webgl ?? false,
     webgpu: partial.webgpu ?? false,
   }
-  return {
+  const caps: DeviceCapabilities = {
     tier: classifyTier(input),
     maxTextureSize: input.maxTextureSize,
     webgl: input.webgl,
     webgpu: input.webgpu,
     devicePixelRatio: input.devicePixelRatio,
     hardwareConcurrency: input.hardwareConcurrency,
+  }
+  assignOptional(caps, partial)
+  return caps
+}
+
+export function readWebglQualitySignals(
+  gl: { getExtension(name: string): unknown } | undefined,
+): Pick<DeviceProbeInput, 'colorBufferFloat' | 'floatLinear'> {
+  if (!gl) return {}
+  return {
+    colorBufferFloat: Boolean(gl.getExtension('EXT_color_buffer_float')),
+    floatLinear: Boolean(gl.getExtension('OES_texture_float_linear')),
   }
 }

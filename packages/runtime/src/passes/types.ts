@@ -8,6 +8,7 @@ export interface DoctorRendererLike {
   pixelRatio: number
   antialias?: boolean
   setPixelRatio(value: number): void
+  getExtension?: (name: string) => unknown
 }
 
 export interface DoctorSceneLike {

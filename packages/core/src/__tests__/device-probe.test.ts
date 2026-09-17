@@ -25,4 +25,26 @@ describe('probeDevice', () => {
     })
     expect(caps.tier).toBe('high')
   })
+
+  it('forwards optional v2 probe fields without changing classifyTier', () => {
+    const caps = probeDevice({
+      devicePixelRatio: 3,
+      hardwareConcurrency: 4,
+      maxTextureSize: 4096,
+      webgl: true,
+      webgpu: false,
+      deviceMemory: 4,
+      maxTouchPoints: 5,
+      coarsePointer: true,
+      colorBufferFloat: true,
+      floatLinear: false,
+    })
+    expect(caps.tier).toBe('low')
+    expect(caps.deviceMemory).toBe(4)
+    expect(caps.maxTouchPoints).toBe(5)
+    expect(caps.coarsePointer).toBe(true)
+    expect(caps.colorBufferFloat).toBe(true)
+    expect(caps.floatLinear).toBe(false)
+  })
 })
+

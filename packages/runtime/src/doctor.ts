@@ -2,6 +2,7 @@ import {
   MetricsCollector,
   SAFE_PASSES,
   probeDevice,
+  readWebglQualitySignals,
   snapshotScene,
   type MetricsSample,
   type Mode,
@@ -181,11 +182,32 @@ export class Doctor {
       webgl: true,
       devicePixelRatio: hostDpr,
     }
-    if (
-      typeof navigator !== 'undefined' &&
-      typeof navigator.hardwareConcurrency === 'number'
-    ) {
-      probe.hardwareConcurrency = navigator.hardwareConcurrency
+    if (typeof navigator !== 'undefined') {
+      if (typeof navigator.hardwareConcurrency === 'number') {
+        probe.hardwareConcurrency = navigator.hardwareConcurrency
+      }
+      const nav = navigator as Navigator & { deviceMemory?: number }
+      if (typeof nav.deviceMemory === 'number') {
+        probe.deviceMemory = nav.deviceMemory
+      }
+      if (typeof nav.maxTouchPoints === 'number') {
+        probe.maxTouchPoints = nav.maxTouchPoints
+      }
+    }
+    if (typeof matchMedia === 'function') {
+      probe.coarsePointer = matchMedia('(pointer: coarse)').matches
+    }
+    const getExtension = this.opts.renderer.getExtension
+    if (typeof getExtension === 'function') {
+      const signals = readWebglQualitySignals({
+        getExtension: (name) => getExtension.call(this.opts.renderer, name),
+      })
+      if (signals.colorBufferFloat !== undefined) {
+        probe.colorBufferFloat = signals.colorBufferFloat
+      }
+      if (signals.floatLinear !== undefined) {
+        probe.floatLinear = signals.floatLinear
+      }
     }
     return probeDevice(probe)
   }
