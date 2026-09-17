@@ -9,6 +9,7 @@ describe('live acceptance artifacts', () => {
     const files = readdirSync(acceptanceDir)
     expect(files).toContain('quality-ladder-report.schema.json')
     expect(files).toContain('live-ocean-capture.md')
+    expect(files).toContain('box-desktop-evidence.md')
     for (const f of files) {
       if (f.endsWith('.json') && f !== 'quality-ladder-report.schema.json') {
         throw new Error(`do not check in capture JSON (${f}); store schema only`)

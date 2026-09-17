@@ -4,6 +4,8 @@ How to capture a `QualityLadderReport` JSON on a real device. **Do not check cap
 
 Headless CI does not gate TTFI or 30 FPS. This runbook is the live proof path.
 
+Box-desktop ocean notes (not this phone-class bar, not §3 proof): [box-desktop-evidence.md](./box-desktop-evidence.md).
+
 ## 1. Device class for the bar
 
 All of:
