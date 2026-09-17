@@ -1,5 +1,6 @@
 export const PACKAGE_NAME = '@threejs-doctor/runtime' as const
 export * from './doctor.js'
+export * from './quality-controller.js'
 export * from './passes/types.js'
 export { dprCapPass } from './passes/dpr-cap.js'
 export { shadowBudgetPass } from './passes/shadow-budget.js'

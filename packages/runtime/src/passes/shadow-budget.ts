@@ -3,7 +3,16 @@ import type { DoctorObjectLike, OptimizePass } from './types.js'
 export const shadowBudgetPass: OptimizePass = {
   id: 'shadow-budget',
   apply(ctx) {
-    const maxCasters = ctx.profile === 'marketing' ? 1 : 2
+    const maxCasters =
+      ctx.qualityTier === 'potato'
+        ? 0
+        : ctx.qualityTier === 'low'
+          ? 1
+          : ctx.qualityTier === 'mid'
+            ? 2
+            : ctx.profile === 'marketing'
+              ? 1
+              : 2
     const touched: Array<{ obj: DoctorObjectLike; prev: boolean }> = []
     let kept = 0
     const rollbackTouched = () => {

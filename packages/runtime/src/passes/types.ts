@@ -1,4 +1,4 @@
-import type { DeviceCapabilities, PassId, Profile } from '@threejs-doctor/core'
+import type { DeviceCapabilities, PassId, Profile, QualityTier } from '@threejs-doctor/core'
 
 export interface DoctorRendererLike {
   info: {
@@ -38,6 +38,7 @@ export interface PassContext {
   setFrameloop: (mode: 'always' | 'demand') => void
   cameraPosition?: { x: number; y: number; z: number }
   cullDistance?: number
+  qualityTier?: QualityTier
 }
 
 export interface PassHandle {

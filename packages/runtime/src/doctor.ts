@@ -11,6 +11,7 @@ import {
   type DeviceCapabilities,
   type SceneSnapshot,
   type SceneStatsLike,
+  type QualityTier,
 } from '@threejs-doctor/core'
 import {
   computeDoctorScore,
@@ -246,8 +247,12 @@ export class Doctor {
     return ctx
   }
 
-  async measure(): Promise<MetricsSample> {
-    const frames = this.opts.measureFrames ?? 30
+  getDevice(): DeviceCapabilities {
+    return this.device()
+  }
+
+  async measure(frameCount?: number): Promise<MetricsSample> {
+    const frames = frameCount ?? this.opts.measureFrames ?? 30
     const now = this.opts.now ?? (() => performance.now())
     const collector = this.collector()
     for (let i = 0; i < frames; i++) {
@@ -288,16 +293,23 @@ export class Doctor {
     return report
   }
 
-  async optimize(options: { apply?: Array<'safe' | PassId> } = {}): Promise<DoctorReport> {
-    const diagnosed = await this.buildDiagnoseReport()
-    const passIds = resolvePassIds(options.apply ?? ['safe'])
+  applyPassesImmediate(
+    passIds: PassId[],
+    extras?: { qualityTier?: QualityTier },
+  ): { appliedPasses: PassId[]; failedPasses: Array<{ id: PassId; error: string }> } {
     const device = this.device()
     const cameraPosition = cameraPositionOf(this.opts.camera)
+    const requested = this.opts.profile ?? 'auto'
+    const profile: Exclude<Profile, 'auto'> =
+      requested !== 'auto'
+        ? requested
+        : this.lastReport?.profile ??
+          (this.lastSnapshot ? resolveProfile('auto', this.lastSnapshot) : 'marketing')
     const ctx: PassContext = {
       renderer: this.opts.renderer,
       scene: this.opts.scene,
       device,
-      profile: diagnosed.profile,
+      profile,
       postfxEnabled: this.postfxEnabled,
       setPostfxEnabled: (enabled) => {
         this.postfxEnabled = enabled
@@ -311,9 +323,10 @@ export class Doctor {
       },
     }
     if (cameraPosition) ctx.cameraPosition = cameraPosition
+    if (extras?.qualityTier) ctx.qualityTier = extras.qualityTier
 
     const appliedPasses: PassId[] = []
-    const failedPasses: DoctorReport['failedPasses'] = []
+    const failedPasses: Array<{ id: PassId; error: string }> = []
     for (const id of passIds) {
       let handle: PassHandle | undefined
       try {
@@ -333,6 +346,33 @@ export class Doctor {
         })
       }
     }
+    return { appliedPasses, failedPasses }
+  }
+
+  rollbackAll(): void {
+    for (let i = this.handles.length - 1; i >= 0; i--) {
+      try {
+        this.handles[i]!.rollback()
+      } catch {
+        // best-effort
+      }
+    }
+    this.handles = []
+  }
+
+  attachQualityHud(_getter: () => unknown): void {
+    // no-op until Task 5
+  }
+
+  refreshOverlay(): void {
+    this.overlay?.refresh()
+  }
+
+  async optimize(options: { apply?: Array<'safe' | PassId> } = {}): Promise<DoctorReport> {
+    const diagnosed = await this.buildDiagnoseReport()
+    const passIds = resolvePassIds(options.apply ?? ['safe'])
+    const { appliedPasses, failedPasses } = this.applyPassesImmediate(passIds)
+    const device = this.device()
 
     let after: MetricsSample | undefined
     let incomplete = false

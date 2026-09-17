@@ -201,4 +201,14 @@ describe('Doctor', () => {
     const report = await doctor.diagnose()
     expect(report.findings.some((f) => f.id === 'frameloop/continuous-static')).toBe(true)
   })
+
+  it('applyPassesImmediate does not call measure or write after metrics', async () => {
+    const { doctor, renderer } = createHarness()
+    const before = renderer.pixelRatio
+    const result = doctor.applyPassesImmediate(['dpr-cap'])
+    expect(result.appliedPasses).toContain('dpr-cap')
+    expect(renderer.pixelRatio).toBeLessThan(before)
+    doctor.rollbackAll()
+    expect(renderer.pixelRatio).toBe(before)
+  })
 })

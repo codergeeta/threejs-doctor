@@ -12,7 +12,10 @@ export const postfxBudgetPass: OptimizePass = {
         // Best-effort restore when the host setter also throws.
       }
     }
-    if (ctx.device.tier === 'low' && ctx.postfxEnabled) {
+    const forceOff = ctx.qualityTier
+      ? ctx.qualityTier === 'potato' || ctx.qualityTier === 'low'
+      : ctx.device.tier === 'low'
+    if (forceOff && ctx.postfxEnabled) {
       try {
         ctx.setPostfxEnabled?.(false)
         ctx.postfxEnabled = false
