@@ -66,6 +66,8 @@ export interface DoctorOptions {
   setPostfxEnabled?: (enabled: boolean) => void
   frameloop?: 'always' | 'demand'
   setFrameloop?: (mode: 'always' | 'demand') => void
+  /** Awaited between beginFrame and endFrame so live attach can sample real rAF deltas. */
+  waitFrame?: () => Promise<void>
 }
 
 const PASS_REGISTRY: Record<PassId, OptimizePass> = {
@@ -266,10 +268,12 @@ export class Doctor {
   async measure(frameCount?: number): Promise<MetricsSample> {
     const frames = frameCount ?? this.opts.measureFrames ?? 30
     const now = this.opts.now ?? (() => performance.now())
+    const waitFrame = this.opts.waitFrame
     const collector = this.collector()
     for (let i = 0; i < frames; i++) {
       const start = now()
       collector.beginFrame(start)
+      if (waitFrame) await waitFrame()
       collector.endFrame(now())
     }
     const sample = collector.sample()

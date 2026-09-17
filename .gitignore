@@ -1,5 +1,7 @@
 node_modules/
 dist/
+!examples/live-attach/dist/
+!examples/live-attach/dist/**
 coverage/
 *.tsbuildinfo
 .DS_Store

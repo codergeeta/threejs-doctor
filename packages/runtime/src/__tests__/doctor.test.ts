@@ -7,6 +7,7 @@ function createHarness(opts?: {
   now?: () => number
   setPixelRatio?: (v: number) => void
   setFrameloop?: (mode: 'always' | 'demand') => void
+  waitFrame?: () => Promise<void>
 }) {
   const info: RendererInfoLike = {
     render: { calls: 180, triangles: 40_000 },
@@ -61,11 +62,29 @@ function createHarness(opts?: {
         shadowCastingLightCount: lights.filter((l) => l.castShadow).length,
       })),
     ...(opts?.setFrameloop ? { setFrameloop: opts.setFrameloop } : {}),
+    ...(opts?.waitFrame ? { waitFrame: opts.waitFrame } : {}),
   })
   return { doctor, renderer, lights }
 }
 
 describe('Doctor', () => {
+  it('awaits waitFrame between begin and end of each measured frame', async () => {
+    let waits = 0
+    let t = 0
+    const { doctor } = createHarness({
+      now: () => {
+        t += 16
+        return t
+      },
+      waitFrame: async () => {
+        waits += 1
+      },
+    })
+    const sample = await doctor.measure(3)
+    expect(waits).toBe(3)
+    expect(sample.avgFps).toBe(62.5)
+  })
+
   it('measure → diagnose → optimize returns deltas', async () => {
     const { doctor, renderer } = createHarness()
     const baseline = await doctor.measure()

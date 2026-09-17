@@ -9,8 +9,12 @@ example (`private: true`) and is **not** `@threejs-doctor/ocean-adapter`.
 
 ## Live attach
 
-Load Doctor + this adapter against the live page (bookmarklet, local overlay,
-or pasted module). Use `profile: 'game'`.
+Preferred path: paste the unpublished IIFE from
+[`examples/live-attach`](../live-attach/README.md) into DevTools on the live
+page. That helper constructs Doctor + QualityController, registers this adapter
+only when `window.pelagic.debug` exists, and logs `JSON.stringify(report)`.
+
+Manual equivalent (`profile: 'game'`):
 
 ```ts
 import { Doctor, QualityController } from '@threejs-doctor/runtime'

@@ -27,7 +27,11 @@ Acceptance is **not** complete with ocean-simulation alone. After the ocean capt
 
 ## 3. Attach
 
-Load `@threejs-doctor/runtime` plus `createOceanAdapter(getPelagicDebug())` from `examples/ocean-adapter` as in that README. Use `profile: 'game'`.
+Use the unpublished IIFE in [`examples/live-attach`](../../../examples/live-attach/README.md): paste `examples/live-attach/dist/attach.iife.js` into DevTools on the live URL. It constructs `Doctor` + `QualityController` (`profile: 'game'`), registers `createOceanAdapter` only when `window.pelagic.debug` exists, then `boot()` + `runLadder()`. Default mode is `advise`. For Pass B, reload and set `window.__THREEJS_DOCTOR_ATTACH__ = { mode: 'safe-auto' }` before pasting again.
+
+The helper logs `console.log(JSON.stringify(report))`. Do not invent `avgFps` / `ttfiMs` / `after` / `simPassCount`.
+
+Equivalent TypeScript (if you construct it yourself):
 
 ```ts
 import { Doctor, QualityController } from '@threejs-doctor/runtime'
@@ -47,7 +51,7 @@ const report = await ladder.runLadder()
 console.log(JSON.stringify(report))
 ```
 
-Bookmarklet, local overlay, or pasted module are all fine. If `window.pelagic.debug` is missing, `createOceanAdapter` reports empty capabilities; the controller sets `adapterUnavailable: true` and still runs generic Three.js caps only. Do not invent `simPassCount` / `after` in that case.
+If `window.pelagic.debug` is missing, skip `registerAdapter` (the IIFE does this). An adapter with empty capabilities sets `adapterUnavailable: true` and still runs generic Three.js caps only. Do not invent `simPassCount` / `after` in that case.
 
 ## 4. Pass A (`advise`)
 
@@ -90,9 +94,9 @@ GitHub Actions does not run this. `npx threejs-doctor scan` is a stub (score 100
 
 Ocean-simulation is required. Also capture **1–2 more** heavy Three.js demos on the same device class. Candidates (live URL only — do not vendor them here):
 
-- [2600th/Kinema](https://github.com/2600th/Kinema) — use the project's published live WebGL URL (WebGPU-first; force the WebGL compatibility path so the §3 “No WebGPU” class still applies).
+- [2600th/Kinema](https://github.com/2600th/Kinema) — live app [kinema-play.vercel.app](https://kinema-play.vercel.app); force WebGL with [/?forceWebGL=1](https://kinema-play.vercel.app/?forceWebGL=1) so the §1 “No WebGPU” class still applies.
 - [Kevin-Liu-01/claude-of-tanks](https://github.com/Kevin-Liu-01/claude-of-tanks) — live WebGL at [cot.kevinliu.studio](https://cot.kevinliu.studio/).
 
-For these hosts, attach `Doctor` + `QualityController` with `profile: 'game'` and generic caps. Register an adapter only if that host exposes equivalent knobs; otherwise expect `adapterUnavailable: true` and generic passes only.
+For these hosts, paste the same live-attach IIFE (`profile: 'game'`, generic caps). It registers the ocean adapter only when `window.pelagic.debug` exists; otherwise generic passes only. If you register an adapter with empty capabilities, the controller sets `adapterUnavailable: true`.
 
 Same bar as Pass B: TTFI under the 3000 ms threshold, then hold `avgFps ≥ 30` / `p95FrameTimeMs ≤ 33.4` for three windows, with **real** `baseline` / `after` / `deltas` from the device. Score-only does not count. Never invent after metrics. Save JSON off-repo; validate against the same schema.
