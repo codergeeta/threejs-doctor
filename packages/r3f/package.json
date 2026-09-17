@@ -1,0 +1,40 @@
+{
+  "name": "@threejs-doctor/r3f",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@threejs-doctor/runtime": "workspace:*"
+  },
+  "peerDependencies": {
+    "three": ">=0.160.0",
+    "react": ">=18",
+    "react-dom": ">=18",
+    "@react-three/fiber": ">=8"
+  },
+  "devDependencies": {
+    "three": "^0.172.0",
+    "@types/three": "^0.172.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@react-three/fiber": "^8.17.10",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}

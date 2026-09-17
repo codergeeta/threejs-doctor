@@ -1,0 +1,20 @@
+{
+  "name": "threejs-doctor",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Doctor CLI + runtime optimizer for Three.js",
+  "license": "MIT",
+  "author": "codergeeta",
+  "packageManager": "pnpm@9.15.0",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "pnpm -r --filter './packages/*' run build",
+    "test": "pnpm -r --filter './packages/*' run test",
+    "typecheck": "pnpm -r --filter './packages/*' run typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5",
+    "@types/node": "^22.10.5"
+  }
+}
