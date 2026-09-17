@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mountOverlay } from '../overlay/mount-overlay.js'
+import { formatQualityHud } from '../overlay/format-quality-hud.js'
 import { Doctor } from '../doctor.js'
 import type { MetricsSample, RendererInfoLike } from '@threejs-doctor/core'
 
@@ -157,5 +158,55 @@ describe('mountOverlay', () => {
     expect(paints.at(-1)).toContain(`Doctor Score ${report.score}`)
     expect(paints.at(-1)).toMatch(/drawCalls/i)
     doctor.unmountOverlay()
+  })
+})
+
+describe('quality HUD second line', () => {
+  it('formats score, mode, tier path, TTFI, FPS, simPasses, bytes', () => {
+    const { line1, line2 } = formatQualityHud({
+      score: 92,
+      profile: 'game',
+      qualityMode: 'safe-auto',
+      startTier: 'potato',
+      tier: 'low',
+      ttfiMs: 1840,
+      avgFps: 32,
+      p95FrameTimeMs: 31,
+      simPassCount: 51,
+      bytesLoaded: 3_100_000,
+    })
+    expect(line1).toBe('Doctor Score 92 · game · safe-auto · potato→low')
+    expect(line2).toBe('TTFI 1840ms · 32 FPS p95=31ms · simPasses 51 · bytes 3.1MB')
+    expect(line1.toLowerCase()).not.toContain('healthy')
+  })
+
+  it('prefixes ADVISE and omits missing extras', () => {
+    const { line1, line2 } = formatQualityHud({
+      score: 100,
+      profile: 'game',
+      qualityMode: 'advise',
+      startTier: 'potato',
+      tier: 'potato',
+      avgFps: 28,
+      p95FrameTimeMs: 40,
+    })
+    expect(line1.startsWith('ADVISE ')).toBe(true)
+    expect(line2).toBe('28 FPS p95=40ms')
+    expect(line2).not.toContain('TTFI')
+    expect(line2).not.toContain('simPasses')
+    expect(line2).not.toContain('bytes')
+  })
+
+  it('marks exclusive for takeover', () => {
+    const { line1 } = formatQualityHud({
+      score: 80,
+      profile: 'game',
+      qualityMode: 'takeover',
+      startTier: 'low',
+      tier: 'low',
+      exclusive: true,
+    })
+    expect(line1).toContain('takeover')
+    expect(line1).toContain('exclusive')
   })
 })

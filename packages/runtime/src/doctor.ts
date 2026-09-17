@@ -37,6 +37,7 @@ import { frameloopDemandPass } from './passes/frameloop-demand.js'
 import { distanceCullPass } from './passes/distance-cull.js'
 import { materialDowngradePass } from './passes/material-downgrade.js'
 import { mountOverlay as mountOverlayImpl, type OverlayHandle } from './overlay/mount-overlay.js'
+import type { QualityHudState } from './overlay/format-quality-hud.js'
 
 export interface DoctorReport {
   profile: Exclude<Profile, 'auto'>
@@ -174,6 +175,7 @@ export class Doctor {
   private lastReport: DoctorReport | undefined
   private handles: PassHandle[] = []
   private overlay: OverlayHandle | undefined
+  private qualityHudGetter: (() => QualityHudState | undefined) | undefined
   private frameloop: 'always' | 'demand'
   private postfxEnabled: boolean
 
@@ -370,12 +372,19 @@ export class Doctor {
     this.handles = []
   }
 
-  attachQualityHud(_getter: () => unknown): void {
-    // no-op until Task 5
+  attachQualityHud(getter: () => QualityHudState | undefined): void {
+    this.qualityHudGetter = getter
+    this.overlay?.refresh()
   }
 
   refreshOverlay(): void {
     this.overlay?.refresh()
+  }
+
+  reclampPixelRatioCeiling(maxRatio: number): void {
+    if (this.opts.renderer.pixelRatio > maxRatio) {
+      this.opts.renderer.setPixelRatio(maxRatio)
+    }
   }
 
   async optimize(options: { apply?: Array<'safe' | PassId> } = {}): Promise<DoctorReport> {
@@ -422,6 +431,7 @@ export class Doctor {
       getScore: () => this.lastReport?.score ?? 0,
       getBaseline: () => this.lastReport?.baseline ?? this.baseline,
       getAfter: () => this.lastReport?.after,
+      getQualityHud: () => this.qualityHudGetter?.(),
     })
   }
 

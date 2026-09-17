@@ -1,9 +1,14 @@
 import {
   ADAPTER_KNOBS,
+  GENERIC_CAPS,
+  HYSTERESIS,
   SAFE_PASSES,
+  createHysteresisState,
+  evaluateWindow,
   resolveStartTier,
   type AdapterCapability,
   type AdapterExtras,
+  type HysteresisState,
   type MetricsSample,
   type Mode,
   type PassId,
@@ -16,6 +21,7 @@ import {
 } from '@threejs-doctor/core'
 import type { Finding } from '@threejs-doctor/rules'
 import type { Doctor } from './doctor.js'
+import type { QualityHudState } from './overlay/format-quality-hud.js'
 
 export interface QualityControllerOptions {
   mode?: QualityMode
@@ -90,6 +96,21 @@ function copyExtras(sample: MetricsSample, extras: AdapterExtras | undefined): M
   return next
 }
 
+function diffMetrics(
+  baseline: MetricsSample,
+  after: MetricsSample,
+): Partial<Record<keyof MetricsSample, number>> {
+  const deltas: Partial<Record<keyof MetricsSample, number>> = {}
+  ;(Object.keys(baseline) as Array<keyof MetricsSample>).forEach((key) => {
+    const before = baseline[key]
+    const next = after[key]
+    if (typeof before === 'number' && typeof next === 'number') {
+      deltas[key] = next - before
+    }
+  })
+  return deltas
+}
+
 export class QualityController {
   private mode: QualityMode
   private adapter: QualityAdapter | undefined
@@ -103,6 +124,7 @@ export class QualityController {
     private readonly options: QualityControllerOptions = {},
   ) {
     this.mode = options.mode ?? 'safe-auto'
+    this.doctor.attachQualityHud(() => this.hudState())
   }
 
   registerAdapter(adapter: QualityAdapter): void {
@@ -246,11 +268,85 @@ export class QualityController {
     if (this.mode === 'advise') report.recommendedTier = startTier
     this.booted = true
     this.last = report
+    this.doctor.refreshOverlay()
     return report
   }
 
   async runLadder(): Promise<QualityLadderReport> {
-    throw new Error('runLadder not implemented')
+    if (!this.booted) await this.boot()
+    const windowFrames = this.options.windowFrames ?? HYSTERESIS.windowFrames
+    let state = createHysteresisState({
+      tier: this.last!.tier,
+      maxTier: this.last!.maxTier,
+      phase: 'runtime',
+    })
+    let baseline: MetricsSample | undefined
+    let after: MetricsSample | undefined
+    let incomplete = this.last!.incomplete
+    let holdsAtTarget = 0
+    // Max 12 windows safety valve (unit tests and production).
+    const maxWindows = 12
+    try {
+      for (let w = 0; w < maxWindows; w++) {
+        if (this.mode !== 'advise') this.clampCeiling(state.tier)
+        const sample = await this.doctor.measure(windowFrames)
+        if (!baseline) baseline = this.mergeExtras(sample)
+        after = this.mergeExtras(sample)
+        const decision = evaluateWindow(state, sample.p95FrameTimeMs, {
+          applyFailed: this.last!.applyFailed,
+        })
+        if (this.mode === 'advise') {
+          state = { ...decision.next, tier: state.tier }
+          const last = this.last!
+          const advised: QualityLadderReport = {
+            ...last,
+            recommendedTier: decision.next.tier,
+            baseline,
+            incomplete,
+          }
+          this.last = advised
+          if (sample.p95FrameTimeMs <= HYSTERESIS.dropP95Ms) holdsAtTarget += 1
+          else holdsAtTarget = 0
+          if (holdsAtTarget >= 3 || decision.reason === 'floor') break
+          continue
+        }
+        if (decision.reason === 'floor') {
+          const last = this.last!
+          this.last = { ...last, floorFailed: true, tier: 'potato' }
+          break
+        }
+        if (decision.action === 'drop') {
+          this.applyRung(decision.next.tier)
+          state = decision.next
+          holdsAtTarget = 0
+          continue
+        }
+        if (sample.p95FrameTimeMs <= HYSTERESIS.dropP95Ms) holdsAtTarget += 1
+        else holdsAtTarget = 0
+        if (holdsAtTarget >= 3) {
+          if (decision.action === 'climb') {
+            state = { ...decision.next, tier: state.tier }
+          } else {
+            state = decision.next
+          }
+          break
+        }
+        if (decision.action === 'climb') {
+          this.applyRung(decision.next.tier)
+          state = decision.next
+          holdsAtTarget = 0
+          continue
+        }
+        state = decision.next
+      }
+    } catch {
+      incomplete = true
+      after = undefined
+    }
+    const report = this.finalize(state, baseline ?? this.last!.baseline, after, incomplete)
+    this.last = report
+    this.doctor.refreshOverlay()
+    return report
   }
 
   dispose(): void {
@@ -269,6 +365,142 @@ export class QualityController {
       // best-effort
     }
     this.exclusive = undefined
+  }
+
+  private hudState(): QualityHudState | undefined {
+    if (!this.last) return undefined
+    const sample = this.last.after ?? this.last.baseline
+    const state: QualityHudState = {
+      score: this.last.score,
+      profile: this.last.profile,
+      qualityMode: this.last.qualityMode,
+      startTier: this.last.startTier,
+      tier: this.last.tier,
+    }
+    if (this.last.ttfiMs !== undefined) state.ttfiMs = this.last.ttfiMs
+    if (typeof sample.avgFps === 'number') state.avgFps = sample.avgFps
+    if (typeof sample.p95FrameTimeMs === 'number') state.p95FrameTimeMs = sample.p95FrameTimeMs
+    if (typeof sample.simPassCount === 'number') state.simPassCount = sample.simPassCount
+    if (typeof sample.bytesLoaded === 'number') state.bytesLoaded = sample.bytesLoaded
+    if (this.exclusive) state.exclusive = true
+    return state
+  }
+
+  private mergeExtras(sample: MetricsSample): MetricsSample {
+    let extras: AdapterExtras | undefined
+    try {
+      extras = this.adapter?.readExtras?.()
+    } catch {
+      extras = undefined
+    }
+    return copyExtras(sample, extras)
+  }
+
+  private clampCeiling(tier: QualityTier): void {
+    this.doctor.reclampPixelRatioCeiling(GENERIC_CAPS[tier].pixelRatio)
+  }
+
+  private applyRung(tier: QualityTier): void {
+    for (let i = this.knobHandles.length - 1; i >= 0; i--) {
+      try {
+        this.knobHandles[i]!.rollback()
+      } catch {
+        // best-effort
+      }
+    }
+    this.knobHandles = []
+    this.doctor.rollbackAll()
+
+    const appliedPasses: PassId[] = []
+    const failedPasses: Array<{ id: PassId; error: string }> = []
+    const appliedKnobs: AppliedKnob[] = []
+    let unsupportedKnobs: AdapterCapability[] = []
+    let applyFailed = this.last?.applyFailed ?? false
+    let adapterUnavailable = this.last?.adapterUnavailable ?? false
+
+    const result = this.doctor.applyPassesImmediate([...SAFE_PASSES], { qualityTier: tier })
+    appliedPasses.push(...result.appliedPasses)
+    failedPasses.push(...result.failedPasses)
+    if (failedPasses.length > 0) applyFailed = true
+
+    if (this.adapter && this.mode !== 'advise') {
+      let caps: AdapterCapability[]
+      try {
+        caps = this.adapter.capabilities()
+      } catch {
+        caps = []
+        adapterUnavailable = true
+      }
+      if (caps.length === 0) {
+        adapterUnavailable = true
+      } else {
+        const filtered = knobsFor(tier, caps)
+        unsupportedKnobs = filtered.unsupported
+        let handle: { rollback(): void } | undefined
+        try {
+          handle = this.adapter.apply(tier, filtered.knobs)
+          this.knobHandles.push(handle)
+          appliedKnobs.push(...filtered.applied)
+        } catch {
+          try {
+            handle?.rollback()
+          } catch {
+            // best-effort
+          }
+          applyFailed = true
+        }
+      }
+    }
+
+    if (this.last) {
+      const next: QualityLadderReport = {
+        ...this.last,
+        tier,
+        appliedPasses,
+        appliedKnobs,
+        failedPasses,
+        unsupportedKnobs,
+        applyFailed,
+      }
+      if (adapterUnavailable) next.adapterUnavailable = true
+      this.last = next
+    }
+  }
+
+  private finalize(
+    state: HysteresisState,
+    baseline: MetricsSample,
+    after: MetricsSample | undefined,
+    incomplete: boolean,
+  ): QualityLadderReport {
+    const last = this.last!
+    const report: QualityLadderReport = {
+      profile: last.profile,
+      mode: last.mode,
+      qualityMode: this.mode,
+      phase: 'runtime',
+      tier: last.floorFailed ? 'potato' : state.tier,
+      startTier: last.startTier,
+      maxTier: last.maxTier,
+      score: last.score,
+      findings: last.findings,
+      baseline,
+      appliedPasses: last.appliedPasses,
+      appliedKnobs: last.appliedKnobs,
+      failedPasses: last.failedPasses,
+      unsupportedKnobs: last.unsupportedKnobs,
+      floorFailed: last.floorFailed,
+      applyFailed: last.applyFailed,
+      incomplete,
+    }
+    if (last.ttfiMs !== undefined) report.ttfiMs = last.ttfiMs
+    if (last.adapterUnavailable) report.adapterUnavailable = true
+    if (last.recommendedTier !== undefined) report.recommendedTier = last.recommendedTier
+    if (!incomplete && after !== undefined) {
+      report.after = after
+      report.deltas = diffMetrics(baseline, after)
+    }
+    return report
   }
 
   private maybeBytesLoaded(bootStart: number): number | undefined {
