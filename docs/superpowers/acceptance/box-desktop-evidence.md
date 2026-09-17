@@ -153,40 +153,58 @@ Read-only. `appliedPasses` empty. Overlay stays advise.
 | recommendedTier | `potato` |
 | incomplete | false |
 | floorFailed | false |
-| baseline `avgFps` | 7.467330429371501 |
-| baseline `p95FrameTimeMs` | 159.80000000004657 |
-| after `avgFps` | 7.318917776024768 |
-| after `p95FrameTimeMs` | 187.5999999998603 |
+| baseline `avgFps` | 12.906001290600129 |
+| baseline `p95FrameTimeMs` | 145.5 |
+| after `avgFps` | 13.332148253488395 |
+| after `p95FrameTimeMs` | 140.80000000004657 |
 | `drawCalls` | 66 |
 | `triangles` | 19010 |
 | `shadowCastingLightCount` | 2 |
+| `drawingBufferPixels` | 1024000 |
 | `appliedPasses` | (none) |
 | `appliedKnobs` | (none) |
 
-Advise did not improve FPS (7.467 → 7.319). Score 100 is hygiene, not a win.
+Advise did not improve FPS (12.906 → 13.332). Score 100 is hygiene, not a win.
 
-### Fixture Pass B — `safe-auto` (cold reload)
+### Fixture Pass B — `safe-auto` (cold reload, after potato-floor nudge)
 
 `window.__THREEJS_DOCTOR_ATTACH__ = { mode: 'safe-auto' }` then paste IIFE.
-Generic caps only. Settled tier **potato**. Overlay/report `floorFailed: true`
-(after `avgFps` 28.275 still below 30 and `p95FrameTimeMs` 83.6 still above 33.4).
+Generic caps only. Settled tier **potato**. Overlay/report `floorFailed: false`.
+After `avgFps` 52.313 ≥ 30 and `p95FrameTimeMs` 29.2 ≤ 33.4 — **this remeasure
+cleared 30 FPS**.
 
 Applied passes: `dpr-cap`, `pixel-budget`, `shadow-budget`, `postfx-budget`,
 `tone-map-lite`, `anisotropy-cap`, `frameloop-demand`, `distance-cull`.
-No adapter knobs.
+No adapter knobs. After `drawingBufferPixels` 256000 (second-stage 0.5 DPR
+ceiling; the high-20s 0.4 near-miss did not fire because settled avgFps was
+already above 30).
 
 | Field | Baseline | After |
 |-------|----------|-------|
-| `avgFps` | 10.07150770470434 | 28.275212064090482 |
-| `p95FrameTimeMs` | 138.30000000004657 | 83.5999999998603 |
+| `avgFps` | 17.149717029668555 | 52.313415484770275 |
+| `p95FrameTimeMs` | 171.40000000002328 | 29.199999999953434 |
 | `drawCalls` | 66 | 66 |
 | `triangles` | 19010 | 19010 |
 | `shadowCastingLightCount` | 1 | 0 |
-| `drawingBufferPixels` | 1000692 | 257985 |
+| `drawingBufferPixels` | 1024000 | 256000 |
 
 `safe-auto` **did** raise fixture FPS versus this file's advise after
-(7.319 → 28.275) and versus its own baseline (10.072 → 28.275). It still
-missed the 30 FPS / 33.4 ms floor on this SwiftShader box. Not §3 proof.
+(13.332 → 52.313) and versus its own baseline (17.150 → 52.313). Not §3 proof.
+
+### Pre-nudge fixture Pass B (same PR, earlier session)
+
+Copied from the previous `LAST_REPORT` write-up on this PR, before the
+potato near-miss caps and `floorFailed` latch clear. Not this session.
+
+| Field | After |
+|-------|-------|
+| `avgFps` | 28.275212064090482 |
+| `p95FrameTimeMs` | 83.5999999998603 |
+| `floorFailed` | true |
+| `drawingBufferPixels` | 257985 |
+
+Advise after in that session was 7.318917776024768 / p95 187.5999999998603.
+That ~28 FPS / floorFailed true run is why the second-stage floor was nudged.
 
 ## Remaining gates
 
