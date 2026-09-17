@@ -85,7 +85,11 @@ function diffMetrics(
 ): Partial<Record<keyof MetricsSample, number>> {
   const deltas: Partial<Record<keyof MetricsSample, number>> = {}
   ;(Object.keys(baseline) as Array<keyof MetricsSample>).forEach((key) => {
-    deltas[key] = after[key] - baseline[key]
+    const before = baseline[key]
+    const next = after[key]
+    if (typeof before === 'number' && typeof next === 'number') {
+      deltas[key] = next - before
+    }
   })
   return deltas
 }

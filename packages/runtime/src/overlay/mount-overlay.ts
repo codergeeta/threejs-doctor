@@ -14,7 +14,7 @@ export interface MountOverlayOptions {
 
 function formatDeltas(baseline?: MetricsSample, after?: MetricsSample): string {
   if (!baseline || !after) return 'No after metrics'
-  const keys: Array<keyof MetricsSample> = [
+  const keys = [
     'avgFps',
     'p95FrameTimeMs',
     'drawCalls',
@@ -24,7 +24,7 @@ function formatDeltas(baseline?: MetricsSample, after?: MetricsSample): string {
     'geometryCount',
     'lightCount',
     'shadowCastingLightCount',
-  ]
+  ] as const
   return keys
     .map((k) => {
       const delta = after[k] - baseline[k]

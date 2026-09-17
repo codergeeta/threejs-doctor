@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { QualityController } from '../quality-controller.js'
 import { createLadderDoctor } from './ladder-harness.js'
 import { dprCapPass } from '../passes/dpr-cap.js'
-import type { QualityAdapter } from '@threejs-doctor/core'
+import type { QualityAdapter, QualityKnobSet } from '@threejs-doctor/core'
 
 function fakeAdapter(applyCalls: unknown[]): QualityAdapter {
   return {
@@ -71,6 +71,13 @@ describe('QualityController.boot', () => {
     expect(boot.maxTier).toBe('mid')
     expect(renderer.pixelRatio).toBeLessThanOrEqual(1.0)
     expect(boot.appliedPasses).toContain('dpr-cap')
+    expect(applyCalls).toHaveLength(1)
+    const knobs = (applyCalls[0] as { knobs: QualityKnobSet }).knobs
+    expect(knobs.fftSize).toEqual([64, 0, 0])
+    expect(knobs.spectrumEveryNFrames).toBe(2)
+    expect(knobs.rtScale).toBeUndefined()
+    expect(knobs.meshLod).toBeUndefined()
+    expect(knobs.deferredHdr).toBeUndefined()
   })
 
   it('advise never mutates renderer or calls adapter.apply', async () => {

@@ -50,6 +50,9 @@ export interface MetricsSample {
   geometryCount: number
   lightCount: number
   shadowCastingLightCount: number
+  simPassCount?: number
+  bytesLoaded?: number
+  compileMs?: number
 }
 
 export interface SceneSnapshot {

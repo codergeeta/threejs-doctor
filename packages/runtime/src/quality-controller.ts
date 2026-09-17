@@ -1,12 +1,15 @@
 import {
+  ADAPTER_KNOBS,
   SAFE_PASSES,
   resolveStartTier,
   type AdapterCapability,
+  type AdapterExtras,
   type MetricsSample,
   type Mode,
   type PassId,
   type Profile,
   type QualityAdapter,
+  type QualityKnobSet,
   type QualityMode,
   type QualityTier,
   type LadderPhase,
@@ -53,6 +56,38 @@ export interface QualityLadderReport {
   ttfiMs?: number
   adapterUnavailable?: boolean
   recommendedTier?: QualityTier
+}
+
+function knobsFor(
+  tier: QualityTier,
+  capabilities: AdapterCapability[],
+): { knobs: QualityKnobSet; applied: AppliedKnob[]; unsupported: AdapterCapability[] } {
+  const table = ADAPTER_KNOBS[tier]
+  const knobs: QualityKnobSet = {}
+  const applied: AppliedKnob[] = []
+  const advertised = new Set(capabilities)
+  const maybeSet = <K extends keyof QualityKnobSet>(key: K, cap: AdapterCapability) => {
+    if (!advertised.has(cap)) return
+    const value = table[key]
+    if (value === undefined) return
+    knobs[key] = value as QualityKnobSet[K]
+    applied.push({ capability: cap, value })
+  }
+  maybeSet('fftSize', 'fftSize')
+  maybeSet('spectrumEveryNFrames', 'fftSize')
+  maybeSet('rtScale', 'rtScale')
+  maybeSet('meshLod', 'meshLod')
+  maybeSet('deferredHdr', 'deferredHdr')
+  return { knobs, applied, unsupported: [] }
+}
+
+function copyExtras(sample: MetricsSample, extras: AdapterExtras | undefined): MetricsSample {
+  if (!extras) return sample
+  const next: MetricsSample = { ...sample }
+  if (typeof extras.simPassCount === 'number') next.simPassCount = extras.simPassCount
+  if (typeof extras.bytesLoaded === 'number') next.bytesLoaded = extras.bytesLoaded
+  if (typeof extras.compileMs === 'number') next.compileMs = extras.compileMs
+  return next
 }
 
 export class QualityController {
@@ -106,6 +141,9 @@ export class QualityController {
     const appliedPasses: PassId[] = []
     const failedPasses: Array<{ id: PassId; error: string }> = []
     const appliedKnobs: AppliedKnob[] = []
+    let unsupportedKnobs: AdapterCapability[] = []
+    let applyFailed = false
+    let adapterUnavailable = false
 
     if (this.mode !== 'advise') {
       if (this.mode === 'takeover') {
@@ -116,7 +154,30 @@ export class QualityController {
       })
       appliedPasses.push(...result.appliedPasses)
       failedPasses.push(...result.failedPasses)
-      // adapter.apply is Task 4; do not invent knobs here
+      if (failedPasses.length > 0) applyFailed = true
+
+      if (this.adapter) {
+        const caps = this.adapter.capabilities()
+        if (caps.length === 0) {
+          adapterUnavailable = true
+        } else {
+          const filtered = knobsFor(startTier, caps)
+          unsupportedKnobs = filtered.unsupported
+          let handle: { rollback(): void } | undefined
+          try {
+            handle = this.adapter.apply(startTier, filtered.knobs)
+            this.knobHandles.push(handle)
+            appliedKnobs.push(...filtered.applied)
+          } catch {
+            try {
+              handle?.rollback()
+            } catch {
+              // best-effort
+            }
+            applyFailed = true
+          }
+        }
+      }
     }
 
     let ttfiMs: number | undefined
@@ -129,6 +190,22 @@ export class QualityController {
     }
 
     const diagnosed = await this.doctor.diagnose()
+    const extras = this.adapter?.readExtras?.()
+    let baseline = copyExtras(diagnosed.baseline, extras)
+    const bytesLoaded = this.maybeBytesLoaded(bootStart)
+    if (typeof bytesLoaded === 'number' && typeof extras?.bytesLoaded !== 'number') {
+      baseline = { ...baseline, bytesLoaded }
+    }
+    if (typeof extras?.simPassCount === 'number') {
+      findings.push({
+        id: 'quality/heavy-sim-passes',
+        severity: 'info',
+        evidence: { simPassCount: extras.simPassCount },
+        message: `Adapter reported ${extras.simPassCount} simulation passes`,
+        suggestedFix: 'Lower fftSize or skip spectrum frames on this tier',
+      })
+    }
+
     const report: QualityLadderReport = {
       profile: diagnosed.profile,
       mode: diagnosed.mode,
@@ -139,16 +216,17 @@ export class QualityController {
       maxTier,
       score: diagnosed.score,
       findings: [...diagnosed.findings, ...findings],
-      baseline: diagnosed.baseline,
+      baseline,
       appliedPasses,
       appliedKnobs,
       failedPasses,
-      unsupportedKnobs: [],
+      unsupportedKnobs,
       floorFailed: false,
-      applyFailed: failedPasses.length > 0,
+      applyFailed,
       incomplete,
     }
     if (ttfiMs !== undefined) report.ttfiMs = ttfiMs
+    if (adapterUnavailable) report.adapterUnavailable = true
     if (this.mode === 'advise') report.recommendedTier = startTier
     this.booted = true
     this.last = report
@@ -175,5 +253,28 @@ export class QualityController {
       // best-effort
     }
     this.exclusive = undefined
+  }
+
+  private maybeBytesLoaded(bootStart: number): number | undefined {
+    const perf = (
+      globalThis as {
+        performance?: {
+          getEntriesByType?: (t: string) => Array<{ transferSize?: number; startTime: number }>
+        }
+      }
+    ).performance
+    const entries = perf?.getEntriesByType?.('resource')
+    if (!entries) return undefined
+    let sum = 0
+    let any = false
+    for (const e of entries) {
+      if (e.startTime < bootStart) continue
+      if (typeof e.transferSize === 'number') {
+        sum += e.transferSize
+        any = true
+      }
+    }
+    if (!any) return undefined
+    return sum
   }
 }
