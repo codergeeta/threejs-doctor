@@ -491,6 +491,108 @@ describe('QualityController.runLadder', () => {
     expect(settled.tier).toBe('potato')
   })
 
+  it('marks incomplete and omits after/deltas when after-measure has zero geometry but baseline did not', async () => {
+    const { doctor, info } = createLadderDoctor({
+      now: (() => {
+        let t = 0
+        return () => {
+          t += 50
+          return t
+        }
+      })(),
+      measureFrames: 4,
+    })
+    const ladder = new QualityController(doctor, {
+      mode: 'safe-auto',
+      startTier: 'potato',
+      maxTier: 'potato',
+      windowFrames: 4,
+      waitForFirstInteractive: async () => {},
+    })
+    const boot = await ladder.boot()
+    expect(boot.baseline.drawCalls).toBeGreaterThan(0)
+    expect(boot.baseline.triangles).toBeGreaterThan(0)
+    info.render.calls = 0
+    info.render.triangles = 0
+    const settled = await ladder.runLadder()
+    expect(settled.incomplete).toBe(true)
+    expect(settled.after).toBeUndefined()
+    expect(settled.deltas).toBeUndefined()
+    expect(settled.applyFailed).toBe(true)
+    expect(settled.baseline.drawCalls).toBeGreaterThan(0)
+    expect(settled.baseline.triangles).toBeGreaterThan(0)
+  })
+
+  it('rolls back adapter knobs and keeps generic caps when after-measure geometry collapses', async () => {
+    let rolledBack = false
+    const adapter: QualityAdapter = {
+      id: 'oceanish',
+      capabilities: () => ['fftSize', 'rtScale'],
+      snapshot: () => ({}),
+      apply() {
+        return {
+          rollback() {
+            rolledBack = true
+          },
+        }
+      },
+    }
+    const { doctor, info, renderer } = createLadderDoctor({
+      now: (() => {
+        let t = 0
+        return () => {
+          t += 50
+          return t
+        }
+      })(),
+      measureFrames: 4,
+    })
+    const ladder = new QualityController(doctor, {
+      mode: 'safe-auto',
+      startTier: 'low',
+      maxTier: 'low',
+      windowFrames: 4,
+      waitForFirstInteractive: async () => {},
+    })
+    ladder.registerAdapter(adapter)
+    await ladder.boot()
+    const dprAfterBoot = renderer.pixelRatio
+    info.render.calls = 0
+    info.render.triangles = 0
+    const settled = await ladder.runLadder()
+    expect(rolledBack).toBe(true)
+    expect(settled.appliedKnobs).toEqual([])
+    expect(settled.applyFailed).toBe(true)
+    expect(settled.incomplete).toBe(true)
+    expect(settled.appliedPasses.length).toBeGreaterThan(0)
+    expect(renderer.pixelRatio).toBeLessThanOrEqual(dprAfterBoot)
+    expect(renderer.pixelRatio).toBeLessThan(3)
+  })
+
+  it('tightens potato pixelRatio once more when floorFailed and still below target', async () => {
+    const { doctor, renderer } = createLadderDoctor({
+      now: (() => {
+        let t = 0
+        return () => {
+          t += 50
+          return t
+        }
+      })(),
+      measureFrames: 4,
+    })
+    const ladder = new QualityController(doctor, {
+      mode: 'safe-auto',
+      startTier: 'potato',
+      maxTier: 'potato',
+      windowFrames: 4,
+      waitForFirstInteractive: async () => {},
+    })
+    const settled = await ladder.runLadder()
+    expect(settled.floorFailed).toBe(true)
+    expect(settled.tier).toBe('potato')
+    expect(renderer.pixelRatio).toBeLessThanOrEqual(0.5)
+  })
+
   it('reclamps DPR if the host raises it above the safe-auto ceiling', async () => {
     const { doctor, renderer } = createLadderDoctor({ measureFrames: 4 })
     const ladder = new QualityController(doctor, {

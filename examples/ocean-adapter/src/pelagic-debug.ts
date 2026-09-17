@@ -2,6 +2,8 @@ export interface PelagicCascadeLike {
   size: number
   dispose?: () => void
   resize?: (n: number) => void
+  update?: (delta?: number) => void
+  pack?: unknown
 }
 
 export interface PelagicRtLike {

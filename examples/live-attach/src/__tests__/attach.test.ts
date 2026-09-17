@@ -137,6 +137,46 @@ describe('attachQualityLadder', () => {
     parseLoggedReport(log)
   })
 
+  it('sets LAST_REPORT in a finally block even when runLadder throws', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const { QualityController } = await import('@threejs-doctor/runtime')
+    const orig = QualityController.prototype.runLadder
+    QualityController.prototype.runLadder = async function (this: InstanceType<typeof QualityController>) {
+      const report = await orig.call(this)
+      throw Object.assign(new Error('runLadder exploded after publish'), { report })
+    }
+    try {
+      await expect(
+        attachQualityLadder({
+          scene: fakeScene(),
+          camera: fakeCamera(),
+          renderer: fakeRenderer(),
+          now: (() => {
+            let t = 0
+            return () => {
+              t += 16
+              return t
+            }
+          })(),
+          windowFrames: 3,
+          measureFrames: 3,
+          mountOverlay: false,
+        }),
+      ).rejects.toThrow(/exploded/)
+      const last = (globalThis as { __THREEJS_DOCTOR_LAST_REPORT__?: QualityLadderReport })
+        .__THREEJS_DOCTOR_LAST_REPORT__
+      expect(last).toBeDefined()
+      expect(last!.baseline).toBeDefined()
+      const g = globalThis as typeof globalThis & { window?: { __THREEJS_DOCTOR_LAST_REPORT__?: QualityLadderReport } }
+      if (g.window) {
+        expect(g.window.__THREEJS_DOCTOR_LAST_REPORT__).toBe(last)
+      }
+      parseLoggedReport(log)
+    } finally {
+      QualityController.prototype.runLadder = orig
+    }
+  })
+
   it('registers the ocean adapter when window.pelagic.debug exists', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
     const debug = pelagicDebug()

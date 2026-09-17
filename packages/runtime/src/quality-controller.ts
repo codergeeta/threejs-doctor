@@ -105,6 +105,11 @@ function isUsableSample(sample: MetricsSample | undefined): sample is MetricsSam
   return !!sample && sample.p95FrameTimeMs > 0
 }
 
+function renderPathCollapsed(baseline: MetricsSample, after: MetricsSample): boolean {
+  const hadGeometry = baseline.drawCalls > 0 || baseline.triangles > 0
+  return hadGeometry && after.drawCalls === 0 && after.triangles === 0
+}
+
 function diffMetrics(
   baseline: MetricsSample,
   after: MetricsSample,
@@ -127,6 +132,7 @@ export class QualityController {
   private knobHandles: Array<{ rollback(): void }> = []
   private exclusive: { release(): void } | undefined
   private last: QualityLadderReport | undefined
+  private potatoFloorTightened = false
 
   constructor(
     private readonly doctor: Doctor,
@@ -338,6 +344,21 @@ export class QualityController {
           continue
         }
         if (!baseline) baseline = sample
+        else if (renderPathCollapsed(baseline, sample)) {
+          this.rollbackAdapterKnobs()
+          incomplete = true
+          after = undefined
+          if (this.last) {
+            this.last = {
+              ...this.last,
+              applyFailed: true,
+              incomplete: true,
+              appliedKnobs: [],
+              floorFailed: this.last.floorFailed || this.last.tier === 'potato',
+            }
+          }
+          break
+        }
         after = sample
         const stepped = this.applyWindowDecision(state, sample, pendingApplyFailed, baseline, incomplete, {
           holdsAtTarget,
@@ -454,6 +475,16 @@ export class QualityController {
     }
     this.publish(nextLast)
     if (decision.reason === 'floor') {
+      if (!this.potatoFloorTightened && sample.p95FrameTimeMs > HYSTERESIS.dropP95Ms) {
+        this.tightenPotatoFloor()
+        this.potatoFloorTightened = true
+        return {
+          state: decision.next,
+          pendingApplyFailed: false,
+          holdsAtTarget: 0,
+          stop: false,
+        }
+      }
       return {
         state: decision.next,
         pendingApplyFailed: false,
@@ -506,7 +537,11 @@ export class QualityController {
     this.doctor.reclampPixelRatioCeiling(GENERIC_CAPS[tier].pixelRatio)
   }
 
-  private applyRung(tier: QualityTier): boolean {
+  private tightenPotatoFloor(): void {
+    this.doctor.reclampPixelRatioCeiling(0.5)
+  }
+
+  private rollbackAdapterKnobs(): void {
     for (let i = this.knobHandles.length - 1; i >= 0; i--) {
       try {
         this.knobHandles[i]!.rollback()
@@ -515,6 +550,10 @@ export class QualityController {
       }
     }
     this.knobHandles = []
+  }
+
+  private applyRung(tier: QualityTier): boolean {
+    this.rollbackAdapterKnobs()
     this.doctor.rollbackAll()
 
     const appliedPasses: PassId[] = []

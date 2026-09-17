@@ -4,8 +4,8 @@ Browser IIFE that pastes into DevTools on a **live** Three.js page, constructs
 `Doctor` + `QualityController` from `@threejs-doctor/runtime`, optionally
 registers `createOceanAdapter` when `window.pelagic.debug` exists, then
 `boot()` + `runLadder()`. The report is logged with `console.log(JSON.stringify(report))`
-and also stored on `window.__THREEJS_DOCTOR_LAST_REPORT__` after boot and after every
-ladder publish (including `runLadder()`). Copy from DevTools with:
+and also stored on `window.__THREEJS_DOCTOR_LAST_REPORT__` after boot, after every
+ladder publish, and in a `finally` block even when `runLadder()` throws. Copy from DevTools with:
 
 ```js
 copy(JSON.stringify(window.__THREEJS_DOCTOR_LAST_REPORT__))

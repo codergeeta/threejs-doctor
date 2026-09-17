@@ -2,6 +2,63 @@ import { describe, it, expect } from 'vitest'
 import { createOceanAdapter, getPelagicDebug } from '../pelagic-adapter.js'
 import type { PelagicDebugHandle, PelagicRtLike } from '../pelagic-debug.js'
 
+interface HostCascade {
+  size: number
+  pack: { uniforms: { uGain: { value: number } } } | null
+  displacement: { texture: { id: string } }
+  normals: Array<{ texture: { id: string } }>
+  normalIndex: number
+  updates: number
+  dispose: () => void
+  update: (delta?: number) => void
+  resize?: (n: number) => void
+}
+
+function hostLikeCascade(size: number): HostCascade {
+  const cascade: HostCascade = {
+    size,
+    pack: { uniforms: { uGain: { value: 1.25 } } },
+    displacement: { texture: { id: `disp-${size}` } },
+    normals: [{ texture: { id: `n0-${size}` } }, { texture: { id: `n1-${size}` } }],
+    normalIndex: 0,
+    updates: 0,
+    dispose() {},
+    resize(n: number) {
+      this.size = n
+    },
+    update() {
+      if (this.pack == null) {
+        throw new TypeError("Cannot read properties of null (reading 'pack')")
+      }
+      void this.pack.uniforms.uGain.value
+      this.updates += 1
+    },
+  }
+  return cascade
+}
+
+function hostLikeDebug(): PelagicDebugHandle & { hdrDeferred?: boolean } {
+  const debug = fakeDebug()
+  debug.cascades = [hostLikeCascade(128), hostLikeCascade(256), hostLikeCascade(128)]
+  return debug
+}
+
+function hostSpectrumTick(debug: PelagicDebugHandle): void {
+  debug.cascades!.forEach((cascade, i) => {
+    const host = cascade as HostCascade
+    const gain = host.pack!.uniforms.uGain
+    void gain.value
+    host.update(i === 0 ? 0.032 : 0.016)
+  })
+}
+
+function hostWeatherTick(debug: PelagicDebugHandle): void {
+  debug.cascades!.forEach((cascade) => {
+    const gain = (cascade as HostCascade).pack!.uniforms.uGain
+    gain.value = gain.value
+  })
+}
+
 function fakeDebug(): PelagicDebugHandle & { hdrDeferred?: boolean } {
   const rt = (w: number, h: number) => ({
     width: w,
@@ -62,12 +119,13 @@ describe('createOceanAdapter', () => {
       deferredHdr: true,
     })
     expect(debug.cascades![0]!.size).toBe(64)
-    expect(debug.cascades![1]?.size).toBe(1)
-    expect(debug.cascades![2]?.size).toBe(1)
-    expect(() => (debug.cascades![1] as { pack?: () => void }).pack?.()).not.toThrow()
+    expect(debug.cascades![1]).not.toBeNull()
+    expect(debug.cascades![1]?.size).toBe(256)
+    expect(debug.cascades![2]?.size).toBe(128)
     expect(debug.reflectionTarget!.width).toBe(Math.round(768 * 0.35))
     expect(debug.causticWide!.width).toBe(Math.round(1024 * 0.35))
-    expect(debug.causticDetail).toBeNull()
+    expect(debug.causticDetail).not.toBeNull()
+    expect(debug.causticDetail!.width).toBe(Math.round(1536 * 0.35))
     expect(debug.hdrDeferred).toBe(true)
     handle.rollback()
     expect(debug.cascades![1]?.size).toBe(256)
@@ -151,6 +209,53 @@ describe('createOceanAdapter', () => {
     ).toThrow(/pack/)
     expect(debug.cascades![0]!.size).toBe(128)
     expect(debug.reflectionTarget!.width).toBe(originalWidth)
+  })
+
+  it('keeps host cascade.pack materials after potato fftSize [64,0,0] so update/weather do not throw', () => {
+    const debug = hostLikeDebug()
+    const adapter = createOceanAdapter(debug)
+    const original = debug.cascades![1]!
+    adapter.apply('potato', {
+      fftSize: [64, 0, 0],
+      rtScale: 0.35,
+      meshLod: 0,
+      deferredHdr: true,
+    })
+    expect(debug.cascades![1]).toBe(original)
+    expect(debug.cascades![1]).not.toBeNull()
+    expect(() => hostSpectrumTick(debug)).not.toThrow()
+    expect(() => hostWeatherTick(debug)).not.toThrow()
+    expect((debug.cascades![1] as HostCascade).updates).toBe(0)
+    expect((debug.cascades![0] as HostCascade).updates).toBeGreaterThan(0)
+    expect(debug.causticDetail).not.toBeNull()
+    expect(debug.causticDetail!.width).toBeGreaterThan(0)
+  })
+
+  it('does not dispose host cascades because dispose nulls pack and breaks later frames', () => {
+    const debug = hostLikeDebug()
+    const sea = debug.cascades![1] as HostCascade
+    let disposed = false
+    sea.dispose = function (this: HostCascade) {
+      disposed = true
+      this.pack = null as unknown as HostCascade['pack']
+    }
+    const adapter = createOceanAdapter(debug)
+    adapter.apply('potato', { fftSize: [64, 0, 0] })
+    expect(disposed).toBe(false)
+    expect(sea.pack).not.toBeNull()
+    expect(() => hostWeatherTick(debug)).not.toThrow()
+  })
+
+  it('skips fft size writes when the cascade has no resize, leaving ping/pack targets intact', () => {
+    const debug = hostLikeDebug()
+    const swell = debug.cascades![0] as HostCascade
+    const prev = swell.size
+    delete swell.resize
+    const adapter = createOceanAdapter(debug)
+    adapter.apply('potato', { fftSize: [64, 0, 0] })
+    expect(swell.size).toBe(prev)
+    expect(swell.pack).not.toBeNull()
+    expect(() => hostSpectrumTick(debug)).not.toThrow()
   })
 
   it('takeExclusiveControl freezes effectQuality and host dpr loop', () => {

@@ -99,5 +99,5 @@ export function createLadderDoctor(opts?: {
       })),
     ...(opts?.waitFrame ? { waitFrame: opts.waitFrame } : {}),
   })
-  return { doctor, renderer, lights }
+  return { doctor, renderer, lights, info }
 }

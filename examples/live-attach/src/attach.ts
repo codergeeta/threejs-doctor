@@ -34,12 +34,20 @@ export async function attachQualityLadder(
 ): Promise<QualityLadderReport> {
   const root = options.root ?? globalThis
   const persist = (report: QualityLadderReport) => {
-    const g = globalThis as { __THREEJS_DOCTOR_LAST_REPORT__?: QualityLadderReport }
-    g.__THREEJS_DOCTOR_LAST_REPORT__ = report
-    if (root !== globalThis) {
-      ;(root as { __THREEJS_DOCTOR_LAST_REPORT__?: QualityLadderReport }).__THREEJS_DOCTOR_LAST_REPORT__ =
-        report
+    const assign = (target: object | undefined | null) => {
+      if (!target || typeof target !== 'object') return
+      try {
+        ;(target as { __THREEJS_DOCTOR_LAST_REPORT__?: QualityLadderReport }).__THREEJS_DOCTOR_LAST_REPORT__ =
+          report
+      } catch {
+        // page may freeze window; still try other roots
+      }
     }
+    assign(globalThis)
+    if (root !== globalThis) assign(root as object)
+    const win = (globalThis as { window?: object }).window
+    if (win) assign(win)
+    if (typeof window !== 'undefined') assign(window)
   }
   const explicit: ExplicitHandles = {}
   if (options.scene !== undefined) explicit.scene = options.scene
@@ -95,10 +103,23 @@ export async function attachQualityLadder(
     doctor.mountOverlay()
   }
 
-  await ladder.boot()
-  const report = await ladder.runLadder()
-  persist(report)
-  const line = JSON.stringify(report)
-  ;(options.log ?? console.log)(line)
-  return report
+  let report: QualityLadderReport | undefined
+  try {
+    await ladder.boot()
+    report = await ladder.runLadder()
+    return report
+  } finally {
+    const last =
+      report ??
+      (globalThis as { __THREEJS_DOCTOR_LAST_REPORT__?: QualityLadderReport }).__THREEJS_DOCTOR_LAST_REPORT__
+    if (last) {
+      persist(last)
+      try {
+        const line = JSON.stringify(last)
+        ;(options.log ?? console.log)(line)
+      } catch {
+        // LAST_REPORT is still set; console JSON is best-effort
+      }
+    }
+  }
 }

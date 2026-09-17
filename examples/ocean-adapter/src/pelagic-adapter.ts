@@ -33,7 +33,6 @@ const MESH_LOD = {
 
 interface DebugBag extends PelagicDebugHandle {
   hdrDeferred?: boolean
-  blackBinds?: string[]
   waterSegments?: readonly [number, number]
   terrainSegments?: number
 }
@@ -179,7 +178,7 @@ function isCascadeTouchSafe(
   cascade: PelagicCascadeLike | null | undefined,
 ): cascade is PelagicCascadeLike {
   if (cascade == null) return false
-  const bag = cascade as PelagicCascadeLike & { texture?: unknown; framebuffer?: unknown; pack?: unknown }
+  const bag = cascade as PelagicCascadeLike & { texture?: unknown; framebuffer?: unknown }
   if (bag.texture === null) return false
   if (Object.prototype.hasOwnProperty.call(bag, 'framebuffer') && bag.framebuffer === null) return false
   return true
@@ -192,62 +191,53 @@ function isRtTouchSafe(target: PelagicRtLike): boolean {
   return true
 }
 
-function disabledCascade(): PelagicCascadeLike & { pack(): void } {
-  return {
-    size: 1,
-    pack() {},
-    dispose() {},
-    resize() {},
-  }
-}
-
 function applyFft(debug: PelagicDebugHandle, fftSize: number[]): () => void {
   const cascades = debug.cascades
   if (!cascades) return () => {}
-  const snaps: Array<{ cascade: PelagicCascadeLike | null | undefined; size: number | undefined }> =
-    fftSize.map((_, i) => {
-      const cascade = cascades[i]
-      return { cascade, size: cascade?.size }
-    })
-  const bag = debug as DebugBag
-  if (!bag.blackBinds) bag.blackBinds = []
+  const snaps = fftSize.map((_, i) => {
+    const cascade = cascades[i]
+    return {
+      cascade,
+      size: cascade?.size,
+      update: cascade?.update,
+      hadUpdate: cascade != null && Object.prototype.hasOwnProperty.call(cascade, 'update'),
+    }
+  })
 
   const restore = () => {
     snaps.forEach((snap, i) => {
-      if (snap.cascade) {
-        cascades[i] = snap.cascade
-        if (snap.size !== undefined) {
-          if (snap.cascade.resize) {
-            try {
-              snap.cascade.resize(snap.size)
-            } catch {
-              snap.cascade.size = snap.size
-            }
-          } else snap.cascade.size = snap.size
-        }
-        return
+      const cascade = snap.cascade
+      if (!cascade || cascades[i] !== cascade) {
+        if (i < cascades.length) cascades[i] = snap.cascade ?? null
       }
-      if (i < cascades.length) cascades[i] = snap.cascade ?? null
+      if (!cascade) return
+      if (snap.hadUpdate && snap.update) cascade.update = snap.update
+      else delete cascade.update
+      if (snap.size === undefined) return
+      if (typeof cascade.resize === 'function') {
+        try {
+          cascade.resize(snap.size)
+        } catch {
+          cascade.size = snap.size
+        }
+      }
     })
   }
 
   try {
     fftSize.forEach((n, i) => {
-      if (n === 0) {
-        const cascade = cascades[i]
-        try {
-          cascade?.dispose?.()
-        } catch {
-          // host dispose may pack; continue to stub so later frames don't hit null.pack
-        }
-        bag.blackBinds!.push(`cascade-${i}:1x1`)
-        cascades[i] = disabledCascade()
-        return
-      }
       const cascade = cascades[i]
       if (!isCascadeTouchSafe(cascade)) return
-      if (cascade.resize) cascade.resize(n)
-      else cascade.size = n
+      if (n === 0) {
+        // Keep the host object. Replacing/disposing it nulls cascade.pack (a ShaderMaterial).
+        if (typeof cascade.update === 'function') {
+          cascade.update = () => {}
+        }
+        return
+      }
+      if (typeof cascade.resize === 'function') {
+        cascade.resize(n)
+      }
     })
   } catch (err) {
     restore()
@@ -318,9 +308,6 @@ function applyMeshLod(debug: PelagicDebugHandle, lod: 0 | 1 | 2): () => void {
   const hadTerrainSeg = Object.prototype.hasOwnProperty.call(bag, 'terrainSegments')
   const prevWaterSeg = bag.waterSegments
   const prevTerrainSeg = bag.terrainSegments
-  const hadDetail = Object.prototype.hasOwnProperty.call(debug, 'causticDetail')
-  const prevDetail = bag.causticDetail
-
   if (debug.waterMesh) {
     debug.waterMesh.geometry = withSegments(prevWaterGeom, {
       widthSegments: spec.water[0],
@@ -332,7 +319,6 @@ function applyMeshLod(debug: PelagicDebugHandle, lod: 0 | 1 | 2): () => void {
     debug.terrainMesh.geometry = withSegments(prevTerrainGeom, { segments: spec.terrain })
     bag.terrainSegments = spec.terrain
   }
-  if (!spec.detailCaustics) bag.causticDetail = null
 
   return () => {
     if (debug.waterMesh) {
@@ -347,10 +333,6 @@ function applyMeshLod(debug: PelagicDebugHandle, lod: 0 | 1 | 2): () => void {
     else delete bag.waterSegments
     if (hadTerrainSeg && prevTerrainSeg !== undefined) bag.terrainSegments = prevTerrainSeg
     else delete bag.terrainSegments
-    if (!spec.detailCaustics) {
-      if (hadDetail && prevDetail !== undefined) bag.causticDetail = prevDetail
-      else delete bag.causticDetail
-    }
   }
 }
 

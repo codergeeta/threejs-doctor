@@ -162,61 +162,52 @@
     if (Object.prototype.hasOwnProperty.call(bag, "framebuffer") && bag.framebuffer === null) return false;
     return true;
   }
-  function disabledCascade() {
-    return {
-      size: 1,
-      pack() {
-      },
-      dispose() {
-      },
-      resize() {
-      }
-    };
-  }
   function applyFft(debug, fftSize) {
     const cascades = debug.cascades;
     if (!cascades) return () => {
     };
     const snaps = fftSize.map((_, i) => {
       const cascade = cascades[i];
-      return { cascade, size: cascade?.size };
+      return {
+        cascade,
+        size: cascade?.size,
+        update: cascade?.update,
+        hadUpdate: cascade != null && Object.prototype.hasOwnProperty.call(cascade, "update")
+      };
     });
-    const bag = debug;
-    if (!bag.blackBinds) bag.blackBinds = [];
     const restore = () => {
       snaps.forEach((snap, i) => {
-        if (snap.cascade) {
-          cascades[i] = snap.cascade;
-          if (snap.size !== void 0) {
-            if (snap.cascade.resize) {
-              try {
-                snap.cascade.resize(snap.size);
-              } catch {
-                snap.cascade.size = snap.size;
-              }
-            } else snap.cascade.size = snap.size;
-          }
-          return;
+        const cascade = snap.cascade;
+        if (!cascade || cascades[i] !== cascade) {
+          if (i < cascades.length) cascades[i] = snap.cascade ?? null;
         }
-        if (i < cascades.length) cascades[i] = snap.cascade ?? null;
+        if (!cascade) return;
+        if (snap.hadUpdate && snap.update) cascade.update = snap.update;
+        else delete cascade.update;
+        if (snap.size === void 0) return;
+        if (typeof cascade.resize === "function") {
+          try {
+            cascade.resize(snap.size);
+          } catch {
+            cascade.size = snap.size;
+          }
+        }
       });
     };
     try {
       fftSize.forEach((n, i) => {
-        if (n === 0) {
-          const cascade2 = cascades[i];
-          try {
-            cascade2?.dispose?.();
-          } catch {
-          }
-          bag.blackBinds.push(`cascade-${i}:1x1`);
-          cascades[i] = disabledCascade();
-          return;
-        }
         const cascade = cascades[i];
         if (!isCascadeTouchSafe(cascade)) return;
-        if (cascade.resize) cascade.resize(n);
-        else cascade.size = n;
+        if (n === 0) {
+          if (typeof cascade.update === "function") {
+            cascade.update = () => {
+            };
+          }
+          return;
+        }
+        if (typeof cascade.resize === "function") {
+          cascade.resize(n);
+        }
       });
     } catch (err) {
       restore();
@@ -275,8 +266,6 @@
     const hadTerrainSeg = Object.prototype.hasOwnProperty.call(bag, "terrainSegments");
     const prevWaterSeg = bag.waterSegments;
     const prevTerrainSeg = bag.terrainSegments;
-    const hadDetail = Object.prototype.hasOwnProperty.call(debug, "causticDetail");
-    const prevDetail = bag.causticDetail;
     if (debug.waterMesh) {
       debug.waterMesh.geometry = withSegments(prevWaterGeom, {
         widthSegments: spec.water[0],
@@ -288,7 +277,6 @@
       debug.terrainMesh.geometry = withSegments(prevTerrainGeom, { segments: spec.terrain });
       bag.terrainSegments = spec.terrain;
     }
-    if (!spec.detailCaustics) bag.causticDetail = null;
     return () => {
       if (debug.waterMesh) {
         if (prevWaterGeom !== void 0) debug.waterMesh.geometry = prevWaterGeom;
@@ -302,10 +290,6 @@
       else delete bag.waterSegments;
       if (hadTerrainSeg && prevTerrainSeg !== void 0) bag.terrainSegments = prevTerrainSeg;
       else delete bag.terrainSegments;
-      if (!spec.detailCaustics) {
-        if (hadDetail && prevDetail !== void 0) bag.causticDetail = prevDetail;
-        else delete bag.causticDetail;
-      }
     };
   }
   function withSegments(geometry, extra) {
@@ -1707,6 +1691,10 @@ ${line2}` : line1;
   function isUsableSample(sample) {
     return !!sample && sample.p95FrameTimeMs > 0;
   }
+  function renderPathCollapsed(baseline, after) {
+    const hadGeometry = baseline.drawCalls > 0 || baseline.triangles > 0;
+    return hadGeometry && after.drawCalls === 0 && after.triangles === 0;
+  }
   function diffMetrics2(baseline, after) {
     const deltas = {};
     Object.keys(baseline).forEach((key) => {
@@ -1731,6 +1719,7 @@ ${line2}` : line1;
     knobHandles = [];
     exclusive;
     last;
+    potatoFloorTightened = false;
     registerAdapter(adapter) {
       this.adapter = adapter;
     }
@@ -1914,6 +1903,21 @@ ${line2}` : line1;
             continue;
           }
           if (!baseline) baseline = sample;
+          else if (renderPathCollapsed(baseline, sample)) {
+            this.rollbackAdapterKnobs();
+            incomplete = true;
+            after = void 0;
+            if (this.last) {
+              this.last = {
+                ...this.last,
+                applyFailed: true,
+                incomplete: true,
+                appliedKnobs: [],
+                floorFailed: this.last.floorFailed || this.last.tier === "potato"
+              };
+            }
+            break;
+          }
           after = sample;
           const stepped = this.applyWindowDecision(state, sample, pendingApplyFailed, baseline, incomplete, {
             holdsAtTarget
@@ -2012,6 +2016,16 @@ ${line2}` : line1;
       }
       this.publish(nextLast);
       if (decision.reason === "floor") {
+        if (!this.potatoFloorTightened && sample.p95FrameTimeMs > HYSTERESIS.dropP95Ms) {
+          this.tightenPotatoFloor();
+          this.potatoFloorTightened = true;
+          return {
+            state: decision.next,
+            pendingApplyFailed: false,
+            holdsAtTarget: 0,
+            stop: false
+          };
+        }
         return {
           state: decision.next,
           pendingApplyFailed: false,
@@ -2059,7 +2073,10 @@ ${line2}` : line1;
     clampCeiling(tier) {
       this.doctor.reclampPixelRatioCeiling(GENERIC_CAPS[tier].pixelRatio);
     }
-    applyRung(tier) {
+    tightenPotatoFloor() {
+      this.doctor.reclampPixelRatioCeiling(0.5);
+    }
+    rollbackAdapterKnobs() {
       for (let i = this.knobHandles.length - 1; i >= 0; i--) {
         try {
           this.knobHandles[i].rollback();
@@ -2067,6 +2084,9 @@ ${line2}` : line1;
         }
       }
       this.knobHandles = [];
+    }
+    applyRung(tier) {
+      this.rollbackAdapterKnobs();
       this.doctor.rollbackAll();
       const appliedPasses = [];
       const failedPasses = [];
@@ -2438,12 +2458,19 @@ ${line2}` : line1;
   async function attachQualityLadder(options = {}) {
     const root = options.root ?? globalThis;
     const persist = (report2) => {
-      const g2 = globalThis;
-      g2.__THREEJS_DOCTOR_LAST_REPORT__ = report2;
-      if (root !== globalThis) {
-        ;
-        root.__THREEJS_DOCTOR_LAST_REPORT__ = report2;
-      }
+      const assign = (target) => {
+        if (!target || typeof target !== "object") return;
+        try {
+          ;
+          target.__THREEJS_DOCTOR_LAST_REPORT__ = report2;
+        } catch {
+        }
+      };
+      assign(globalThis);
+      if (root !== globalThis) assign(root);
+      const win = globalThis.window;
+      if (win) assign(win);
+      if (typeof window !== "undefined") assign(window);
     };
     const explicit = {};
     if (options.scene !== void 0) explicit.scene = options.scene;
@@ -2486,12 +2513,22 @@ ${line2}` : line1;
     if (options.mountOverlay !== false && typeof document !== "undefined" && document.body) {
       doctor.mountOverlay();
     }
-    await ladder.boot();
-    const report = await ladder.runLadder();
-    persist(report);
-    const line = JSON.stringify(report);
-    (options.log ?? console.log)(line);
-    return report;
+    let report;
+    try {
+      await ladder.boot();
+      report = await ladder.runLadder();
+      return report;
+    } finally {
+      const last = report ?? globalThis.__THREEJS_DOCTOR_LAST_REPORT__;
+      if (last) {
+        persist(last);
+        try {
+          const line = JSON.stringify(last);
+          (options.log ?? console.log)(line);
+        } catch {
+        }
+      }
+    }
   }
 
   // src/browser.ts
