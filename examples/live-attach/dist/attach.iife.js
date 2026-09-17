@@ -511,6 +511,13 @@
     shadowCasters: 0,
     postfxOff: true
   };
+  var POTATO_NEAR_MISS_CAPS = {
+    pixelRatio: 0.4,
+    drawingBufferPixels: 5e5,
+    shadowCasters: 0,
+    postfxOff: true
+  };
+  var POTATO_NEAR_MISS_MIN_AVG_FPS = 24;
   var ADAPTER_KNOBS = {
     potato: {
       fftSize: [64, 0, 0],
@@ -1777,6 +1784,7 @@ ${line2}` : line1;
     exclusive;
     last;
     potatoFloorTightened = false;
+    potatoFloorNudged = false;
     registerAdapter(adapter) {
       this.adapter = adapter;
     }
@@ -2083,8 +2091,18 @@ ${line2}` : line1;
       this.publish(nextLast);
       if (decision.reason === "floor") {
         if (!this.potatoFloorTightened && sample.p95FrameTimeMs > HYSTERESIS.dropP95Ms) {
-          this.tightenPotatoFloor();
+          this.tightenPotatoFloor(POTATO_FLOOR_CAPS);
           this.potatoFloorTightened = true;
+          return {
+            state: decision.next,
+            pendingApplyFailed: false,
+            holdsAtTarget: 0,
+            stop: false
+          };
+        }
+        if (this.potatoFloorTightened && !this.potatoFloorNudged && sample.p95FrameTimeMs > HYSTERESIS.dropP95Ms && sample.avgFps >= POTATO_NEAR_MISS_MIN_AVG_FPS && sample.avgFps < HYSTERESIS.targetFps) {
+          this.tightenPotatoFloor(POTATO_NEAR_MISS_CAPS);
+          this.potatoFloorNudged = true;
           return {
             state: decision.next,
             pendingApplyFailed: false,
@@ -2137,13 +2155,19 @@ ${line2}` : line1;
       }
       return copyExtras(sample, extras);
     }
+    potatoPixelCeiling() {
+      if (this.potatoFloorNudged) return POTATO_NEAR_MISS_CAPS.pixelRatio;
+      if (this.potatoFloorTightened) return POTATO_FLOOR_CAPS.pixelRatio;
+      return void 0;
+    }
     clampCeiling(tier) {
-      const cap = this.potatoFloorTightened && tier === "potato" ? POTATO_FLOOR_CAPS.pixelRatio : GENERIC_CAPS[tier].pixelRatio;
+      const floorCap = this.potatoPixelCeiling();
+      const cap = floorCap !== void 0 && tier === "potato" ? floorCap : GENERIC_CAPS[tier].pixelRatio;
       this.doctor.reclampPixelRatioCeiling(cap);
     }
-    tightenPotatoFloor() {
-      this.doctor.reclampPixelRatioCeiling(POTATO_FLOOR_CAPS.pixelRatio);
-      this.doctor.forceDrawingBufferPixels(POTATO_FLOOR_CAPS.drawingBufferPixels);
+    tightenPotatoFloor(caps) {
+      this.doctor.reclampPixelRatioCeiling(caps.pixelRatio);
+      this.doctor.forceDrawingBufferPixels(caps.drawingBufferPixels);
       this.doctor.forcePostfxOff();
       this.doctor.forceShadowsOff();
     }

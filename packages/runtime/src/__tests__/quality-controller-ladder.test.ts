@@ -630,6 +630,40 @@ describe('QualityController.runLadder', () => {
     expect(settled.floorFailed).toBe(true)
     expect(settled.tier).toBe('potato')
     expect(renderer.pixelRatio).toBeLessThanOrEqual(0.5)
+    expect(renderer.pixelRatio).toBeGreaterThan(0.4)
+  })
+
+  it('nudges second-stage potato floor further when floorFailed and avgFps is in the high 20s', async () => {
+    const { doctor, renderer } = createLadderDoctor({
+      now: (() => {
+        let t = 0
+        return () => {
+          // ~27.8 FPS, p95 36ms — below 30 FPS / 33.4ms but in the high 20s
+          t += 36
+          return t
+        }
+      })(),
+      measureFrames: 4,
+    })
+    const ladder = new QualityController(doctor, {
+      mode: 'safe-auto',
+      startTier: 'potato',
+      maxTier: 'potato',
+      windowFrames: 4,
+      waitForFirstInteractive: async () => {},
+    })
+    const settled = await ladder.runLadder()
+    expect(settled.floorFailed).toBe(true)
+    expect(settled.tier).toBe('potato')
+    expect(settled.after?.avgFps).toBeGreaterThanOrEqual(24)
+    expect(settled.after?.avgFps).toBeLessThan(30)
+    expect(renderer.pixelRatio).toBeLessThanOrEqual(0.4)
+    const pixelsAfterNudge =
+      (renderer.drawingBufferWidth ?? 0) * (renderer.drawingBufferHeight ?? 0)
+    expect(pixelsAfterNudge).toBeLessThanOrEqual(5e5)
+    renderer.pixelRatio = 0.8
+    await ladder.runLadder()
+    expect(renderer.pixelRatio).toBeLessThanOrEqual(0.4)
   })
 
   it('applies second-stage potato floor once: lower drawingBufferPixels, postfx/shadows off, floor-failed finding', async () => {

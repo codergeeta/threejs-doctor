@@ -3,6 +3,8 @@ import {
   GENERIC_CAPS,
   HYSTERESIS,
   POTATO_FLOOR_CAPS,
+  POTATO_NEAR_MISS_CAPS,
+  POTATO_NEAR_MISS_MIN_AVG_FPS,
   SAFE_PASSES,
   createHysteresisState,
   evaluateWindow,
@@ -164,6 +166,7 @@ export class QualityController {
   private exclusive: { release(): void } | undefined
   private last: QualityLadderReport | undefined
   private potatoFloorTightened = false
+  private potatoFloorNudged = false
 
   constructor(
     private readonly doctor: Doctor,
@@ -516,8 +519,24 @@ export class QualityController {
     this.publish(nextLast)
     if (decision.reason === 'floor') {
       if (!this.potatoFloorTightened && sample.p95FrameTimeMs > HYSTERESIS.dropP95Ms) {
-        this.tightenPotatoFloor()
+        this.tightenPotatoFloor(POTATO_FLOOR_CAPS)
         this.potatoFloorTightened = true
+        return {
+          state: decision.next,
+          pendingApplyFailed: false,
+          holdsAtTarget: 0,
+          stop: false,
+        }
+      }
+      if (
+        this.potatoFloorTightened &&
+        !this.potatoFloorNudged &&
+        sample.p95FrameTimeMs > HYSTERESIS.dropP95Ms &&
+        sample.avgFps >= POTATO_NEAR_MISS_MIN_AVG_FPS &&
+        sample.avgFps < HYSTERESIS.targetFps
+      ) {
+        this.tightenPotatoFloor(POTATO_NEAR_MISS_CAPS)
+        this.potatoFloorNudged = true
         return {
           state: decision.next,
           pendingApplyFailed: false,
@@ -574,17 +593,25 @@ export class QualityController {
     return copyExtras(sample, extras)
   }
 
+  private potatoPixelCeiling(): number | undefined {
+    if (this.potatoFloorNudged) return POTATO_NEAR_MISS_CAPS.pixelRatio
+    if (this.potatoFloorTightened) return POTATO_FLOOR_CAPS.pixelRatio
+    return undefined
+  }
+
   private clampCeiling(tier: QualityTier): void {
+    const floorCap = this.potatoPixelCeiling()
     const cap =
-      this.potatoFloorTightened && tier === 'potato'
-        ? POTATO_FLOOR_CAPS.pixelRatio
-        : GENERIC_CAPS[tier].pixelRatio
+      floorCap !== undefined && tier === 'potato' ? floorCap : GENERIC_CAPS[tier].pixelRatio
     this.doctor.reclampPixelRatioCeiling(cap)
   }
 
-  private tightenPotatoFloor(): void {
-    this.doctor.reclampPixelRatioCeiling(POTATO_FLOOR_CAPS.pixelRatio)
-    this.doctor.forceDrawingBufferPixels(POTATO_FLOOR_CAPS.drawingBufferPixels)
+  private tightenPotatoFloor(caps: {
+    pixelRatio: number
+    drawingBufferPixels: number
+  }): void {
+    this.doctor.reclampPixelRatioCeiling(caps.pixelRatio)
+    this.doctor.forceDrawingBufferPixels(caps.drawingBufferPixels)
     this.doctor.forcePostfxOff()
     this.doctor.forceShadowsOff()
   }

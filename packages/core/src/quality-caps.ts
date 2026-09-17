@@ -60,6 +60,20 @@ export const POTATO_FLOOR_CAPS = {
   postfxOff: true,
 } as const
 
+/**
+ * One more generic-cap nudge when the potato floor still misses 30 FPS
+ * but avgFps is already in the high 20s. Do not apply meshLod/rtScale here.
+ */
+export const POTATO_NEAR_MISS_CAPS = {
+  pixelRatio: 0.4,
+  drawingBufferPixels: 5e5,
+  shadowCasters: 0,
+  postfxOff: true,
+} as const
+
+/** Inclusive lower bound for the high-20s near-miss floor nudge. */
+export const POTATO_NEAR_MISS_MIN_AVG_FPS = 24
+
 export const ADAPTER_KNOBS: Record<QualityTier, QualityKnobSet> = {
   potato: {
     fftSize: [64, 0, 0],
