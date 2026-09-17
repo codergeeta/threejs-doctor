@@ -128,9 +128,34 @@ describe('mountOverlay', () => {
     const text = document.getElementById('threejs-doctor-overlay')?.textContent ?? ''
     expect(text).toContain(String(report.score))
     expect(text).toMatch(/drawCalls/i)
-    if (report.deltas?.drawCalls !== undefined) {
-      expect(text).toContain(String(report.deltas.drawCalls))
-    }
+    const drawDelta = report.deltas?.drawCalls ?? 0
+    expect(text).toContain(`drawCalls: ${drawDelta >= 0 ? '+' : ''}${drawDelta}`)
+    doctor.unmountOverlay()
+  })
+
+  it('optimize does not flash diagnose-only overlay text', async () => {
+    const doctor = createDoctor()
+    await doctor.diagnose()
+    doctor.mountOverlay()
+    const el = document.getElementById('threejs-doctor-overlay')
+    expect(el).not.toBeNull()
+    const paints: string[] = []
+    const descriptor = Object.getOwnPropertyDescriptor(Node.prototype, 'textContent')
+    Object.defineProperty(el, 'textContent', {
+      configurable: true,
+      enumerable: true,
+      get() {
+        return descriptor?.get?.call(this) as string
+      },
+      set(value: string) {
+        paints.push(String(value))
+        descriptor?.set?.call(this, value)
+      },
+    })
+    const report = await doctor.optimize({ apply: ['safe'] })
+    expect(paints.some((t) => t.includes('No after metrics'))).toBe(false)
+    expect(paints.at(-1)).toContain(`Doctor Score ${report.score}`)
+    expect(paints.at(-1)).toMatch(/drawCalls/i)
     doctor.unmountOverlay()
   })
 })

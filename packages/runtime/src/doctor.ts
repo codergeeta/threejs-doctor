@@ -240,14 +240,14 @@ export class Doctor {
     return sample
   }
 
-  async diagnose(): Promise<DoctorReport> {
+  private async buildDiagnoseReport(): Promise<DoctorReport> {
     const baseline = this.baseline ?? (await this.measure())
     const device = this.device()
     const snap = this.currentSnapshot(baseline)
     const profile = resolveProfile(this.opts.profile ?? 'auto', snap)
     const findings = runRules(this.ruleContext(snap, device, profile))
     const score = computeDoctorScore(findings, snap, profile)
-    const report: DoctorReport = {
+    return {
       profile,
       mode: this.opts.mode ?? 'diagnose',
       score,
@@ -257,13 +257,17 @@ export class Doctor {
       failedPasses: [],
       incomplete: false,
     }
+  }
+
+  async diagnose(): Promise<DoctorReport> {
+    const report = await this.buildDiagnoseReport()
     this.lastReport = report
     this.overlay?.refresh()
     return report
   }
 
   async optimize(options: { apply?: Array<'safe' | PassId> } = {}): Promise<DoctorReport> {
-    const diagnosed = await this.diagnose()
+    const diagnosed = await this.buildDiagnoseReport()
     const passIds = resolvePassIds(options.apply ?? ['safe'])
     const device = this.device()
     const cameraPosition = cameraPositionOf(this.opts.camera)
