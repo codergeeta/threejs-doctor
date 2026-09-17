@@ -1,0 +1,301 @@
+import type {
+  AdapterCapability,
+  KnobHandle,
+  QualityAdapter,
+  QualityKnobSet,
+  QualityTier,
+} from '@threejs-doctor/core'
+import type { PelagicCascadeLike, PelagicDebugHandle, PelagicRtLike } from './pelagic-debug.js'
+
+const ADAPTER_ID = 'ocean-pelagic' as const
+
+const FULL_CAPABILITIES: AdapterCapability[] = [
+  'fftSize',
+  'rtScale',
+  'meshLod',
+  'deferredHdr',
+  'simPassCount',
+]
+
+/** Desktop reference sizes used only inside the adapter, never as report metrics. */
+const DESKTOP_RT = {
+  reflection: 768,
+  refraction: 768,
+  causticWide: 1024,
+  causticDetail: 1536,
+} as const
+
+const MESH_LOD = {
+  0: { water: [192, 128] as const, terrain: 192, detailCaustics: false },
+  1: { water: [288, 256] as const, terrain: 320, detailCaustics: true },
+  2: { water: [448, 256] as const, terrain: 432, detailCaustics: true },
+} as const
+
+interface DebugBag extends PelagicDebugHandle {
+  hdrDeferred?: boolean
+  blackBinds?: string[]
+  waterSegments?: readonly [number, number]
+  terrainSegments?: number
+}
+
+export function getPelagicDebug(root: unknown = globalThis): PelagicDebugHandle | undefined {
+  return (root as { pelagic?: { debug?: PelagicDebugHandle } }).pelagic?.debug
+}
+
+export function createOceanAdapter(debug?: PelagicDebugHandle | null): QualityAdapter {
+  const handle = debug ?? undefined
+  let simPassCount: number | undefined
+
+  if (handle?.runPass) {
+    const original = handle.runPass
+    handle.runPass = (...args: unknown[]) => {
+      simPassCount = (simPassCount ?? 0) + 1
+      return original.apply(handle, args)
+    }
+  }
+
+  const available = handle != null && hasOceanSurface(handle)
+
+  return {
+    id: ADAPTER_ID,
+    capabilities(): AdapterCapability[] {
+      return available ? [...FULL_CAPABILITIES] : []
+    },
+    snapshot(): QualityKnobSet {
+      return snapshotKnobs(handle)
+    },
+    apply(_tier: QualityTier, knobs: QualityKnobSet): KnobHandle {
+      if (!handle) return { rollback() {} }
+      return applyKnobs(handle, knobs)
+    },
+    readExtras() {
+      if (simPassCount === undefined) return {}
+      return { simPassCount }
+    },
+    takeExclusiveControl() {
+      if (!handle) return { release() {} }
+      return takeExclusive(handle)
+    },
+  }
+}
+
+function hasOceanSurface(debug: PelagicDebugHandle): boolean {
+  if (debug.cascades?.some((cascade) => cascade != null)) return true
+  return Boolean(
+    debug.reflectionTarget || debug.refractionTarget || debug.causticWide || debug.causticDetail,
+  )
+}
+
+function snapshotKnobs(debug: PelagicDebugHandle | undefined): QualityKnobSet {
+  if (!debug || !hasOceanSurface(debug)) return {}
+  const knobs: QualityKnobSet = {}
+  if (debug.cascades) {
+    knobs.fftSize = debug.cascades.map((cascade) => cascade?.size ?? 0)
+  }
+  if (debug.reflectionTarget) {
+    knobs.rtScale = debug.reflectionTarget.width / DESKTOP_RT.reflection
+  }
+  const bag = debug as DebugBag
+  if (bag.waterSegments) {
+    const match = ([0, 1, 2] as const).find(
+      (lod) =>
+        MESH_LOD[lod].water[0] === bag.waterSegments![0] &&
+        MESH_LOD[lod].water[1] === bag.waterSegments![1],
+    )
+    if (match !== undefined) knobs.meshLod = match
+  }
+  if (bag.hdrDeferred === true) knobs.deferredHdr = true
+  else if (bag.hdrDeferred === false) knobs.deferredHdr = false
+  return knobs
+}
+
+function applyKnobs(debug: PelagicDebugHandle, knobs: QualityKnobSet): KnobHandle {
+  const rollbacks: Array<() => void> = []
+  if (knobs.fftSize) rollbacks.push(applyFft(debug, knobs.fftSize))
+  if (knobs.rtScale !== undefined) rollbacks.push(applyRtScale(debug, knobs.rtScale))
+  if (knobs.meshLod !== undefined) rollbacks.push(applyMeshLod(debug, knobs.meshLod))
+  if (knobs.deferredHdr !== undefined) rollbacks.push(applyHdr(debug, knobs.deferredHdr))
+  return {
+    rollback() {
+      for (let i = rollbacks.length - 1; i >= 0; i--) rollbacks[i]!()
+    },
+  }
+}
+
+function applyFft(debug: PelagicDebugHandle, fftSize: number[]): () => void {
+  const cascades = debug.cascades
+  if (!cascades) return () => {}
+  const snaps: Array<{ cascade: PelagicCascadeLike | null | undefined; size: number | undefined }> =
+    fftSize.map((_, i) => {
+      const cascade = cascades[i]
+      return { cascade, size: cascade?.size }
+    })
+  const bag = debug as DebugBag
+  if (!bag.blackBinds) bag.blackBinds = []
+
+  fftSize.forEach((n, i) => {
+    if (n === 0) {
+      const cascade = cascades[i]
+      cascade?.dispose?.()
+      bag.blackBinds!.push(`cascade-${i}:1x1`)
+      cascades[i] = null
+      return
+    }
+    const cascade = cascades[i]
+    if (!cascade) return
+    if (cascade.resize) cascade.resize(n)
+    else cascade.size = n
+  })
+
+  return () => {
+    snaps.forEach((snap, i) => {
+      if (snap.cascade) {
+        cascades[i] = snap.cascade
+        if (snap.size !== undefined) {
+          if (snap.cascade.resize) snap.cascade.resize(snap.size)
+          else snap.cascade.size = snap.size
+        }
+        return
+      }
+      if (i < cascades.length) cascades[i] = snap.cascade ?? null
+    })
+  }
+}
+
+function applyRtScale(debug: PelagicDebugHandle, scale: number): () => void {
+  const ops: Array<() => void> = []
+  scaleRt(debug.reflectionTarget, 'reflectionTarget', DESKTOP_RT.reflection, scale, ops)
+  scaleRt(debug.refractionTarget, 'refractionTarget', DESKTOP_RT.refraction, scale, ops)
+  scaleRt(debug.causticWide, 'causticWide', DESKTOP_RT.causticWide, scale, ops)
+  scaleRt(debug.causticDetail, 'causticDetail', DESKTOP_RT.causticDetail, scale, ops)
+  return () => {
+    for (let i = ops.length - 1; i >= 0; i--) ops[i]!()
+  }
+}
+
+function scaleRt(
+  target: PelagicRtLike | null | undefined,
+  name: string,
+  desktop: number,
+  scale: number,
+  ops: Array<() => void>,
+): void {
+  if (target == null) return
+  if (typeof target.setSize !== 'function') {
+    throw new Error(`setSize missing on ${name}`)
+  }
+  const prevW = target.width
+  const prevH = target.height
+  const next = Math.round(desktop * scale)
+  target.setSize(next, next)
+  ops.push(() => {
+    target.setSize(prevW, prevH)
+  })
+}
+
+function applyMeshLod(debug: PelagicDebugHandle, lod: 0 | 1 | 2): () => void {
+  const spec = MESH_LOD[lod]
+  const bag = debug as DebugBag
+  const prevWaterGeom = debug.waterMesh?.geometry
+  const prevTerrainGeom = debug.terrainMesh?.geometry
+  const hadWaterSeg = Object.prototype.hasOwnProperty.call(bag, 'waterSegments')
+  const hadTerrainSeg = Object.prototype.hasOwnProperty.call(bag, 'terrainSegments')
+  const prevWaterSeg = bag.waterSegments
+  const prevTerrainSeg = bag.terrainSegments
+  const hadDetail = Object.prototype.hasOwnProperty.call(debug, 'causticDetail')
+  const prevDetail = bag.causticDetail
+
+  if (debug.waterMesh) {
+    debug.waterMesh.geometry = withSegments(prevWaterGeom, {
+      widthSegments: spec.water[0],
+      heightSegments: spec.water[1],
+    })
+    bag.waterSegments = spec.water
+  }
+  if (debug.terrainMesh) {
+    debug.terrainMesh.geometry = withSegments(prevTerrainGeom, { segments: spec.terrain })
+    bag.terrainSegments = spec.terrain
+  }
+  if (!spec.detailCaustics) bag.causticDetail = null
+
+  return () => {
+    if (debug.waterMesh) {
+      if (prevWaterGeom !== undefined) debug.waterMesh.geometry = prevWaterGeom
+      else delete debug.waterMesh.geometry
+    }
+    if (debug.terrainMesh) {
+      if (prevTerrainGeom !== undefined) debug.terrainMesh.geometry = prevTerrainGeom
+      else delete debug.terrainMesh.geometry
+    }
+    if (hadWaterSeg && prevWaterSeg) bag.waterSegments = prevWaterSeg
+    else delete bag.waterSegments
+    if (hadTerrainSeg && prevTerrainSeg !== undefined) bag.terrainSegments = prevTerrainSeg
+    else delete bag.terrainSegments
+    if (!spec.detailCaustics) {
+      if (hadDetail && prevDetail !== undefined) bag.causticDetail = prevDetail
+      else delete bag.causticDetail
+    }
+  }
+}
+
+function withSegments(geometry: unknown, extra: Record<string, number>): unknown {
+  if (typeof geometry === 'object' && geometry !== null) {
+    return { ...geometry, ...extra }
+  }
+  return extra
+}
+
+function applyHdr(debug: PelagicDebugHandle, deferred: boolean): () => void {
+  const bag = debug as DebugBag
+  const had = Object.prototype.hasOwnProperty.call(bag, 'hdrDeferred')
+  const prev = bag.hdrDeferred
+  bag.hdrDeferred = deferred
+  return () => {
+    if (had && prev === true) bag.hdrDeferred = true
+    else if (had && prev === false) bag.hdrDeferred = false
+    else delete bag.hdrDeferred
+  }
+}
+
+function takeExclusive(debug: PelagicDebugHandle): { release(): void } {
+  const restoreQuality = freezeEffectQuality(debug)
+  const loop = debug.dprLoop
+  const prevEnabled = loop?.enabled
+  if (loop) loop.enabled = false
+  let released = false
+  return {
+    release() {
+      if (released) return
+      released = true
+      restoreQuality()
+      if (loop && prevEnabled !== undefined) loop.enabled = prevEnabled
+    },
+  }
+}
+
+function freezeEffectQuality(debug: PelagicDebugHandle): () => void {
+  const frozen = debug.effectQuality
+  const existing = Object.getOwnPropertyDescriptor(debug, 'effectQuality')
+  Object.defineProperty(debug, 'effectQuality', {
+    configurable: true,
+    enumerable: existing?.enumerable ?? true,
+    get() {
+      return frozen
+    },
+    set() {
+      /* freeze host writes during takeover */
+    },
+  })
+  return () => {
+    if (existing) {
+      Object.defineProperty(debug, 'effectQuality', existing)
+      return
+    }
+    Object.defineProperty(debug, 'effectQuality', {
+      configurable: true,
+      enumerable: true,
+      writable: true,
+      value: frozen,
+    })
+  }
+}

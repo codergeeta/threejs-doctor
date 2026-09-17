@@ -52,6 +52,8 @@ const after = await doctor.optimize({ apply: ['safe'] })
 doctor.mountOverlay()
 ```
 
+Live ocean attach notes for the unpublished Quality Ladder adapter (this repo does not vendor the demo) are in [`examples/ocean-adapter/README.md`](examples/ocean-adapter/README.md).
+
 Safe passes: `dpr-cap`, `shadow-budget`, `postfx-budget`, `frameloop-demand`, `distance-cull`. Opt-in: `material-downgrade`.
 
 ## React Three Fiber
