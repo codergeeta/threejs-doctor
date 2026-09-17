@@ -372,6 +372,125 @@ describe('QualityController.runLadder', () => {
     expect(ticksBetween).toBeGreaterThanOrEqual(8 * 4)
   })
 
+  it('emergency-drops startTier low to potato on waitFrame windows with p95 ≥ 50ms', async () => {
+    const applies: QualityTier[] = []
+    let t = 0
+    const { doctor } = createLadderDoctor({
+      now: () => t,
+      waitFrame: async () => {
+        t += 60
+      },
+      measureFrames: 4,
+    })
+    const ladder = new QualityController(doctor, {
+      mode: 'safe-auto',
+      startTier: 'low',
+      maxTier: 'high',
+      windowFrames: 4,
+      waitForFirstInteractive: async () => {},
+    })
+    ladder.registerAdapter(adapterRecording(applies))
+    await ladder.boot()
+    const settled = await ladder.runLadder()
+    expect(applies[0]).toBe('low')
+    expect(applies).toContain('potato')
+    expect(settled.tier).toBe('potato')
+    expect(settled.startTier).toBe('low')
+  })
+
+  it('drops startTier low to potato after two waitFrame windows below 30 FPS', async () => {
+    const applies: QualityTier[] = []
+    let t = 0
+    const { doctor } = createLadderDoctor({
+      now: () => t,
+      waitFrame: async () => {
+        t += 40
+      },
+      measureFrames: 4,
+    })
+    const ladder = new QualityController(doctor, {
+      mode: 'safe-auto',
+      startTier: 'low',
+      maxTier: 'high',
+      windowFrames: 4,
+      waitForFirstInteractive: async () => {},
+    })
+    ladder.registerAdapter(adapterRecording(applies))
+    await ladder.boot()
+    const settled = await ladder.runLadder()
+    expect(applies[0]).toBe('low')
+    expect(applies).toContain('potato')
+    expect(settled.tier).toBe('potato')
+  })
+
+  it('emergency-drops from boot p95 when the first runtime waitFrame measure throws', async () => {
+    const applies: QualityTier[] = []
+    let t = 0
+    let frames = 0
+    const measureFrames = 4
+    const { doctor } = createLadderDoctor({
+      now: () => t,
+      waitFrame: async () => {
+        frames += 1
+        if (frames <= measureFrames) {
+          t += 80
+          return
+        }
+        throw new TypeError("Cannot read properties of null (reading 'pack')")
+      },
+      measureFrames,
+    })
+    doctor.mountOverlay()
+    const ladder = new QualityController(doctor, {
+      mode: 'safe-auto',
+      startTier: 'low',
+      maxTier: 'high',
+      windowFrames: 4,
+      waitForFirstInteractive: async () => {},
+    })
+    ladder.registerAdapter(adapterRecording(applies))
+    const boot = await ladder.boot()
+    expect(boot.tier).toBe('low')
+    expect(boot.baseline.p95FrameTimeMs).toBeGreaterThanOrEqual(HYSTERESIS.emergencyP95Ms)
+    const settled = await ladder.runLadder()
+    expect(settled.tier).toBe('potato')
+    expect(applies).toContain('potato')
+    expect(settled.incomplete).toBe(true)
+    expect(settled.after).toBeUndefined()
+    expect(settled.baseline.p95FrameTimeMs).toBeGreaterThanOrEqual(HYSTERESIS.emergencyP95Ms)
+    expect(document.getElementById('threejs-doctor-overlay')?.textContent).toMatch(/low→potato/)
+    doctor.unmountOverlay()
+  })
+
+  it('does not climb on 0ms waitFrame samples and still emergency-drops a later slow window', async () => {
+    const applies: QualityTier[] = []
+    let t = 0
+    let frames = 0
+    const { doctor } = createLadderDoctor({
+      now: () => t,
+      waitFrame: async () => {
+        frames += 1
+        if (frames <= 4) t += 16
+        else if (frames <= 16) t += 0
+        else t += 80
+      },
+      measureFrames: 4,
+    })
+    const ladder = new QualityController(doctor, {
+      mode: 'safe-auto',
+      startTier: 'low',
+      maxTier: 'high',
+      windowFrames: 4,
+      waitForFirstInteractive: async () => {},
+    })
+    ladder.registerAdapter(adapterRecording(applies))
+    await ladder.boot()
+    const settled = await ladder.runLadder()
+    expect(applies.filter((tier) => tier === 'mid' || tier === 'high')).toEqual([])
+    expect(applies).toContain('potato')
+    expect(settled.tier).toBe('potato')
+  })
+
   it('reclamps DPR if the host raises it above the safe-auto ceiling', async () => {
     const { doctor, renderer } = createLadderDoctor({ measureFrames: 4 })
     const ladder = new QualityController(doctor, {

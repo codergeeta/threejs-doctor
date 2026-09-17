@@ -12,6 +12,7 @@ export function createLadderDoctor(opts?: {
     shadowCastingLightCount: number
   }
   now?: () => number
+  waitFrame?: () => Promise<void>
   device?: ConstructorParameters<typeof Doctor>[0] extends infer O
     ? O extends { device?: infer D }
       ? D
@@ -96,6 +97,7 @@ export function createLadderDoctor(opts?: {
         lightCount: 2,
         shadowCastingLightCount: lights.filter((l) => l.castShadow).length,
       })),
+    ...(opts?.waitFrame ? { waitFrame: opts.waitFrame } : {}),
   })
   return { doctor, renderer, lights }
 }

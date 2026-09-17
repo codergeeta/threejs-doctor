@@ -32,6 +32,7 @@ export interface QualityControllerOptions {
   windowFrames?: number
   now?: () => number
   waitForFirstInteractive?: () => Promise<void>
+  onReport?: (report: QualityLadderReport) => void
 }
 
 export interface AppliedKnob {
@@ -98,6 +99,10 @@ function copyExtras(sample: MetricsSample, extras: AdapterExtras | undefined): M
   if (typeof extras.bytesLoaded === 'number') next.bytesLoaded = extras.bytesLoaded
   if (typeof extras.compileMs === 'number') next.compileMs = extras.compileMs
   return next
+}
+
+function isUsableSample(sample: MetricsSample | undefined): sample is MetricsSample {
+  return !!sample && sample.p95FrameTimeMs > 0
 }
 
 function diffMetrics(
@@ -274,8 +279,7 @@ export class QualityController {
     if (adapterUnavailable) report.adapterUnavailable = true
     if (this.mode === 'advise') report.recommendedTier = startTier
     this.booted = true
-    this.last = report
-    this.doctor.refreshOverlay()
+    this.publish(report)
     return report
   }
 
@@ -293,59 +297,62 @@ export class QualityController {
     let holdsAtTarget = 0
     // Consume applyFailed for hysteresis on the next window only (report flag stays).
     let pendingApplyFailed = this.last!.applyFailed
+    const bootSample = this.mergeExtras(this.last!.baseline)
+    if (isUsableSample(bootSample) && this.shouldSeedBootWindow(bootSample, pendingApplyFailed)) {
+      baseline = bootSample
+      const seeded = this.applyWindowDecision(state, bootSample, pendingApplyFailed, baseline, incomplete, {
+        allowStop: false,
+        holdsAtTarget,
+      })
+      state = seeded.state
+      pendingApplyFailed = seeded.pendingApplyFailed
+      holdsAtTarget = seeded.holdsAtTarget
+    }
     // Max 12 windows safety valve (unit tests and production).
     const maxWindows = 12
     try {
       for (let w = 0; w < maxWindows; w++) {
         if (this.mode !== 'advise') this.clampCeiling(state.tier)
-        const sample = await this.doctor.measure(windowFrames)
-        if (!baseline) baseline = this.mergeExtras(sample)
-        after = this.mergeExtras(sample)
-        const decision = evaluateWindow(state, sample.p95FrameTimeMs, {
-          applyFailed: pendingApplyFailed,
-        })
-        pendingApplyFailed = false
-        if (this.mode === 'advise') {
-          state = { ...decision.next, tier: state.tier }
-          const last = this.last!
-          const advised: QualityLadderReport = {
-            ...last,
-            recommendedTier: decision.next.tier,
-            baseline,
-            incomplete,
+        let sample: MetricsSample
+        try {
+          sample = this.mergeExtras(await this.doctor.measure(windowFrames))
+        } catch {
+          const fallback = after ?? baseline ?? this.last?.baseline
+          if (isUsableSample(fallback)) {
+            if (!baseline) baseline = fallback
+            const recovered = this.applyWindowDecision(
+              state,
+              fallback,
+              pendingApplyFailed,
+              baseline,
+              true,
+              { holdsAtTarget },
+            )
+            state = recovered.state
           }
-          this.last = advised
-          if (sample.p95FrameTimeMs <= HYSTERESIS.dropP95Ms) holdsAtTarget += 1
-          else holdsAtTarget = 0
-          if (holdsAtTarget >= 3 || decision.reason === 'floor') break
-          continue
-        }
-        if (decision.action === 'drop' || decision.action === 'climb') {
-          pendingApplyFailed = this.applyRung(decision.next.tier)
-          state = decision.next
-          holdsAtTarget = 0
-          continue
-        }
-        state = decision.next
-        if (decision.reason === 'floor') {
-          const last = this.last!
-          this.last = { ...last, floorFailed: true, tier: 'potato' }
+          incomplete = true
+          after = undefined
           break
         }
-        const atTarget = sample.p95FrameTimeMs <= HYSTERESIS.dropP95Ms
-        const waitingToClimb =
-          sample.p95FrameTimeMs <= HYSTERESIS.climbP95Ms && decision.reason !== 'ceiling'
-        if (atTarget && !waitingToClimb) holdsAtTarget += 1
-        else holdsAtTarget = 0
-        if (holdsAtTarget >= 3) break
+        if (!isUsableSample(sample)) {
+          continue
+        }
+        if (!baseline) baseline = sample
+        after = sample
+        const stepped = this.applyWindowDecision(state, sample, pendingApplyFailed, baseline, incomplete, {
+          holdsAtTarget,
+        })
+        state = stepped.state
+        pendingApplyFailed = stepped.pendingApplyFailed
+        holdsAtTarget = stepped.holdsAtTarget
+        if (stepped.stop) break
       }
     } catch {
       incomplete = true
       after = undefined
     }
     const report = this.finalize(state, baseline ?? this.last!.baseline, after, incomplete)
-    this.last = report
-    this.doctor.refreshOverlay()
+    this.publish(report)
     return report
   }
 
@@ -365,6 +372,105 @@ export class QualityController {
       // best-effort
     }
     this.exclusive = undefined
+  }
+
+  private publish(report: QualityLadderReport): void {
+    this.last = report
+    this.doctor.refreshOverlay()
+    this.options.onReport?.(report)
+  }
+
+  private shouldSeedBootWindow(sample: MetricsSample, applyFailed: boolean): boolean {
+    if (sample.p95FrameTimeMs >= HYSTERESIS.emergencyP95Ms) return true
+    return applyFailed && sample.p95FrameTimeMs > HYSTERESIS.dropP95Ms
+  }
+
+  private applyWindowDecision(
+    state: HysteresisState,
+    sample: MetricsSample,
+    pendingApplyFailed: boolean,
+    baseline: MetricsSample,
+    incomplete: boolean,
+    opts: { allowStop?: boolean; holdsAtTarget?: number } = {},
+  ): {
+    state: HysteresisState
+    pendingApplyFailed: boolean
+    holdsAtTarget: number
+    stop: boolean
+  } {
+    const allowStop = opts.allowStop !== false
+    let holdsAtTarget = opts.holdsAtTarget ?? 0
+    const decision = evaluateWindow(state, sample.p95FrameTimeMs, {
+      applyFailed: pendingApplyFailed,
+    })
+    const last = this.last!
+    if (this.mode === 'advise') {
+      const nextState = { ...decision.next, tier: state.tier }
+      const advised: QualityLadderReport = {
+        ...last,
+        recommendedTier: decision.next.tier,
+        baseline,
+        incomplete,
+      }
+      if (!incomplete) {
+        advised.after = sample
+        advised.deltas = diffMetrics(baseline, sample)
+      }
+      this.publish(advised)
+      holdsAtTarget = sample.p95FrameTimeMs <= HYSTERESIS.dropP95Ms ? holdsAtTarget + 1 : 0
+      const stop = allowStop && (holdsAtTarget >= 3 || decision.reason === 'floor')
+      return { state: nextState, pendingApplyFailed: false, holdsAtTarget, stop }
+    }
+    if (decision.action === 'drop' || decision.action === 'climb') {
+      const rungFailed = this.applyRung(decision.next.tier)
+      if (this.last) {
+        const published: QualityLadderReport = { ...this.last, baseline, incomplete }
+        if (!incomplete) {
+          published.after = sample
+          published.deltas = diffMetrics(baseline, sample)
+        }
+        this.publish(published)
+      }
+      return {
+        state: decision.next,
+        pendingApplyFailed: rungFailed,
+        holdsAtTarget: 0,
+        stop: false,
+      }
+    }
+    const nextLast: QualityLadderReport = {
+      ...last,
+      tier: decision.next.tier,
+      baseline,
+      incomplete,
+    }
+    if (decision.reason === 'floor') {
+      nextLast.floorFailed = true
+      nextLast.tier = 'potato'
+    }
+    if (!incomplete) {
+      nextLast.after = sample
+      nextLast.deltas = diffMetrics(baseline, sample)
+    }
+    this.publish(nextLast)
+    if (decision.reason === 'floor') {
+      return {
+        state: decision.next,
+        pendingApplyFailed: false,
+        holdsAtTarget: 0,
+        stop: allowStop,
+      }
+    }
+    const atTarget = sample.p95FrameTimeMs <= HYSTERESIS.dropP95Ms
+    const waitingToClimb =
+      sample.p95FrameTimeMs <= HYSTERESIS.climbP95Ms && decision.reason !== 'ceiling'
+    holdsAtTarget = atTarget && !waitingToClimb ? holdsAtTarget + 1 : 0
+    return {
+      state: decision.next,
+      pendingApplyFailed: false,
+      holdsAtTarget,
+      stop: allowStop && holdsAtTarget >= 3,
+    }
   }
 
   private hudState(): QualityHudState | undefined {
