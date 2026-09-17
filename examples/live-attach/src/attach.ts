@@ -10,6 +10,7 @@ import type { Profile, QualityMode } from '@threejs-doctor/core'
 import { discoverThreeHandles, type ExplicitHandles } from './discover.js'
 import { collectSceneStats } from './scene-stats.js'
 import { wrapRenderer } from './wrap-renderer.js'
+import { waitLiveFrame } from './wait-frame.js'
 
 export interface AttachQualityLadderOptions {
   mode?: QualityMode
@@ -26,12 +27,6 @@ export interface AttachQualityLadderOptions {
   mountOverlay?: boolean
   autoRun?: boolean
   log?: (line: string) => void
-}
-
-function rAF(): Promise<void> {
-  return new Promise((resolve) => {
-    requestAnimationFrame(() => resolve())
-  })
 }
 
 export async function attachQualityLadder(
@@ -56,8 +51,7 @@ export async function attachQualityLadder(
 
   const useLiveClock = options.now === undefined
   const waitFrame =
-    options.waitFrame ??
-    (useLiveClock && typeof requestAnimationFrame === 'function' ? rAF : undefined)
+    options.waitFrame ?? (useLiveClock ? waitLiveFrame(found.renderer) : undefined)
 
   const doctorOpts: DoctorOptions = {
     scene,
@@ -78,8 +72,6 @@ export async function attachQualityLadder(
   if (options.windowFrames !== undefined) qcOpts.windowFrames = options.windowFrames
   if (options.waitForFirstInteractive) {
     qcOpts.waitForFirstInteractive = options.waitForFirstInteractive
-  } else if (useLiveClock && typeof requestAnimationFrame === 'function') {
-    qcOpts.waitForFirstInteractive = rAF
   }
 
   const ladder = new QualityController(doctor, qcOpts)

@@ -72,4 +72,20 @@ describe('discoverThreeHandles', () => {
   it('returns undefined when nothing Three-like is present', () => {
     expect(discoverThreeHandles({ foo: 1, bar: 'nope' })).toBeUndefined()
   })
+
+  it('ignores throwing window getters while walking', () => {
+    const scene = fakeScene('throw')
+    const camera = fakeCamera()
+    const renderer = fakeRenderer('throw')
+    const root: Record<string, unknown> = { scene, camera, renderer }
+    Object.defineProperty(root, 'hostile', {
+      enumerable: true,
+      get() {
+        throw new Error('denied')
+      },
+    })
+    const found = discoverThreeHandles(root)
+    expect(found?.scene).toBe(scene)
+    expect(found?.renderer).toBe(renderer)
+  })
 })

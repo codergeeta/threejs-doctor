@@ -24,6 +24,14 @@ describe('QualityController.boot', () => {
     expect(boot.qualityMode).toBe('safe-auto')
   })
 
+  it('omits ttfiMs when waitForFirstInteractive is not provided', async () => {
+    const { doctor } = createLadderDoctor()
+    const ladder = new QualityController(doctor)
+    const boot = await ladder.boot()
+    expect(Object.prototype.hasOwnProperty.call(boot, 'ttfiMs')).toBe(false)
+    expect(boot.incomplete).toBe(false)
+  })
+
   it('records ttfiMs from a fake waitForFirstInteractive clock', async () => {
     let t = 1000
     const { doctor } = createLadderDoctor({ now: () => t })

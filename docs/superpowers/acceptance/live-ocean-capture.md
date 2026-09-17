@@ -29,7 +29,7 @@ Acceptance is **not** complete with ocean-simulation alone. After the ocean capt
 
 Use the unpublished IIFE in [`examples/live-attach`](../../../examples/live-attach/README.md): paste `examples/live-attach/dist/attach.iife.js` into DevTools on the live URL. It constructs `Doctor` + `QualityController` (`profile: 'game'`), registers `createOceanAdapter` only when `window.pelagic.debug` exists, then `boot()` + `runLadder()`. Default mode is `advise`. For Pass B, reload and set `window.__THREEJS_DOCTOR_ATTACH__ = { mode: 'safe-auto' }` before pasting again.
 
-The helper logs `console.log(JSON.stringify(report))`. Do not invent `avgFps` / `ttfiMs` / `after` / `simPassCount`.
+The helper logs `console.log(JSON.stringify(report))`. Do not invent `avgFps` / `ttfiMs` / `after` / `simPassCount`. Paste-after-load omits `ttfiMs` (it is not cold-load TTFI). Pass a `waitForFirstInteractive` hook only if you attached from document-start.
 
 Equivalent TypeScript (if you construct it yourself):
 
@@ -45,7 +45,7 @@ const doctor = new Doctor({
   profile: 'game',
 })
 const ladder = new QualityController(doctor, { mode: 'advise' })
-ladder.registerAdapter(createOceanAdapter(getPelagicDebug()))
+if (debug) ladder.registerAdapter(createOceanAdapter(debug))
 await ladder.boot()
 const report = await ladder.runLadder()
 console.log(JSON.stringify(report))
@@ -62,16 +62,16 @@ Cold load on the device class above.
 3. `await ladder.boot()` then `await ladder.runLadder()`.
 4. `JSON.stringify(report)` and save the file **off-repo** (phone Files app / AirDrop). Do not commit it.
 
-Expect score may already be high; FPS/TTFI are the story. Overlay stays read-only. `advise` must not mutate the scene.
+Expect score may already be high; FPS (and TTFI when captured from document-start) are the story. Overlay stays read-only. `advise` must not mutate the scene.
 
 ## 5. Pass B (`safe-auto`)
 
 Cold load again. Same camera path as Pass A.
 
 1. `mode: 'safe-auto'`.
-2. Record `ttfiMs` and settled windows from the report.
+2. Record settled windows from the report. Record `ttfiMs` only if it is present (document-start `waitForFirstInteractive`). Paste-after-load omits `ttfiMs` — do not fill it in.
 3. Compare to the bar:
-   - `ttfiMs < 3000`
+   - `ttfiMs < 3000` when that field was captured from cold load
    - then 3 windows with `avgFps ≥ 30` and `p95FrameTimeMs ≤ 33.4`
 4. Visible work: at least one of `simPassCount`, drawing-buffer pixels, RT pixel count, or triangles-across-views moved; score-only does not count.
 5. Save the JSON **off-repo**.

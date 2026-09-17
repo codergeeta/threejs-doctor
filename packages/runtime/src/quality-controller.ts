@@ -215,11 +215,14 @@ export class QualityController {
 
     let ttfiMs: number | undefined
     let incomplete = false
-    try {
-      await (this.options.waitForFirstInteractive ?? (async () => {}))()
-      ttfiMs = now() - bootStart
-    } catch {
-      incomplete = true
+    const waitInteractive = this.options.waitForFirstInteractive
+    if (waitInteractive) {
+      try {
+        await waitInteractive()
+        ttfiMs = now() - bootStart
+      } catch {
+        incomplete = true
+      }
     }
 
     const diagnosed = await this.doctor.diagnose()

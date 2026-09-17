@@ -3,6 +3,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const pkg = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const outfile = process.env.LIVE_ATTACH_OUTFILE ?? 'dist/attach.iife.js'
 
 await esbuild.build({
   absWorkingDir: pkg,
@@ -11,7 +12,7 @@ await esbuild.build({
   format: 'iife',
   platform: 'browser',
   target: 'es2022',
-  outfile: 'dist/attach.iife.js',
+  outfile,
   legalComments: 'none',
   banner: {
     js: '/* @threejs-doctor/live-attach-example unpublished. Paste into DevTools. Do not invent metrics. */',
@@ -24,4 +25,4 @@ await esbuild.build({
   },
 })
 
-console.log('wrote dist/attach.iife.js')
+console.log(`wrote ${outfile}`)

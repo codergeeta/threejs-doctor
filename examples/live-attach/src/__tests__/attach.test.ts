@@ -99,6 +99,7 @@ describe('attachQualityLadder', () => {
     expect(logged.qualityMode).toBe('advise')
     expect(logged.baseline.avgFps).toBe(report.baseline.avgFps)
     expect(logged.baseline.avgFps).toBe(62.5)
+    expect(Object.prototype.hasOwnProperty.call(report, 'ttfiMs')).toBe(false)
   })
 
   it('registers the ocean adapter when window.pelagic.debug exists', async () => {

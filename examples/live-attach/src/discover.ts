@@ -97,16 +97,30 @@ function walk(root: unknown): DiscoveredHandles | undefined {
     seen.add(value)
     visits += 1
 
-    if (!renderer && isRenderer(value)) renderer = value
-    if (!scene && isScene(value)) scene = value
-    if (!camera && isCamera(value)) camera = value
+    try {
+      if (!renderer && isRenderer(value)) renderer = value
+      if (!scene && isScene(value)) scene = value
+      if (!camera && isCamera(value)) camera = value
+    } catch {
+      continue
+    }
     if (scene && renderer && camera) break
 
-    for (const key of Object.keys(value)) {
+    let keys: string[] = []
+    try {
+      keys = Object.keys(value)
+    } catch {
+      continue
+    }
+    for (const key of keys) {
       if (SKIP_KEYS.has(key)) continue
-      const child = value[key]
-      if (!isRecord(child) || seen.has(child)) continue
-      queue.push({ value: child, depth: depth + 1 })
+      try {
+        const child = value[key]
+        if (!isRecord(child) || seen.has(child)) continue
+        queue.push({ value: child, depth: depth + 1 })
+      } catch {
+        continue
+      }
     }
   }
 

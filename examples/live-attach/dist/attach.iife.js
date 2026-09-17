@@ -1679,12 +1679,14 @@ ${line2}` : line1;
       }
       let ttfiMs;
       let incomplete = false;
-      try {
-        await (this.options.waitForFirstInteractive ?? (async () => {
-        }))();
-        ttfiMs = now() - bootStart;
-      } catch {
-        incomplete = true;
+      const waitInteractive = this.options.waitForFirstInteractive;
+      if (waitInteractive) {
+        try {
+          await waitInteractive();
+          ttfiMs = now() - bootStart;
+        } catch {
+          incomplete = true;
+        }
       }
       const diagnosed = await this.doctor.diagnose();
       let extras;
@@ -1771,34 +1773,21 @@ ${line2}` : line1;
             if (holdsAtTarget >= 3 || decision.reason === "floor") break;
             continue;
           }
-          if (decision.reason === "floor") {
-            const last = this.last;
-            this.last = { ...last, floorFailed: true, tier: "potato" };
-            break;
-          }
-          if (decision.action === "drop") {
-            this.applyRung(decision.next.tier);
-            state = decision.next;
-            holdsAtTarget = 0;
-            continue;
-          }
-          if (sample.p95FrameTimeMs <= HYSTERESIS.dropP95Ms) holdsAtTarget += 1;
-          else holdsAtTarget = 0;
-          if (holdsAtTarget >= 3) {
-            if (decision.action === "climb") {
-              state = { ...decision.next, tier: state.tier };
-            } else {
-              state = decision.next;
-            }
-            break;
-          }
-          if (decision.action === "climb") {
+          if (decision.action === "drop" || decision.action === "climb") {
             this.applyRung(decision.next.tier);
             state = decision.next;
             holdsAtTarget = 0;
             continue;
           }
           state = decision.next;
+          if (decision.reason === "floor") {
+            const last = this.last;
+            this.last = { ...last, floorFailed: true, tier: "potato" };
+            break;
+          }
+          if (sample.p95FrameTimeMs <= HYSTERESIS.dropP95Ms) holdsAtTarget += 1;
+          else holdsAtTarget = 0;
+          if (holdsAtTarget >= 3) break;
         }
       } catch {
         incomplete = true;
@@ -2039,15 +2028,29 @@ ${line2}` : line1;
       if (typeof value.nodeType === "number") continue;
       seen.add(value);
       visits += 1;
-      if (!renderer && isRenderer(value)) renderer = value;
-      if (!scene && isScene(value)) scene = value;
-      if (!camera && isCamera(value)) camera = value;
+      try {
+        if (!renderer && isRenderer(value)) renderer = value;
+        if (!scene && isScene(value)) scene = value;
+        if (!camera && isCamera(value)) camera = value;
+      } catch {
+        continue;
+      }
       if (scene && renderer && camera) break;
-      for (const key of Object.keys(value)) {
+      let keys = [];
+      try {
+        keys = Object.keys(value);
+      } catch {
+        continue;
+      }
+      for (const key of keys) {
         if (SKIP_KEYS.has(key)) continue;
-        const child = value[key];
-        if (!isRecord(child) || seen.has(child)) continue;
-        queue.push({ value: child, depth: depth + 1 });
+        try {
+          const child = value[key];
+          if (!isRecord(child) || seen.has(child)) continue;
+          queue.push({ value: child, depth: depth + 1 });
+        } catch {
+          continue;
+        }
       }
     }
     if (!scene || !renderer) return void 0;
@@ -2176,12 +2179,40 @@ ${line2}` : line1;
     return wrapped;
   }
 
-  // src/attach.ts
-  function rAF() {
-    return new Promise((resolve) => {
-      requestAnimationFrame(() => resolve());
+  // src/wait-frame.ts
+  function readRenderFrame(renderer) {
+    const frame = renderer?.info?.render?.frame;
+    return typeof frame === "number" ? frame : void 0;
+  }
+  function waitLiveFrame(renderer, schedule = (cb) => {
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(() => cb());
+    else cb();
+  }, maxTicks = 180) {
+    return () => new Promise((resolve) => {
+      const start = readRenderFrame(renderer);
+      if (start === void 0) {
+        schedule(() => resolve());
+        return;
+      }
+      let ticks = 0;
+      const tick = () => {
+        const current = readRenderFrame(renderer);
+        if (current !== void 0 && current !== start) {
+          resolve();
+          return;
+        }
+        ticks += 1;
+        if (ticks >= maxTicks) {
+          resolve();
+          return;
+        }
+        schedule(tick);
+      };
+      schedule(tick);
     });
   }
+
+  // src/attach.ts
   async function attachQualityLadder(options = {}) {
     const root = options.root ?? globalThis;
     const explicit = {};
@@ -2198,7 +2229,7 @@ ${line2}` : line1;
     const scene = found.scene;
     const camera = found.camera ?? {};
     const useLiveClock = options.now === void 0;
-    const waitFrame = options.waitFrame ?? (useLiveClock && typeof requestAnimationFrame === "function" ? rAF : void 0);
+    const waitFrame = options.waitFrame ?? (useLiveClock ? waitLiveFrame(found.renderer) : void 0);
     const doctorOpts = {
       scene,
       camera,
@@ -2217,8 +2248,6 @@ ${line2}` : line1;
     if (options.windowFrames !== void 0) qcOpts.windowFrames = options.windowFrames;
     if (options.waitForFirstInteractive) {
       qcOpts.waitForFirstInteractive = options.waitForFirstInteractive;
-    } else if (useLiveClock && typeof requestAnimationFrame === "function") {
-      qcOpts.waitForFirstInteractive = rAF;
     }
     const ladder = new QualityController(doctor, qcOpts);
     const debug = getPelagicDebug(root);
