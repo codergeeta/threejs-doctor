@@ -258,6 +258,7 @@ export class Doctor {
       incomplete: false,
     }
     this.lastReport = report
+    this.overlay?.refresh()
     return report
   }
 
@@ -335,6 +336,7 @@ export class Doctor {
       report.deltas = diffMetrics(diagnosed.baseline, after)
     }
     this.lastReport = report
+    this.overlay?.refresh()
     return report
   }
 
