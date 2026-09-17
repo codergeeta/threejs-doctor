@@ -165,7 +165,7 @@ describe('cli', () => {
     expect(report.appliedPasses).toEqual([])
   })
 
-  it('runBench returns a benchmark report from the harness stub', async () => {
+  it('runBench returns a benchmark report from the harness', async () => {
     const report = await runBench({
       ...defaultArgs,
       command: 'bench',

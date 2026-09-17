@@ -12,6 +12,9 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      '@threejs-doctor/core': path.resolve(root, '../core/src/index.ts'),
+      '@threejs-doctor/rules': path.resolve(root, '../rules/src/index.ts'),
+      '@threejs-doctor/runtime': path.resolve(root, '../runtime/src/index.ts'),
       '@threejs-doctor/bench': path.resolve(root, '../bench/src/index.ts'),
     },
   },
