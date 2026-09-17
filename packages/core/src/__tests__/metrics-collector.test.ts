@@ -25,10 +25,32 @@ describe('MetricsCollector', () => {
     expect(sample.drawCalls).toBe(25)
     expect(sample.triangles).toBe(8000)
     expect(sample.avgFps).toBeGreaterThan(50)
+    expect(sample.avgFps).toBeCloseTo(60)
     expect(sample.p95FrameTimeMs).toBeGreaterThan(0)
+    expect(sample.p95FrameTimeMs).toBe(20)
     expect(sample.textureCount).toBe(4)
+    expect(sample.estimatedVramBytes).toBe(16_000_000)
     expect(sample.geometryCount).toBe(3)
     expect(sample.lightCount).toBe(2)
     expect(sample.shadowCastingLightCount).toBe(1)
+  })
+
+  it('returns zero fps and p95 when no frames were marked', () => {
+    const collector = new MetricsCollector({
+      getRendererInfo: () => ({
+        render: { calls: 0, triangles: 0 },
+        memory: { geometries: 0, textures: 0 },
+      }),
+      getSceneStats: () => ({
+        textureCount: 0,
+        estimatedVramBytes: 0,
+        geometryCount: 0,
+        lightCount: 0,
+        shadowCastingLightCount: 0,
+      }),
+    })
+    const sample = collector.sample()
+    expect(sample.avgFps).toBe(0)
+    expect(sample.p95FrameTimeMs).toBe(0)
   })
 })
