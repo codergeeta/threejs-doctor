@@ -115,10 +115,52 @@ function applyKnobs(debug: PelagicDebugHandle, knobs: QualityKnobSet): KnobHandl
   if (knobs.rtScale !== undefined) rollbacks.push(applyRtScale(debug, knobs.rtScale))
   if (knobs.meshLod !== undefined) rollbacks.push(applyMeshLod(debug, knobs.meshLod))
   if (knobs.deferredHdr !== undefined) rollbacks.push(applyHdr(debug, knobs.deferredHdr))
+  if (knobs.spectrumEveryNFrames !== undefined) {
+    rollbacks.push(applySpectrumCadence(debug, knobs.spectrumEveryNFrames))
+  }
   return {
     rollback() {
       for (let i = rollbacks.length - 1; i >= 0; i--) rollbacks[i]!()
     },
+  }
+}
+
+function applySpectrumCadence(debug: PelagicDebugHandle, everyN: number): () => void {
+  if (everyN <= 1) return () => {}
+  const origUpdate = debug.updateSpectrum
+  const origRunPass = debug.runPass
+  let frames = 0
+  let skipping = false
+  const due = () => {
+    const run = frames % everyN === 0
+    frames += 1
+    return run
+  }
+  if (origUpdate) {
+    debug.updateSpectrum = () => {
+      if (!due()) {
+        skipping = true
+        return
+      }
+      skipping = false
+      return origUpdate.call(debug)
+    }
+  }
+  if (origRunPass) {
+    debug.runPass = (...args: unknown[]) => {
+      if (origUpdate) {
+        if (skipping) return
+        return origRunPass.apply(debug, args)
+      }
+      if (!due()) return
+      return origRunPass.apply(debug, args)
+    }
+  }
+  return () => {
+    if (origUpdate) debug.updateSpectrum = origUpdate
+    else delete debug.updateSpectrum
+    if (origRunPass) debug.runPass = origRunPass
+    else delete debug.runPass
   }
 }
 

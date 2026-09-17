@@ -102,6 +102,25 @@ describe('createOceanAdapter', () => {
     expect(adapter.readExtras?.()?.simPassCount).toBe(2)
   })
 
+  it('honors spectrumEveryNFrames on updateSpectrum/runPass and restores on rollback', () => {
+    const debug = fakeDebug()
+    const adapter = createOceanAdapter(debug)
+    const handle = adapter.apply('potato', { spectrumEveryNFrames: 2 })
+    debug.updateSpectrum?.()
+    expect(adapter.readExtras?.()?.simPassCount).toBe(2)
+    debug.updateSpectrum?.()
+    expect(adapter.readExtras?.()?.simPassCount).toBe(2)
+    debug.runPass?.()
+    expect(adapter.readExtras?.()?.simPassCount).toBe(2)
+    debug.updateSpectrum?.()
+    expect(adapter.readExtras?.()?.simPassCount).toBe(4)
+    handle.rollback()
+    debug.updateSpectrum?.()
+    expect(adapter.readExtras?.()?.simPassCount).toBe(6)
+    debug.runPass?.()
+    expect(adapter.readExtras?.()?.simPassCount).toBe(7)
+  })
+
   it('takeExclusiveControl freezes effectQuality and host dpr loop', () => {
     const debug = fakeDebug()
     const adapter = createOceanAdapter(debug)
