@@ -280,6 +280,26 @@ describe('v2 generic passes', () => {
     expect(renderer.drawingBufferWidth).toBe(3000)
   })
 
+  it('pixel-budget is a no-op without qualityTier so v1 optimize stays unchanged', () => {
+    const renderer = {
+      pixelRatio: 2,
+      drawingBufferWidth: 2000,
+      drawingBufferHeight: 2000,
+      setPixelRatio(v: number) {
+        this.pixelRatio = v
+      },
+      setDrawingBufferSize(w: number, h: number, pr: number) {
+        this.drawingBufferWidth = w
+        this.drawingBufferHeight = h
+        this.pixelRatio = pr
+      },
+    }
+    pixelBudgetPass.apply(baseCtx({ renderer: renderer as never }))
+    expect(renderer.drawingBufferWidth).toBe(2000)
+    expect(renderer.drawingBufferHeight).toBe(2000)
+    expect(renderer.pixelRatio).toBe(2)
+  })
+
   it('tone-map-lite sets NoToneMapping on potato and rollbacks', () => {
     const renderer = { pixelRatio: 1, toneMapping: 4, setPixelRatio() {} }
     const handle = toneMapLitePass.apply(
@@ -311,6 +331,12 @@ describe('v2 generic passes', () => {
     expect(renderer.toneMapping).toBe(0)
   })
 
+  it('tone-map-lite is a no-op without qualityTier', () => {
+    const renderer = { pixelRatio: 1, toneMapping: 4, setPixelRatio() {} }
+    toneMapLitePass.apply(baseCtx({ renderer: renderer as never }))
+    expect(renderer.toneMapping).toBe(4)
+  })
+
   it('anisotropy-cap lowers texture anisotropy and rollbacks', () => {
     const tex = { anisotropy: 8 }
     const scene = {
@@ -324,6 +350,18 @@ describe('v2 generic passes', () => {
     )
     expect(tex.anisotropy).toBe(1)
     handle.rollback()
+    expect(tex.anisotropy).toBe(8)
+  })
+
+  it('anisotropy-cap is a no-op without qualityTier', () => {
+    const tex = { anisotropy: 8 }
+    const scene = {
+      children: [],
+      traverse(cb: (o: { material?: { map?: { anisotropy: number } } }) => void) {
+        cb({ material: { map: tex } })
+      },
+    }
+    anisotropyCapPass.apply(baseCtx({ scene: scene as never }))
     expect(tex.anisotropy).toBe(8)
   })
 

@@ -4,11 +4,9 @@ import type { OptimizePass } from './types.js'
 export const toneMapLitePass: OptimizePass = {
   id: 'tone-map-lite',
   apply(ctx) {
+    if (ctx.qualityTier === undefined) return { rollback() {} }
     if (ctx.renderer.toneMapping === undefined) return { rollback() {} }
-    const target =
-      ctx.qualityTier !== undefined
-        ? GENERIC_CAPS[ctx.qualityTier].toneMapping
-        : GENERIC_CAPS.low.toneMapping
+    const target = GENERIC_CAPS[ctx.qualityTier].toneMapping
     if (target === undefined) return { rollback() {} }
     const prev = ctx.renderer.toneMapping
     if (prev <= target) return { rollback() {} }

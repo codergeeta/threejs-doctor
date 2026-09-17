@@ -54,7 +54,7 @@ doctor.mountOverlay()
 
 Live ocean attach notes for the unpublished Quality Ladder adapter (this repo does not vendor the demo) are in [`examples/ocean-adapter/README.md`](examples/ocean-adapter/README.md). Pasteable DevTools IIFE: [`examples/live-attach`](examples/live-attach/README.md).
 
-Safe passes: `dpr-cap`, `shadow-budget`, `postfx-budget`, `frameloop-demand`, `distance-cull`. Opt-in: `material-downgrade`.
+Safe passes: `dpr-cap`, `shadow-budget`, `postfx-budget`, `frameloop-demand`, `distance-cull`. Opt-in: `material-downgrade`. Quality Ladder also runs `pixel-budget`, `tone-map-lite`, and `anisotropy-cap` when `qualityTier` is set; those three are no-ops for v1 `optimize({ apply: ['safe'] })`.
 
 ## React Three Fiber
 

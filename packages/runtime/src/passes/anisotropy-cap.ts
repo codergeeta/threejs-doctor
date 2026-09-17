@@ -14,10 +14,8 @@ const MAP_KEYS = [
 export const anisotropyCapPass: OptimizePass = {
   id: 'anisotropy-cap',
   apply(ctx) {
-    const cap =
-      ctx.qualityTier !== undefined
-        ? GENERIC_CAPS[ctx.qualityTier].anisotropy
-        : GENERIC_CAPS.low.anisotropy
+    if (ctx.qualityTier === undefined) return { rollback() {} }
+    const cap = GENERIC_CAPS[ctx.qualityTier].anisotropy
     if (cap === undefined) return { rollback() {} }
     const touched: Array<{ tex: { anisotropy: number }; prev: number }> = []
     const restore = () => {

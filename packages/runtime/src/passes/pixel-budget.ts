@@ -4,14 +4,12 @@ import type { OptimizePass } from './types.js'
 export const pixelBudgetPass: OptimizePass = {
   id: 'pixel-budget',
   apply(ctx) {
+    if (ctx.qualityTier === undefined) return { rollback() {} }
     const renderer = ctx.renderer
     const prevRatio = renderer.pixelRatio
     const prevW = renderer.drawingBufferWidth
     const prevH = renderer.drawingBufferHeight
-    const capPixels =
-      ctx.qualityTier !== undefined
-        ? GENERIC_CAPS[ctx.qualityTier].drawingBufferPixels
-        : GENERIC_CAPS.low.drawingBufferPixels
+    const capPixels = GENERIC_CAPS[ctx.qualityTier].drawingBufferPixels
     const restore = () => {
       try {
         if (renderer.setDrawingBufferSize && prevW !== undefined && prevH !== undefined) {
