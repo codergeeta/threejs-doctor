@@ -165,6 +165,15 @@ describe('cli', () => {
     expect(report.appliedPasses).toEqual([])
   })
 
+  it('runScan remains a non-authoritative stub (score 100, empty findings, zero baseline)', async () => {
+    const report = await runScan({ ...defaultArgs, profile: 'game' })
+    expect(report.score).toBe(100)
+    expect(report.findings).toEqual([])
+    expect(report.baseline.avgFps).toBe(0)
+    expect(report.appliedPasses).toEqual([])
+    expect(report.mode).toBe('diagnose')
+  })
+
   it('runBench returns a benchmark report from the harness', async () => {
     const report = await runBench({
       ...defaultArgs,

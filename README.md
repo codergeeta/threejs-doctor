@@ -105,6 +105,8 @@ Numbers below are copied from that JSON (`baseline` / `after` / `deltas`, plus D
 
 Paste exact `baseline` / `after` / `deltas` numbers from the bench JSON into release notes — never invent after metrics. If after-measure fails, mark the run incomplete and keep baseline only.
 
+Live Quality Ladder proof is captured per [`docs/superpowers/acceptance/live-ocean-capture.md`](docs/superpowers/acceptance/live-ocean-capture.md); never invent after metrics.
+
 ## Telemetry
 
 Off by default. No network reporting in v1.
