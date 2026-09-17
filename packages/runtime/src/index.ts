@@ -1,1 +1,10 @@
 export const PACKAGE_NAME = '@threejs-doctor/runtime' as const
+export * from './doctor.js'
+export * from './passes/types.js'
+export { dprCapPass } from './passes/dpr-cap.js'
+export { shadowBudgetPass } from './passes/shadow-budget.js'
+export { postfxBudgetPass } from './passes/postfx-budget.js'
+export { frameloopDemandPass } from './passes/frameloop-demand.js'
+export { distanceCullPass } from './passes/distance-cull.js'
+export { materialDowngradePass } from './passes/material-downgrade.js'
+export { mountOverlay } from './overlay/mount-overlay.js'
