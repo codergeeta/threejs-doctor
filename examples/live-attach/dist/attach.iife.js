@@ -91,10 +91,52 @@
     if (knobs.rtScale !== void 0) rollbacks.push(applyRtScale(debug, knobs.rtScale));
     if (knobs.meshLod !== void 0) rollbacks.push(applyMeshLod(debug, knobs.meshLod));
     if (knobs.deferredHdr !== void 0) rollbacks.push(applyHdr(debug, knobs.deferredHdr));
+    if (knobs.spectrumEveryNFrames !== void 0) {
+      rollbacks.push(applySpectrumCadence(debug, knobs.spectrumEveryNFrames));
+    }
     return {
       rollback() {
         for (let i = rollbacks.length - 1; i >= 0; i--) rollbacks[i]();
       }
+    };
+  }
+  function applySpectrumCadence(debug, everyN) {
+    if (everyN <= 1) return () => {
+    };
+    const origUpdate = debug.updateSpectrum;
+    const origRunPass = debug.runPass;
+    let frames = 0;
+    let skipping = false;
+    const due = () => {
+      const run = frames % everyN === 0;
+      frames += 1;
+      return run;
+    };
+    if (origUpdate) {
+      debug.updateSpectrum = () => {
+        if (!due()) {
+          skipping = true;
+          return;
+        }
+        skipping = false;
+        return origUpdate.call(debug);
+      };
+    }
+    if (origRunPass) {
+      debug.runPass = (...args) => {
+        if (origUpdate) {
+          if (skipping) return;
+          return origRunPass.apply(debug, args);
+        }
+        if (!due()) return;
+        return origRunPass.apply(debug, args);
+      };
+    }
+    return () => {
+      if (origUpdate) debug.updateSpectrum = origUpdate;
+      else delete debug.updateSpectrum;
+      if (origRunPass) debug.runPass = origRunPass;
+      else delete debug.runPass;
     };
   }
   function applyFft(debug, fftSize) {
@@ -507,6 +549,7 @@
       };
     };
     if (p95FrameTimeMs >= HYSTERESIS.emergencyP95Ms) return dropTo("emergency");
+    if (opts2.applyFailed && p95FrameTimeMs > HYSTERESIS.dropP95Ms) return dropTo("below-target");
     let consecutiveSlow = state.consecutiveSlow;
     let consecutiveFast = state.consecutiveFast;
     if (p95FrameTimeMs > HYSTERESIS.dropP95Ms) {
@@ -912,11 +955,13 @@
   var pixelBudgetPass = {
     id: "pixel-budget",
     apply(ctx) {
+      if (ctx.qualityTier === void 0) return { rollback() {
+      } };
       const renderer = ctx.renderer;
       const prevRatio = renderer.pixelRatio;
       const prevW = renderer.drawingBufferWidth;
       const prevH = renderer.drawingBufferHeight;
-      const capPixels = ctx.qualityTier !== void 0 ? GENERIC_CAPS[ctx.qualityTier].drawingBufferPixels : GENERIC_CAPS.low.drawingBufferPixels;
+      const capPixels = GENERIC_CAPS[ctx.qualityTier].drawingBufferPixels;
       const restore = () => {
         try {
           if (renderer.setDrawingBufferSize && prevW !== void 0 && prevH !== void 0) {
@@ -1035,9 +1080,11 @@
   var toneMapLitePass = {
     id: "tone-map-lite",
     apply(ctx) {
+      if (ctx.qualityTier === void 0) return { rollback() {
+      } };
       if (ctx.renderer.toneMapping === void 0) return { rollback() {
       } };
-      const target = ctx.qualityTier !== void 0 ? GENERIC_CAPS[ctx.qualityTier].toneMapping : GENERIC_CAPS.low.toneMapping;
+      const target = GENERIC_CAPS[ctx.qualityTier].toneMapping;
       if (target === void 0) return { rollback() {
       } };
       const prev = ctx.renderer.toneMapping;
@@ -1070,7 +1117,9 @@
   var anisotropyCapPass = {
     id: "anisotropy-cap",
     apply(ctx) {
-      const cap = ctx.qualityTier !== void 0 ? GENERIC_CAPS[ctx.qualityTier].anisotropy : GENERIC_CAPS.low.anisotropy;
+      if (ctx.qualityTier === void 0) return { rollback() {
+      } };
+      const cap = GENERIC_CAPS[ctx.qualityTier].anisotropy;
       if (cap === void 0) return { rollback() {
       } };
       const touched = [];
@@ -1407,10 +1456,13 @@ ${line2}` : line1;
         collector.endFrame(now());
       }
       const sample = collector.sample();
+      const width = this.opts.renderer.drawingBufferWidth;
+      const height = this.opts.renderer.drawingBufferHeight;
+      const measured = typeof width === "number" && typeof height === "number" ? { ...sample, drawingBufferPixels: width * height } : sample;
       this.previousSnapshot = this.lastSnapshot;
-      this.lastSnapshot = this.currentSnapshot(sample);
-      this.baseline = sample;
-      return sample;
+      this.lastSnapshot = this.currentSnapshot(measured);
+      this.baseline = measured;
+      return measured;
     }
     async buildDiagnoseReport() {
       const baseline = this.baseline ?? await this.measure();
@@ -1559,10 +1611,14 @@ ${line2}` : line1;
     const knobs = {};
     const applied = [];
     const advertised = new Set(capabilities);
+    const unsupported = [];
     const maybeSet = (key, cap) => {
-      if (!advertised.has(cap)) return;
       const value = table[key];
       if (value === void 0) return;
+      if (!advertised.has(cap)) {
+        if (!unsupported.includes(cap)) unsupported.push(cap);
+        return;
+      }
       knobs[key] = value;
       applied.push({ capability: cap, value });
     };
@@ -1571,7 +1627,7 @@ ${line2}` : line1;
     maybeSet("rtScale", "rtScale");
     maybeSet("meshLod", "meshLod");
     maybeSet("deferredHdr", "deferredHdr");
-    return { knobs, applied, unsupported: [] };
+    return { knobs, applied, unsupported };
   }
   function copyExtras(sample, extras) {
     if (!extras) return sample;
@@ -1748,6 +1804,7 @@ ${line2}` : line1;
       let after;
       let incomplete = this.last.incomplete;
       let holdsAtTarget = 0;
+      let pendingApplyFailed = this.last.applyFailed;
       const maxWindows = 12;
       try {
         for (let w = 0; w < maxWindows; w++) {
@@ -1756,8 +1813,9 @@ ${line2}` : line1;
           if (!baseline) baseline = this.mergeExtras(sample);
           after = this.mergeExtras(sample);
           const decision = evaluateWindow(state, sample.p95FrameTimeMs, {
-            applyFailed: this.last.applyFailed
+            applyFailed: pendingApplyFailed
           });
+          pendingApplyFailed = false;
           if (this.mode === "advise") {
             state = { ...decision.next, tier: state.tier };
             const last = this.last;
@@ -1774,7 +1832,7 @@ ${line2}` : line1;
             continue;
           }
           if (decision.action === "drop" || decision.action === "climb") {
-            this.applyRung(decision.next.tier);
+            pendingApplyFailed = this.applyRung(decision.next.tier);
             state = decision.next;
             holdsAtTarget = 0;
             continue;
@@ -1785,7 +1843,9 @@ ${line2}` : line1;
             this.last = { ...last, floorFailed: true, tier: "potato" };
             break;
           }
-          if (sample.p95FrameTimeMs <= HYSTERESIS.dropP95Ms) holdsAtTarget += 1;
+          const atTarget = sample.p95FrameTimeMs <= HYSTERESIS.dropP95Ms;
+          const waitingToClimb = sample.p95FrameTimeMs <= HYSTERESIS.climbP95Ms && decision.reason !== "ceiling";
+          if (atTarget && !waitingToClimb) holdsAtTarget += 1;
           else holdsAtTarget = 0;
           if (holdsAtTarget >= 3) break;
         }
@@ -1856,12 +1916,16 @@ ${line2}` : line1;
       const failedPasses = [];
       const appliedKnobs = [];
       let unsupportedKnobs = [];
+      let thisRungFailed = false;
       let applyFailed = this.last?.applyFailed ?? false;
       let adapterUnavailable = this.last?.adapterUnavailable ?? false;
       const result = this.doctor.applyPassesImmediate([...SAFE_PASSES], { qualityTier: tier });
       appliedPasses.push(...result.appliedPasses);
       failedPasses.push(...result.failedPasses);
-      if (failedPasses.length > 0) applyFailed = true;
+      if (failedPasses.length > 0) {
+        applyFailed = true;
+        thisRungFailed = true;
+      }
       if (this.adapter && this.mode !== "advise") {
         let caps;
         try {
@@ -1886,6 +1950,7 @@ ${line2}` : line1;
             } catch {
             }
             applyFailed = true;
+            thisRungFailed = true;
           }
         }
       }
@@ -1902,6 +1967,7 @@ ${line2}` : line1;
         if (adapterUnavailable) next.adapterUnavailable = true;
         this.last = next;
       }
+      return thisRungFailed;
     }
     finalize(state, baseline, after, incomplete) {
       const last = this.last;
