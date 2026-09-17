@@ -5,5 +5,6 @@ export default defineConfig({
     name: 'rules',
     environment: 'node',
     include: ['src/**/*.test.ts'],
+    passWithNoTests: true,
   },
 })

@@ -5,5 +5,6 @@ export default defineConfig({
     name: 'r3f',
     environment: 'node',
     include: ['src/**/*.test.ts'],
+    passWithNoTests: true,
   },
 })
