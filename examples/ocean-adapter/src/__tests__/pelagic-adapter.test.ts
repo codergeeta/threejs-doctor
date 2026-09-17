@@ -258,6 +258,77 @@ describe('createOceanAdapter', () => {
     expect(() => hostSpectrumTick(debug)).not.toThrow()
   })
 
+  it('does not replace BufferGeometry-like meshes via object spread on meshLod', () => {
+    class FakeBufferGeometry {
+      attributes = { position: { array: new Float32Array(9) } }
+      getAttribute(name: string) {
+        return this.attributes[name as 'position']
+      }
+    }
+    const waterGeom = new FakeBufferGeometry()
+    const terrainGeom = new FakeBufferGeometry()
+    const debug = fakeDebug()
+    debug.waterMesh = { geometry: waterGeom }
+    debug.terrainMesh = { geometry: terrainGeom }
+    const adapter = createOceanAdapter(debug)
+    const handle = adapter.apply('low', { meshLod: 1 })
+    const drawnWater = debug.waterMesh.geometry as FakeBufferGeometry
+    const drawnTerrain = debug.terrainMesh.geometry as FakeBufferGeometry
+    expect(drawnWater).toBe(waterGeom)
+    expect(drawnTerrain).toBe(terrainGeom)
+    expect(typeof drawnWater.getAttribute).toBe('function')
+    expect(typeof drawnTerrain.getAttribute).toBe('function')
+    handle.rollback()
+    expect(debug.waterMesh.geometry).toBe(waterGeom)
+    expect(debug.terrainMesh.geometry).toBe(terrainGeom)
+  })
+
+  it('skips an RT whose setSize throws and does not leave pack null', () => {
+    const debug = hostLikeDebug()
+    const reflectionPack = { uniforms: { uGain: { value: 1 } } }
+    const prevW = debug.reflectionTarget!.width
+    debug.reflectionTarget = {
+      width: prevW,
+      height: prevW,
+      pack: reflectionPack,
+      framebuffer: { id: 'fb-refl' },
+      setSize() {
+        throw new Error('resize failed')
+      },
+    } as PelagicRtLike
+    const refractionW = debug.refractionTarget!.width
+    const adapter = createOceanAdapter(debug)
+    expect(() => adapter.apply('potato', { rtScale: 0.35 })).not.toThrow()
+    expect(debug.reflectionTarget.width).toBe(prevW)
+    expect((debug.reflectionTarget as PelagicRtLike & { pack: unknown }).pack).toBe(reflectionPack)
+    expect(debug.refractionTarget!.width).toBe(Math.round(refractionW * 0.35))
+    expect(() => hostWeatherTick(debug)).not.toThrow()
+  })
+
+  it('restores and skips an RT whose setSize leaves framebuffer null', () => {
+    const debug = hostLikeDebug()
+    const prevW = debug.reflectionTarget!.width
+    const prevFb = { id: 'fb-ok' }
+    debug.reflectionTarget = {
+      width: prevW,
+      height: prevW,
+      framebuffer: prevFb as unknown,
+      pack: { uniforms: {} },
+      setSize(nw: number, nh: number) {
+        this.width = nw
+        this.height = nh
+        this.framebuffer = null
+      },
+    } as PelagicRtLike & { framebuffer: unknown; pack: unknown }
+    const adapter = createOceanAdapter(debug)
+    adapter.apply('potato', { rtScale: 0.35 })
+    expect(debug.reflectionTarget.width).toBe(prevW)
+    expect(
+      (debug.reflectionTarget as PelagicRtLike & { framebuffer: unknown }).framebuffer,
+    ).toBe(prevFb)
+    expect((debug.reflectionTarget as PelagicRtLike & { pack: unknown }).pack).not.toBeNull()
+  })
+
   it('takeExclusiveControl freezes effectQuality and host dpr loop', () => {
     const debug = fakeDebug()
     const adapter = createOceanAdapter(debug)

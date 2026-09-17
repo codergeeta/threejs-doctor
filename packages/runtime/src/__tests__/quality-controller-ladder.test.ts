@@ -491,6 +491,45 @@ describe('QualityController.runLadder', () => {
     expect(settled.tier).toBe('potato')
   })
 
+  it('publishes incomplete when the first runtime window is 0/0 and boot was not seeded', async () => {
+    const reports: Array<{ incomplete: boolean; after?: unknown }> = []
+    const { doctor, info } = createLadderDoctor({
+      now: (() => {
+        let t = 0
+        return () => {
+          t += 40
+          return t
+        }
+      })(),
+      measureFrames: 4,
+    })
+    const ladder = new QualityController(doctor, {
+      mode: 'safe-auto',
+      startTier: 'potato',
+      maxTier: 'potato',
+      windowFrames: 4,
+      waitForFirstInteractive: async () => {},
+      onReport(report) {
+        reports.push(report)
+      },
+    })
+    const boot = await ladder.boot()
+    expect(boot.incomplete).toBe(false)
+    expect(boot.baseline.drawCalls).toBeGreaterThan(0)
+    expect(boot.baseline.p95FrameTimeMs).toBeLessThan(50)
+    info.render.calls = 0
+    info.render.triangles = 0
+    const settled = await ladder.runLadder()
+    expect(settled.incomplete).toBe(true)
+    expect(settled.after).toBeUndefined()
+    expect(settled.deltas).toBeUndefined()
+    expect(settled.applyFailed).toBe(true)
+    expect(settled.baseline.drawCalls).toBeGreaterThan(0)
+    expect(settled.baseline.triangles).toBeGreaterThan(0)
+    expect(reports.at(-1)?.incomplete).toBe(true)
+    expect(reports.at(-1)?.after).toBeUndefined()
+  })
+
   it('marks incomplete and omits after/deltas when after-measure has zero geometry but baseline did not', async () => {
     const { doctor, info } = createLadderDoctor({
       now: (() => {

@@ -178,16 +178,26 @@ function isCascadeTouchSafe(
   cascade: PelagicCascadeLike | null | undefined,
 ): cascade is PelagicCascadeLike {
   if (cascade == null) return false
-  const bag = cascade as PelagicCascadeLike & { texture?: unknown; framebuffer?: unknown }
+  const bag = cascade as PelagicCascadeLike & {
+    texture?: unknown
+    framebuffer?: unknown
+    pack?: unknown
+  }
   if (bag.texture === null) return false
-  if (Object.prototype.hasOwnProperty.call(bag, 'framebuffer') && bag.framebuffer === null) return false
+  if (Object.prototype.hasOwnProperty.call(bag, 'framebuffer') && bag.framebuffer === null) {
+    return false
+  }
+  if (Object.prototype.hasOwnProperty.call(bag, 'pack') && bag.pack === null) return false
   return true
 }
 
 function isRtTouchSafe(target: PelagicRtLike): boolean {
-  const bag = target as PelagicRtLike & { texture?: unknown; framebuffer?: unknown }
+  const bag = target as PelagicRtLike & { texture?: unknown; framebuffer?: unknown; pack?: unknown }
   if (bag.texture === null) return false
-  if (Object.prototype.hasOwnProperty.call(bag, 'framebuffer') && bag.framebuffer === null) return false
+  if (Object.prototype.hasOwnProperty.call(bag, 'framebuffer') && bag.framebuffer === null) {
+    return false
+  }
+  if (Object.prototype.hasOwnProperty.call(bag, 'pack') && bag.pack === null) return false
   return true
 }
 
@@ -283,43 +293,34 @@ function scaleRt(
   if (!isRtTouchSafe(target)) return
   const prevW = target.width
   const prevH = target.height
+  const bag = target as PelagicRtLike & { framebuffer?: unknown }
+  const hadFb = Object.prototype.hasOwnProperty.call(bag, 'framebuffer')
+  const prevFb = bag.framebuffer
   const next = Math.round(desktop * scale)
   try {
     target.setSize(next, next)
-  } catch (err) {
+  } catch {
+    return
+  }
+  if (!isRtTouchSafe(target)) {
     try {
       target.setSize(prevW, prevH)
     } catch {
-      // best-effort restore before rethrow
+      // best-effort restore of the skipped RT only
     }
-    throw err
+    if (hadFb) bag.framebuffer = prevFb
+    return
   }
   ops.push(() => {
     target.setSize(prevW, prevH)
   })
 }
 
-function applyMeshLod(debug: PelagicDebugHandle, lod: 0 | 1 | 2): () => void {
-  const spec = MESH_LOD[lod]
-  const bag = debug as DebugBag
+function applyMeshLod(debug: PelagicDebugHandle, _lod: 0 | 1 | 2): () => void {
   const prevWaterGeom = debug.waterMesh?.geometry
   const prevTerrainGeom = debug.terrainMesh?.geometry
-  const hadWaterSeg = Object.prototype.hasOwnProperty.call(bag, 'waterSegments')
-  const hadTerrainSeg = Object.prototype.hasOwnProperty.call(bag, 'terrainSegments')
-  const prevWaterSeg = bag.waterSegments
-  const prevTerrainSeg = bag.terrainSegments
-  if (debug.waterMesh) {
-    debug.waterMesh.geometry = withSegments(prevWaterGeom, {
-      widthSegments: spec.water[0],
-      heightSegments: spec.water[1],
-    })
-    bag.waterSegments = spec.water
-  }
-  if (debug.terrainMesh) {
-    debug.terrainMesh.geometry = withSegments(prevTerrainGeom, { segments: spec.terrain })
-    bag.terrainSegments = spec.terrain
-  }
-
+  // Pelagic debug has no BufferGeometry rebuild API. Spreading a Three.js
+  // BufferGeometry yields a plain object and the renderer draws nothing.
   return () => {
     if (debug.waterMesh) {
       if (prevWaterGeom !== undefined) debug.waterMesh.geometry = prevWaterGeom
@@ -329,18 +330,7 @@ function applyMeshLod(debug: PelagicDebugHandle, lod: 0 | 1 | 2): () => void {
       if (prevTerrainGeom !== undefined) debug.terrainMesh.geometry = prevTerrainGeom
       else delete debug.terrainMesh.geometry
     }
-    if (hadWaterSeg && prevWaterSeg) bag.waterSegments = prevWaterSeg
-    else delete bag.waterSegments
-    if (hadTerrainSeg && prevTerrainSeg !== undefined) bag.terrainSegments = prevTerrainSeg
-    else delete bag.terrainSegments
   }
-}
-
-function withSegments(geometry: unknown, extra: Record<string, number>): unknown {
-  if (typeof geometry === 'object' && geometry !== null) {
-    return { ...geometry, ...extra }
-  }
-  return extra
 }
 
 function applyHdr(debug: PelagicDebugHandle, deferred: boolean): () => void {

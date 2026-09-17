@@ -105,9 +105,13 @@ function isUsableSample(sample: MetricsSample | undefined): sample is MetricsSam
   return !!sample && sample.p95FrameTimeMs > 0
 }
 
-function renderPathCollapsed(baseline: MetricsSample, after: MetricsSample): boolean {
+function isBrokenAfterGeometry(baseline: MetricsSample, after: MetricsSample): boolean {
   const hadGeometry = baseline.drawCalls > 0 || baseline.triangles > 0
   return hadGeometry && after.drawCalls === 0 && after.triangles === 0
+}
+
+function hasGeometry(sample: MetricsSample): boolean {
+  return sample.drawCalls > 0 || sample.triangles > 0
 }
 
 function diffMetrics(
@@ -340,26 +344,19 @@ export class QualityController {
           after = undefined
           break
         }
-        if (!isUsableSample(sample)) {
-          continue
-        }
-        if (!baseline) baseline = sample
-        else if (renderPathCollapsed(baseline, sample)) {
-          this.rollbackAdapterKnobs()
-          incomplete = true
-          after = undefined
-          if (this.last) {
-            this.last = {
-              ...this.last,
-              applyFailed: true,
-              incomplete: true,
-              appliedKnobs: [],
-              floorFailed: this.last.floorFailed || this.last.tier === 'potato',
-            }
+          if (!isUsableSample(sample)) {
+            continue
           }
-          break
-        }
-        after = sample
+          const geometryRef = baseline ?? this.last?.baseline
+          if (geometryRef && isBrokenAfterGeometry(geometryRef, sample)) {
+            this.markCollapsedAfter(geometryRef)
+            incomplete = true
+            after = undefined
+            baseline = geometryRef
+            break
+          }
+          if (!baseline) baseline = sample
+          after = sample
         const stepped = this.applyWindowDecision(state, sample, pendingApplyFailed, baseline, incomplete, {
           holdsAtTarget,
         })
@@ -425,17 +422,22 @@ export class QualityController {
       applyFailed: pendingApplyFailed,
     })
     const last = this.last!
+    const broken = isBrokenAfterGeometry(baseline, sample)
+    const reportIncomplete = incomplete || broken
     if (this.mode === 'advise') {
       const nextState = { ...decision.next, tier: state.tier }
       const advised: QualityLadderReport = {
         ...last,
         recommendedTier: decision.next.tier,
         baseline,
-        incomplete,
+        incomplete: reportIncomplete,
       }
-      if (!incomplete) {
+      if (!reportIncomplete) {
         advised.after = sample
         advised.deltas = diffMetrics(baseline, sample)
+      } else {
+        delete advised.after
+        delete advised.deltas
       }
       this.publish(advised)
       holdsAtTarget = sample.p95FrameTimeMs <= HYSTERESIS.dropP95Ms ? holdsAtTarget + 1 : 0
@@ -445,10 +447,17 @@ export class QualityController {
     if (decision.action === 'drop' || decision.action === 'climb') {
       const rungFailed = this.applyRung(decision.next.tier)
       if (this.last) {
-        const published: QualityLadderReport = { ...this.last, baseline, incomplete }
-        if (!incomplete) {
+        const published: QualityLadderReport = {
+          ...this.last,
+          baseline,
+          incomplete: reportIncomplete,
+        }
+        if (!reportIncomplete) {
           published.after = sample
           published.deltas = diffMetrics(baseline, sample)
+        } else {
+          delete published.after
+          delete published.deltas
         }
         this.publish(published)
       }
@@ -463,15 +472,18 @@ export class QualityController {
       ...last,
       tier: decision.next.tier,
       baseline,
-      incomplete,
+      incomplete: reportIncomplete,
     }
     if (decision.reason === 'floor') {
       nextLast.floorFailed = true
       nextLast.tier = 'potato'
     }
-    if (!incomplete) {
+    if (!reportIncomplete) {
       nextLast.after = sample
       nextLast.deltas = diffMetrics(baseline, sample)
+    } else {
+      delete nextLast.after
+      delete nextLast.deltas
     }
     this.publish(nextLast)
     if (decision.reason === 'floor') {
@@ -552,6 +564,22 @@ export class QualityController {
     this.knobHandles = []
   }
 
+  private markCollapsedAfter(geometryBaseline: MetricsSample): void {
+    this.rollbackAdapterKnobs()
+    if (!this.last) return
+    const next: QualityLadderReport = {
+      ...this.last,
+      baseline: geometryBaseline,
+      applyFailed: true,
+      incomplete: true,
+      appliedKnobs: [],
+      floorFailed: this.last.floorFailed || this.last.tier === 'potato',
+    }
+    delete next.after
+    delete next.deltas
+    this.last = next
+  }
+
   private applyRung(tier: QualityTier): boolean {
     this.rollbackAdapterKnobs()
     this.doctor.rollbackAll()
@@ -625,23 +653,40 @@ export class QualityController {
     incomplete: boolean,
   ): QualityLadderReport {
     const last = this.last!
+    const geometryBaseline = hasGeometry(baseline)
+      ? baseline
+      : hasGeometry(last.baseline)
+        ? last.baseline
+        : baseline
+    let applyFailed = last.applyFailed
+    let appliedKnobs = last.appliedKnobs
+    let floorFailed = last.floorFailed
+    if (after !== undefined && isBrokenAfterGeometry(geometryBaseline, after)) {
+      this.markCollapsedAfter(geometryBaseline)
+      incomplete = true
+      after = undefined
+      baseline = geometryBaseline
+      applyFailed = true
+      appliedKnobs = []
+      floorFailed = floorFailed || last.tier === 'potato' || state.tier === 'potato'
+    }
     const report: QualityLadderReport = {
       profile: last.profile,
       mode: last.mode,
       qualityMode: this.mode,
       phase: 'runtime',
-      tier: last.floorFailed ? 'potato' : state.tier,
+      tier: floorFailed ? 'potato' : state.tier,
       startTier: last.startTier,
       maxTier: last.maxTier,
       score: last.score,
       findings: last.findings,
       baseline,
       appliedPasses: last.appliedPasses,
-      appliedKnobs: last.appliedKnobs,
+      appliedKnobs,
       failedPasses: last.failedPasses,
       unsupportedKnobs: last.unsupportedKnobs,
-      floorFailed: last.floorFailed,
-      applyFailed: last.applyFailed,
+      floorFailed,
+      applyFailed,
       incomplete,
     }
     if (last.ttfiMs !== undefined) report.ttfiMs = last.ttfiMs

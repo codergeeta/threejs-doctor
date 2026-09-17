@@ -153,13 +153,19 @@
     if (cascade == null) return false;
     const bag = cascade;
     if (bag.texture === null) return false;
-    if (Object.prototype.hasOwnProperty.call(bag, "framebuffer") && bag.framebuffer === null) return false;
+    if (Object.prototype.hasOwnProperty.call(bag, "framebuffer") && bag.framebuffer === null) {
+      return false;
+    }
+    if (Object.prototype.hasOwnProperty.call(bag, "pack") && bag.pack === null) return false;
     return true;
   }
   function isRtTouchSafe(target) {
     const bag = target;
     if (bag.texture === null) return false;
-    if (Object.prototype.hasOwnProperty.call(bag, "framebuffer") && bag.framebuffer === null) return false;
+    if (Object.prototype.hasOwnProperty.call(bag, "framebuffer") && bag.framebuffer === null) {
+      return false;
+    }
+    if (Object.prototype.hasOwnProperty.call(bag, "pack") && bag.pack === null) return false;
     return true;
   }
   function applyFft(debug, fftSize) {
@@ -243,40 +249,30 @@
     if (!isRtTouchSafe(target)) return;
     const prevW = target.width;
     const prevH = target.height;
+    const bag = target;
+    const hadFb = Object.prototype.hasOwnProperty.call(bag, "framebuffer");
+    const prevFb = bag.framebuffer;
     const next = Math.round(desktop * scale);
     try {
       target.setSize(next, next);
-    } catch (err) {
+    } catch {
+      return;
+    }
+    if (!isRtTouchSafe(target)) {
       try {
         target.setSize(prevW, prevH);
       } catch {
       }
-      throw err;
+      if (hadFb) bag.framebuffer = prevFb;
+      return;
     }
     ops.push(() => {
       target.setSize(prevW, prevH);
     });
   }
-  function applyMeshLod(debug, lod) {
-    const spec = MESH_LOD[lod];
-    const bag = debug;
+  function applyMeshLod(debug, _lod) {
     const prevWaterGeom = debug.waterMesh?.geometry;
     const prevTerrainGeom = debug.terrainMesh?.geometry;
-    const hadWaterSeg = Object.prototype.hasOwnProperty.call(bag, "waterSegments");
-    const hadTerrainSeg = Object.prototype.hasOwnProperty.call(bag, "terrainSegments");
-    const prevWaterSeg = bag.waterSegments;
-    const prevTerrainSeg = bag.terrainSegments;
-    if (debug.waterMesh) {
-      debug.waterMesh.geometry = withSegments(prevWaterGeom, {
-        widthSegments: spec.water[0],
-        heightSegments: spec.water[1]
-      });
-      bag.waterSegments = spec.water;
-    }
-    if (debug.terrainMesh) {
-      debug.terrainMesh.geometry = withSegments(prevTerrainGeom, { segments: spec.terrain });
-      bag.terrainSegments = spec.terrain;
-    }
     return () => {
       if (debug.waterMesh) {
         if (prevWaterGeom !== void 0) debug.waterMesh.geometry = prevWaterGeom;
@@ -286,17 +282,7 @@
         if (prevTerrainGeom !== void 0) debug.terrainMesh.geometry = prevTerrainGeom;
         else delete debug.terrainMesh.geometry;
       }
-      if (hadWaterSeg && prevWaterSeg) bag.waterSegments = prevWaterSeg;
-      else delete bag.waterSegments;
-      if (hadTerrainSeg && prevTerrainSeg !== void 0) bag.terrainSegments = prevTerrainSeg;
-      else delete bag.terrainSegments;
     };
-  }
-  function withSegments(geometry, extra) {
-    if (typeof geometry === "object" && geometry !== null) {
-      return { ...geometry, ...extra };
-    }
-    return extra;
   }
   function applyHdr(debug, deferred) {
     const bag = debug;
@@ -524,7 +510,6 @@
       fftSize: [64, 0, 0],
       spectrumEveryNFrames: 2,
       rtScale: 0.35,
-      meshLod: 0,
       deferredHdr: true
     },
     low: {
@@ -1691,9 +1676,12 @@ ${line2}` : line1;
   function isUsableSample(sample) {
     return !!sample && sample.p95FrameTimeMs > 0;
   }
-  function renderPathCollapsed(baseline, after) {
+  function isBrokenAfterGeometry(baseline, after) {
     const hadGeometry = baseline.drawCalls > 0 || baseline.triangles > 0;
     return hadGeometry && after.drawCalls === 0 && after.triangles === 0;
+  }
+  function hasGeometry(sample) {
+    return sample.drawCalls > 0 || sample.triangles > 0;
   }
   function diffMetrics2(baseline, after) {
     const deltas = {};
@@ -1902,22 +1890,15 @@ ${line2}` : line1;
           if (!isUsableSample(sample)) {
             continue;
           }
-          if (!baseline) baseline = sample;
-          else if (renderPathCollapsed(baseline, sample)) {
-            this.rollbackAdapterKnobs();
+          const geometryRef = baseline ?? this.last?.baseline;
+          if (geometryRef && isBrokenAfterGeometry(geometryRef, sample)) {
+            this.markCollapsedAfter(geometryRef);
             incomplete = true;
             after = void 0;
-            if (this.last) {
-              this.last = {
-                ...this.last,
-                applyFailed: true,
-                incomplete: true,
-                appliedKnobs: [],
-                floorFailed: this.last.floorFailed || this.last.tier === "potato"
-              };
-            }
+            baseline = geometryRef;
             break;
           }
+          if (!baseline) baseline = sample;
           after = sample;
           const stepped = this.applyWindowDecision(state, sample, pendingApplyFailed, baseline, incomplete, {
             holdsAtTarget
@@ -1966,17 +1947,22 @@ ${line2}` : line1;
         applyFailed: pendingApplyFailed
       });
       const last = this.last;
+      const broken = isBrokenAfterGeometry(baseline, sample);
+      const reportIncomplete = incomplete || broken;
       if (this.mode === "advise") {
         const nextState = { ...decision.next, tier: state.tier };
         const advised = {
           ...last,
           recommendedTier: decision.next.tier,
           baseline,
-          incomplete
+          incomplete: reportIncomplete
         };
-        if (!incomplete) {
+        if (!reportIncomplete) {
           advised.after = sample;
           advised.deltas = diffMetrics2(baseline, sample);
+        } else {
+          delete advised.after;
+          delete advised.deltas;
         }
         this.publish(advised);
         holdsAtTarget = sample.p95FrameTimeMs <= HYSTERESIS.dropP95Ms ? holdsAtTarget + 1 : 0;
@@ -1986,10 +1972,17 @@ ${line2}` : line1;
       if (decision.action === "drop" || decision.action === "climb") {
         const rungFailed = this.applyRung(decision.next.tier);
         if (this.last) {
-          const published = { ...this.last, baseline, incomplete };
-          if (!incomplete) {
+          const published = {
+            ...this.last,
+            baseline,
+            incomplete: reportIncomplete
+          };
+          if (!reportIncomplete) {
             published.after = sample;
             published.deltas = diffMetrics2(baseline, sample);
+          } else {
+            delete published.after;
+            delete published.deltas;
           }
           this.publish(published);
         }
@@ -2004,15 +1997,18 @@ ${line2}` : line1;
         ...last,
         tier: decision.next.tier,
         baseline,
-        incomplete
+        incomplete: reportIncomplete
       };
       if (decision.reason === "floor") {
         nextLast.floorFailed = true;
         nextLast.tier = "potato";
       }
-      if (!incomplete) {
+      if (!reportIncomplete) {
         nextLast.after = sample;
         nextLast.deltas = diffMetrics2(baseline, sample);
+      } else {
+        delete nextLast.after;
+        delete nextLast.deltas;
       }
       this.publish(nextLast);
       if (decision.reason === "floor") {
@@ -2085,6 +2081,21 @@ ${line2}` : line1;
       }
       this.knobHandles = [];
     }
+    markCollapsedAfter(geometryBaseline) {
+      this.rollbackAdapterKnobs();
+      if (!this.last) return;
+      const next = {
+        ...this.last,
+        baseline: geometryBaseline,
+        applyFailed: true,
+        incomplete: true,
+        appliedKnobs: [],
+        floorFailed: this.last.floorFailed || this.last.tier === "potato"
+      };
+      delete next.after;
+      delete next.deltas;
+      this.last = next;
+    }
     applyRung(tier) {
       this.rollbackAdapterKnobs();
       this.doctor.rollbackAll();
@@ -2147,23 +2158,36 @@ ${line2}` : line1;
     }
     finalize(state, baseline, after, incomplete) {
       const last = this.last;
+      const geometryBaseline = hasGeometry(baseline) ? baseline : hasGeometry(last.baseline) ? last.baseline : baseline;
+      let applyFailed = last.applyFailed;
+      let appliedKnobs = last.appliedKnobs;
+      let floorFailed = last.floorFailed;
+      if (after !== void 0 && isBrokenAfterGeometry(geometryBaseline, after)) {
+        this.markCollapsedAfter(geometryBaseline);
+        incomplete = true;
+        after = void 0;
+        baseline = geometryBaseline;
+        applyFailed = true;
+        appliedKnobs = [];
+        floorFailed = floorFailed || last.tier === "potato" || state.tier === "potato";
+      }
       const report = {
         profile: last.profile,
         mode: last.mode,
         qualityMode: this.mode,
         phase: "runtime",
-        tier: last.floorFailed ? "potato" : state.tier,
+        tier: floorFailed ? "potato" : state.tier,
         startTier: last.startTier,
         maxTier: last.maxTier,
         score: last.score,
         findings: last.findings,
         baseline,
         appliedPasses: last.appliedPasses,
-        appliedKnobs: last.appliedKnobs,
+        appliedKnobs,
         failedPasses: last.failedPasses,
         unsupportedKnobs: last.unsupportedKnobs,
-        floorFailed: last.floorFailed,
-        applyFailed: last.applyFailed,
+        floorFailed,
+        applyFailed,
         incomplete
       };
       if (last.ttfiMs !== void 0) report.ttfiMs = last.ttfiMs;

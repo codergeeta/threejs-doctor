@@ -4,6 +4,30 @@ import { createLadderDoctor } from './ladder-harness.js'
 import type { QualityAdapter, QualityKnobSet, QualityTier } from '@threejs-doctor/core'
 
 describe('QualityController adapter wiring', () => {
+  it('does not apply meshLod on potato even when the adapter advertises it', async () => {
+    const seen: QualityKnobSet[] = []
+    const adapter: QualityAdapter = {
+      id: 'ocean-full',
+      capabilities: () => ['fftSize', 'rtScale', 'meshLod', 'deferredHdr'],
+      snapshot: () => ({}),
+      apply(_tier: QualityTier, knobs: QualityKnobSet) {
+        seen.push(knobs)
+        return { rollback() {} }
+      },
+    }
+    const { doctor } = createLadderDoctor()
+    const ladder = new QualityController(doctor, { mode: 'safe-auto' })
+    ladder.registerAdapter(adapter)
+    const boot = await ladder.boot()
+    expect(seen).toHaveLength(1)
+    expect(seen[0]!.meshLod).toBeUndefined()
+    expect(seen[0]!.spectrumEveryNFrames).toBe(2)
+    expect(seen[0]!.deferredHdr).toBe(true)
+    expect(seen[0]!.rtScale).toBe(0.35)
+    expect(seen[0]!.fftSize).toEqual([64, 0, 0])
+    expect(boot.appliedKnobs.some((k) => k.capability === 'meshLod')).toBe(false)
+  })
+
   it('passes only advertised knobs and records unsupportedKnob for unknown keys on the adapter side', async () => {
     const seen: QualityKnobSet[] = []
     const adapter: QualityAdapter = {
@@ -28,7 +52,8 @@ describe('QualityController adapter wiring', () => {
       'deferredHdr',
       'rtScale',
     ])
-    expect(boot.unsupportedKnobs.sort()).toEqual(['fftSize', 'meshLod'])
+    expect(boot.unsupportedKnobs.sort()).toEqual(['fftSize'])
+    expect(boot.unsupportedKnobs).not.toContain('meshLod')
   })
 
   it('records unsupportedKnobs when apply is given a capability the adapter does not implement', async () => {
@@ -49,9 +74,10 @@ describe('QualityController adapter wiring', () => {
     const boot = await ladder.boot()
     expect(boot.unsupportedKnobs).not.toContain('rtScale')
     expect(boot.unsupportedKnobs).toContain('fftSize')
-    expect(boot.unsupportedKnobs).toContain('meshLod')
+    expect(boot.unsupportedKnobs).not.toContain('meshLod')
     expect(boot.unsupportedKnobs).toContain('deferredHdr')
     expect(boot.appliedKnobs.some((k) => k.capability === 'fftSize')).toBe(false)
+    expect(boot.appliedKnobs.some((k) => k.capability === 'meshLod')).toBe(false)
   })
 
   it('advise never calls adapter.apply', async () => {

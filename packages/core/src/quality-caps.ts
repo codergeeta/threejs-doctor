@@ -57,7 +57,6 @@ export const ADAPTER_KNOBS: Record<QualityTier, QualityKnobSet> = {
     fftSize: [64, 0, 0],
     spectrumEveryNFrames: 2,
     rtScale: 0.35,
-    meshLod: 0,
     deferredHdr: true,
   },
   low: {
