@@ -37,11 +37,11 @@ export const pixelBudgetPass: OptimizePass = {
     }
     const scale = Math.sqrt(capPixels / current)
     const newRatio = Math.min(prevRatio, prevRatio * scale)
-    const newW = Math.max(1, Math.floor(width * scale))
-    const newH = Math.max(1, Math.floor(height * scale))
     try {
       if (renderer.setDrawingBufferSize) {
-        renderer.setDrawingBufferSize(newW, newH, newRatio)
+        const newW = Math.max(1, Math.floor(width * scale))
+        const newH = Math.max(1, Math.floor(height * scale))
+        renderer.setDrawingBufferSize(newW, newH, prevRatio)
       } else {
         renderer.setPixelRatio(newRatio)
       }

@@ -305,6 +305,12 @@ describe('v2 generic passes', () => {
     expect(host.toneMapping).toBe(4)
   })
 
+  it('tone-map-lite does not raise a cheaper host mapping', () => {
+    const renderer = { pixelRatio: 1, toneMapping: 0, setPixelRatio() {} }
+    toneMapLitePass.apply(baseCtx({ renderer: renderer as never, qualityTier: 'low' }))
+    expect(renderer.toneMapping).toBe(0)
+  })
+
   it('anisotropy-cap lowers texture anisotropy and rollbacks', () => {
     const tex = { anisotropy: 8 }
     const scene = {
@@ -365,13 +371,19 @@ describe('v2 generic passes', () => {
 
   it('shadow-budget without qualityTier still keeps v1 product budget of 2', () => {
     const lights = [{ castShadow: true }, { castShadow: true }, { castShadow: true }]
+    const renderer = {
+      pixelRatio: 1,
+      setPixelRatio() {},
+      shadowMap: { enabled: true },
+    }
     const scene = {
       children: lights,
       traverse(cb: (o: { castShadow?: boolean }) => void) {
         for (const l of lights) cb(l)
       },
     }
-    shadowBudgetPass.apply(baseCtx({ scene: scene as never, profile: 'product' }))
+    shadowBudgetPass.apply(baseCtx({ renderer: renderer as never, scene: scene as never, profile: 'product' }))
     expect(lights.filter((l) => l.castShadow).length).toBe(2)
+    expect(renderer.shadowMap.enabled).toBe(true)
   })
 })

@@ -11,6 +11,7 @@ export const toneMapLitePass: OptimizePass = {
         : GENERIC_CAPS.low.toneMapping
     if (target === undefined) return { rollback() {} }
     const prev = ctx.renderer.toneMapping
+    if (prev <= target) return { rollback() {} }
     try {
       ctx.renderer.toneMapping = target
     } catch (err) {
