@@ -153,6 +153,67 @@ describe('QualityController adapter wiring', () => {
     expect(boot.appliedKnobs.some((k) => k.capability === 'fftSize')).toBe(false)
   })
 
+  it('continues boot when takeExclusiveControl throws', async () => {
+    const adapter: QualityAdapter = {
+      id: 'ex-boom',
+      capabilities: () => ['rtScale'],
+      snapshot: () => ({}),
+      apply() {
+        return { rollback() {} }
+      },
+      takeExclusiveControl() {
+        throw new Error('cannot pause host')
+      },
+    }
+    const { doctor, renderer } = createLadderDoctor()
+    const ladder = new QualityController(doctor, { mode: 'takeover' })
+    ladder.registerAdapter(adapter)
+    const boot = await ladder.boot()
+    expect(boot.applyFailed).toBe(true)
+    expect(renderer.pixelRatio).toBeLessThanOrEqual(1.0)
+    expect(boot.appliedKnobs.some((k) => k.capability === 'rtScale')).toBe(true)
+    expect(() => ladder.dispose()).not.toThrow()
+  })
+
+  it('treats throwing capabilities() as adapterUnavailable and still applies generic caps', async () => {
+    const adapter: QualityAdapter = {
+      id: 'caps-boom',
+      capabilities() {
+        throw new Error('no handle')
+      },
+      snapshot: () => ({}),
+      apply() {
+        throw new Error('should not apply')
+      },
+    }
+    const { doctor, renderer } = createLadderDoctor()
+    const ladder = new QualityController(doctor, { mode: 'safe-auto' })
+    ladder.registerAdapter(adapter)
+    const boot = await ladder.boot()
+    expect(boot.adapterUnavailable).toBe(true)
+    expect(boot.appliedPasses.length).toBeGreaterThan(0)
+    expect(renderer.pixelRatio).toBeLessThanOrEqual(1.0)
+  })
+
+  it('omits extras and still returns a report when readExtras throws', async () => {
+    const adapter: QualityAdapter = {
+      id: 'extras-boom',
+      capabilities: () => ['rtScale'],
+      snapshot: () => ({}),
+      apply: () => ({ rollback() {} }),
+      readExtras() {
+        throw new Error('no extras')
+      },
+    }
+    const { doctor } = createLadderDoctor()
+    const ladder = new QualityController(doctor, { mode: 'safe-auto' })
+    ladder.registerAdapter(adapter)
+    const boot = await ladder.boot()
+    expect(boot.appliedKnobs.some((k) => k.capability === 'rtScale')).toBe(true)
+    expect(Object.prototype.hasOwnProperty.call(boot.baseline, 'simPassCount')).toBe(false)
+    expect(boot.findings.some((f) => f.id === 'quality/heavy-sim-passes')).toBe(false)
+  })
+
   it('sets adapterUnavailable when capabilities are empty', async () => {
     const adapter: QualityAdapter = {
       id: 'gone',

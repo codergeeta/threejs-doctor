@@ -147,7 +147,12 @@ export class QualityController {
 
     if (this.mode !== 'advise') {
       if (this.mode === 'takeover') {
-        this.exclusive = this.adapter?.takeExclusiveControl?.()
+        try {
+          this.exclusive = this.adapter?.takeExclusiveControl?.()
+        } catch {
+          this.exclusive = undefined
+          applyFailed = true
+        }
       }
       const result = this.doctor.applyPassesImmediate([...SAFE_PASSES], {
         qualityTier: startTier,
@@ -157,7 +162,13 @@ export class QualityController {
       if (failedPasses.length > 0) applyFailed = true
 
       if (this.adapter) {
-        const caps = this.adapter.capabilities()
+        let caps: AdapterCapability[]
+        try {
+          caps = this.adapter.capabilities()
+        } catch {
+          caps = []
+          adapterUnavailable = true
+        }
         if (caps.length === 0) {
           adapterUnavailable = true
         } else {
@@ -190,7 +201,12 @@ export class QualityController {
     }
 
     const diagnosed = await this.doctor.diagnose()
-    const extras = this.adapter?.readExtras?.()
+    let extras: AdapterExtras | undefined
+    try {
+      extras = this.adapter?.readExtras?.()
+    } catch {
+      extras = undefined
+    }
     let baseline = copyExtras(diagnosed.baseline, extras)
     const bytesLoaded = this.maybeBytesLoaded(bootStart)
     if (typeof bytesLoaded === 'number' && typeof extras?.bytesLoaded !== 'number') {
@@ -269,7 +285,7 @@ export class QualityController {
     let any = false
     for (const e of entries) {
       if (e.startTime < bootStart) continue
-      if (typeof e.transferSize === 'number') {
+      if (typeof e.transferSize === 'number' && e.transferSize > 0) {
         sum += e.transferSize
         any = true
       }
