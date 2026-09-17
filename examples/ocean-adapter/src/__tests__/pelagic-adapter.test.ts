@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { createOceanAdapter, getPelagicDebug } from '../pelagic-adapter.js'
-import type { PelagicDebugHandle } from '../pelagic-debug.js'
+import type { PelagicDebugHandle, PelagicRtLike } from '../pelagic-debug.js'
 
 function fakeDebug(): PelagicDebugHandle & { hdrDeferred?: boolean } {
   const rt = (w: number, h: number) => ({
@@ -62,8 +62,9 @@ describe('createOceanAdapter', () => {
       deferredHdr: true,
     })
     expect(debug.cascades![0]!.size).toBe(64)
-    expect(debug.cascades![1]).toBeNull()
-    expect(debug.cascades![2]).toBeNull()
+    expect(debug.cascades![1]?.size).toBe(1)
+    expect(debug.cascades![2]?.size).toBe(1)
+    expect(() => (debug.cascades![1] as { pack?: () => void }).pack?.()).not.toThrow()
     expect(debug.reflectionTarget!.width).toBe(Math.round(768 * 0.35))
     expect(debug.causticWide!.width).toBe(Math.round(1024 * 0.35))
     expect(debug.causticDetail).toBeNull()
@@ -119,6 +120,37 @@ describe('createOceanAdapter', () => {
     expect(adapter.readExtras?.()?.simPassCount).toBe(6)
     debug.runPass?.()
     expect(adapter.readExtras?.()?.simPassCount).toBe(7)
+  })
+
+  it('does not throw when cascades or RT targets are null', () => {
+    const debug: PelagicDebugHandle = {
+      cascades: [null, undefined, { size: 128, dispose() {}, resize(n: number) { this.size = n } }],
+      refractionTarget: null as unknown as PelagicRtLike,
+    }
+    const adapter = createOceanAdapter(debug)
+    expect(() =>
+      adapter.apply('low', { fftSize: [128, 128, 128], rtScale: 0.5 }),
+    ).not.toThrow()
+    expect(debug.cascades![0]).toBeNull()
+    expect(debug.cascades![2]?.size).toBe(128)
+  })
+
+  it('rolls back knobs and rethrows when FFT rebuild hits a null pack target', () => {
+    const debug = fakeDebug()
+    const originalWidth = debug.reflectionTarget!.width
+    debug.cascades![1] = {
+      size: 256,
+      dispose() {},
+      resize() {
+        throw new TypeError("Cannot read properties of null (reading 'pack')")
+      },
+    }
+    const adapter = createOceanAdapter(debug)
+    expect(() =>
+      adapter.apply('low', { fftSize: [64, 128, 128], rtScale: 0.5 }),
+    ).toThrow(/pack/)
+    expect(debug.cascades![0]!.size).toBe(128)
+    expect(debug.reflectionTarget!.width).toBe(originalWidth)
   })
 
   it('takeExclusiveControl freezes effectQuality and host dpr loop', () => {

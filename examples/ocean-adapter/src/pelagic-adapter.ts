@@ -111,12 +111,23 @@ function snapshotKnobs(debug: PelagicDebugHandle | undefined): QualityKnobSet {
 
 function applyKnobs(debug: PelagicDebugHandle, knobs: QualityKnobSet): KnobHandle {
   const rollbacks: Array<() => void> = []
-  if (knobs.fftSize) rollbacks.push(applyFft(debug, knobs.fftSize))
-  if (knobs.rtScale !== undefined) rollbacks.push(applyRtScale(debug, knobs.rtScale))
-  if (knobs.meshLod !== undefined) rollbacks.push(applyMeshLod(debug, knobs.meshLod))
-  if (knobs.deferredHdr !== undefined) rollbacks.push(applyHdr(debug, knobs.deferredHdr))
-  if (knobs.spectrumEveryNFrames !== undefined) {
-    rollbacks.push(applySpectrumCadence(debug, knobs.spectrumEveryNFrames))
+  try {
+    if (knobs.fftSize) rollbacks.push(applyFft(debug, knobs.fftSize))
+    if (knobs.rtScale !== undefined) rollbacks.push(applyRtScale(debug, knobs.rtScale))
+    if (knobs.meshLod !== undefined) rollbacks.push(applyMeshLod(debug, knobs.meshLod))
+    if (knobs.deferredHdr !== undefined) rollbacks.push(applyHdr(debug, knobs.deferredHdr))
+    if (knobs.spectrumEveryNFrames !== undefined) {
+      rollbacks.push(applySpectrumCadence(debug, knobs.spectrumEveryNFrames))
+    }
+  } catch (err) {
+    for (let i = rollbacks.length - 1; i >= 0; i--) {
+      try {
+        rollbacks[i]!()
+      } catch {
+        // best-effort
+      }
+    }
+    throw err
   }
   return {
     rollback() {
@@ -164,6 +175,32 @@ function applySpectrumCadence(debug: PelagicDebugHandle, everyN: number): () => 
   }
 }
 
+function isCascadeTouchSafe(
+  cascade: PelagicCascadeLike | null | undefined,
+): cascade is PelagicCascadeLike {
+  if (cascade == null) return false
+  const bag = cascade as PelagicCascadeLike & { texture?: unknown; framebuffer?: unknown; pack?: unknown }
+  if (bag.texture === null) return false
+  if (Object.prototype.hasOwnProperty.call(bag, 'framebuffer') && bag.framebuffer === null) return false
+  return true
+}
+
+function isRtTouchSafe(target: PelagicRtLike): boolean {
+  const bag = target as PelagicRtLike & { texture?: unknown; framebuffer?: unknown }
+  if (bag.texture === null) return false
+  if (Object.prototype.hasOwnProperty.call(bag, 'framebuffer') && bag.framebuffer === null) return false
+  return true
+}
+
+function disabledCascade(): PelagicCascadeLike & { pack(): void } {
+  return {
+    size: 1,
+    pack() {},
+    dispose() {},
+    resize() {},
+  }
+}
+
 function applyFft(debug: PelagicDebugHandle, fftSize: number[]): () => void {
   const cascades = debug.cascades
   if (!cascades) return () => {}
@@ -175,41 +212,68 @@ function applyFft(debug: PelagicDebugHandle, fftSize: number[]): () => void {
   const bag = debug as DebugBag
   if (!bag.blackBinds) bag.blackBinds = []
 
-  fftSize.forEach((n, i) => {
-    if (n === 0) {
-      const cascade = cascades[i]
-      cascade?.dispose?.()
-      bag.blackBinds!.push(`cascade-${i}:1x1`)
-      cascades[i] = null
-      return
-    }
-    const cascade = cascades[i]
-    if (!cascade) return
-    if (cascade.resize) cascade.resize(n)
-    else cascade.size = n
-  })
-
-  return () => {
+  const restore = () => {
     snaps.forEach((snap, i) => {
       if (snap.cascade) {
         cascades[i] = snap.cascade
         if (snap.size !== undefined) {
-          if (snap.cascade.resize) snap.cascade.resize(snap.size)
-          else snap.cascade.size = snap.size
+          if (snap.cascade.resize) {
+            try {
+              snap.cascade.resize(snap.size)
+            } catch {
+              snap.cascade.size = snap.size
+            }
+          } else snap.cascade.size = snap.size
         }
         return
       }
       if (i < cascades.length) cascades[i] = snap.cascade ?? null
     })
   }
+
+  try {
+    fftSize.forEach((n, i) => {
+      if (n === 0) {
+        const cascade = cascades[i]
+        try {
+          cascade?.dispose?.()
+        } catch {
+          // host dispose may pack; continue to stub so later frames don't hit null.pack
+        }
+        bag.blackBinds!.push(`cascade-${i}:1x1`)
+        cascades[i] = disabledCascade()
+        return
+      }
+      const cascade = cascades[i]
+      if (!isCascadeTouchSafe(cascade)) return
+      if (cascade.resize) cascade.resize(n)
+      else cascade.size = n
+    })
+  } catch (err) {
+    restore()
+    throw err
+  }
+
+  return restore
 }
 
 function applyRtScale(debug: PelagicDebugHandle, scale: number): () => void {
   const ops: Array<() => void> = []
-  scaleRt(debug.reflectionTarget, 'reflectionTarget', DESKTOP_RT.reflection, scale, ops)
-  scaleRt(debug.refractionTarget, 'refractionTarget', DESKTOP_RT.refraction, scale, ops)
-  scaleRt(debug.causticWide, 'causticWide', DESKTOP_RT.causticWide, scale, ops)
-  scaleRt(debug.causticDetail, 'causticDetail', DESKTOP_RT.causticDetail, scale, ops)
+  try {
+    scaleRt(debug.reflectionTarget, 'reflectionTarget', DESKTOP_RT.reflection, scale, ops)
+    scaleRt(debug.refractionTarget, 'refractionTarget', DESKTOP_RT.refraction, scale, ops)
+    scaleRt(debug.causticWide, 'causticWide', DESKTOP_RT.causticWide, scale, ops)
+    scaleRt(debug.causticDetail, 'causticDetail', DESKTOP_RT.causticDetail, scale, ops)
+  } catch (err) {
+    for (let i = ops.length - 1; i >= 0; i--) {
+      try {
+        ops[i]!()
+      } catch {
+        // best-effort
+      }
+    }
+    throw err
+  }
   return () => {
     for (let i = ops.length - 1; i >= 0; i--) ops[i]!()
   }
@@ -226,10 +290,20 @@ function scaleRt(
   if (typeof target.setSize !== 'function') {
     throw new Error(`setSize missing on ${name}`)
   }
+  if (!isRtTouchSafe(target)) return
   const prevW = target.width
   const prevH = target.height
   const next = Math.round(desktop * scale)
-  target.setSize(next, next)
+  try {
+    target.setSize(next, next)
+  } catch (err) {
+    try {
+      target.setSize(prevW, prevH)
+    } catch {
+      // best-effort restore before rethrow
+    }
+    throw err
+  }
   ops.push(() => {
     target.setSize(prevW, prevH)
   })
