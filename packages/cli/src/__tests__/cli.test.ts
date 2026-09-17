@@ -96,6 +96,15 @@ describe('cli', () => {
     expect(code).toBe(1)
   })
 
+  it('ci exits 1 when --min-score is not a number', async () => {
+    const code = await main(['ci', '--min-score', 'abc'], {
+      runScan: async () => fakeReport,
+      runBench: async () => fakeReport,
+      write: () => {},
+    })
+    expect(code).toBe(1)
+  })
+
   it('ci exits 1 when the report is incomplete', async () => {
     const code = await main(['ci'], {
       runScan: async () => ({ ...fakeReport, incomplete: true }),

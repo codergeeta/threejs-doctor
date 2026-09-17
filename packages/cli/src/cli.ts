@@ -57,6 +57,11 @@ export async function main(
     return 0
   }
 
+  if (args.command === 'ci' && !Number.isFinite(args.minScore)) {
+    write('error: --min-score must be a finite number')
+    return 1
+  }
+
   const runScan = deps?.runScan ?? (await import('./commands/scan.js')).runScan
   const runBench = deps?.runBench ?? (await import('./commands/bench.js')).runBench
 
