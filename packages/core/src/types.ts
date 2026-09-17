@@ -53,6 +53,7 @@ export interface MetricsSample {
   simPassCount?: number
   bytesLoaded?: number
   compileMs?: number
+  drawingBufferPixels?: number
 }
 
 export interface SceneSnapshot {

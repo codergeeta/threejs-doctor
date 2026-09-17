@@ -277,10 +277,16 @@ export class Doctor {
       collector.endFrame(now())
     }
     const sample = collector.sample()
+    const width = this.opts.renderer.drawingBufferWidth
+    const height = this.opts.renderer.drawingBufferHeight
+    const measured =
+      typeof width === 'number' && typeof height === 'number'
+        ? { ...sample, drawingBufferPixels: width * height }
+        : sample
     this.previousSnapshot = this.lastSnapshot
-    this.lastSnapshot = this.currentSnapshot(sample)
-    this.baseline = sample
-    return sample
+    this.lastSnapshot = this.currentSnapshot(measured)
+    this.baseline = measured
+    return measured
   }
 
   private async buildDiagnoseReport(): Promise<DoctorReport> {

@@ -85,6 +85,21 @@ describe('Doctor', () => {
     expect(sample.avgFps).toBe(62.5)
   })
 
+  it('samples drawingBufferPixels when the renderer exposes width and height', async () => {
+    const { doctor, renderer } = createHarness()
+    const r = renderer as { drawingBufferWidth?: number; drawingBufferHeight?: number }
+    r.drawingBufferWidth = 800
+    r.drawingBufferHeight = 600
+    const sample = await doctor.measure()
+    expect(sample.drawingBufferPixels).toBe(800 * 600)
+  })
+
+  it('omits drawingBufferPixels when the renderer has no drawing buffer', async () => {
+    const { doctor } = createHarness()
+    const sample = await doctor.measure()
+    expect(Object.prototype.hasOwnProperty.call(sample, 'drawingBufferPixels')).toBe(false)
+  })
+
   it('measure → diagnose → optimize returns deltas', async () => {
     const { doctor, renderer } = createHarness()
     const baseline = await doctor.measure()
