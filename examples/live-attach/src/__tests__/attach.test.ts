@@ -225,4 +225,93 @@ describe('attachQualityLadder', () => {
       /could not find/i,
     )
   })
+
+  it('error lists canvas count, WebGL presence, and explicit-pass console instructions', async () => {
+    const canvas = {
+      nodeType: 1,
+      tagName: 'CANVAS',
+      getContext(type: string) {
+        if (type === 'webgl2' || type === 'webgl') return { drawingBufferWidth: 64, drawingBufferHeight: 64 }
+        return null
+      },
+    }
+    const err = await attachQualityLadder({
+      mountOverlay: false,
+      root: {
+        document: {
+          querySelectorAll(sel: string) {
+            return sel === 'canvas' ? [canvas] : []
+          },
+        },
+      },
+    }).then(
+      () => {
+        throw new Error('expected discover failure')
+      },
+      (e: unknown) => e as Error,
+    )
+    expect(err.message).toMatch(/could not find scene\/camera\/renderer/i)
+    expect(err.message).toMatch(/1 canvas/)
+    expect(err.message).toMatch(/WebGL context: yes/)
+    expect(err.message).toMatch(/renderer: no/)
+    expect(err.message).toMatch(/attachQualityLadder\(\{ scene, camera, renderer \}\)/)
+    expect(err.message).toMatch(/this page's console/i)
+  })
+
+  it('hooks renderer.render to capture scene/camera when only the renderer is discoverable', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const scene = fakeScene()
+    const camera = fakeCamera()
+    const renderer = Object.assign(fakeRenderer(), {
+      render(s: unknown, c: unknown) {
+        this._last = [s, c]
+      },
+      _last: undefined as unknown,
+    })
+    let t = 0
+    const report = await attachQualityLadder({
+      root: { renderer },
+      now: () => {
+        t += 16
+        return t
+      },
+      waitFrame: async () => {
+        renderer.render(scene, camera)
+      },
+      windowFrames: 3,
+      measureFrames: 3,
+      mountOverlay: false,
+    })
+    expect(report.qualityMode).toBe('advise')
+    expect(report.baseline.avgFps).toBe(62.5)
+    parseLoggedReport(log)
+  })
+
+  it('still requires an explicit pass when renderer.render never yields scene/camera', async () => {
+    const renderer = Object.assign(fakeRenderer(), {
+      render() {
+        /* bundled game called with internals, not scene/camera */
+      },
+    })
+    const err = await attachQualityLadder({
+      mountOverlay: false,
+      root: { renderer },
+      waitFrame: async () => {
+        renderer.render()
+      },
+      now: () => 16,
+      windowFrames: 1,
+      measureFrames: 1,
+    }).then(
+      () => {
+        throw new Error('expected discover failure')
+      },
+      (e: unknown) => e as Error,
+    )
+    expect(err.message).toMatch(/found WebGLRenderer but not scene\/camera/i)
+    expect(err.message).toMatch(/renderer: yes/)
+    expect(err.message).toMatch(/scene: no/)
+    expect(err.message).toMatch(/render\(\) hook/i)
+    expect(err.message).toMatch(/attachQualityLadder\(\{ scene, camera, renderer \}\)/)
+  })
 })

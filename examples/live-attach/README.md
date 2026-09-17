@@ -79,18 +79,30 @@ cold TTFI (it will be absent by default).
 | Host | URL | Adapter |
 |------|-----|---------|
 | ocean-simulation | https://iamtechartist.github.io/ocean-simulation/ | Registers `createOceanAdapter` when `window.pelagic.debug` exists. If it is missing, the IIFE skips `registerAdapter` and runs generic Three.js caps only. |
-| claude-of-tanks | https://cot.kevinliu.studio/ | Generic caps. No ocean adapter. |
+| claude-of-tanks | https://cot.kevinliu.studio/ | Generic caps. No ocean adapter. Discovery may still miss closed-over scene/camera/renderer — see below. |
 | Kinema | https://kinema-play.vercel.app/?forceWebGL=1 | Generic caps. Use the documented WebGL compatibility query so the capture stays on WebGL. Homepage: https://kinema-play.vercel.app |
 
 ## If discovery cannot find scene / camera / renderer
 
-Bundled apps often keep Three.js objects in module closures. The IIFE walks
-enumerable globals (and `window.pelagic.debug`) only.
+Bundled apps (Claude-of-Tanks, many Vite/webpack games) often keep Three.js
+objects in module closures, **not** on `window`. The IIFE now tries, in order:
 
-1. In the page’s own sources, find the live `scene`, `camera`, and
-   `WebGLRenderer` (breakpoint on `WebGLRenderer.render`, Three inspector, or
-   whatever global the demo already exposes).
-2. Then:
+1. `window.pelagic.debug` (ocean)
+2. **Canvas walk** — `document.querySelectorAll('canvas')`, then `__THREE__`,
+   `userData`, `_renderer` / `__renderer`, and a WebGL context bag if Three (or
+   the host) stored a renderer there. Three.js itself does **not** always attach
+   a reverse mapping on the canvas.
+3. **Bundle roots** — `window.app`, `window.game`, `window.__THREE__`, and
+   module-like `default` / `exports` singletons (non-enumerable keys included;
+   throwing getters are skipped)
+4. Shallow enumerable global walk
+5. If a `WebGLRenderer` is found but scene/camera are missing: renderer
+   properties (`scene`, `_scene`, `userData`, …) then a temporary `render()`
+   hook for a few frames
+
+When that still fails, the throw lists what **was** found (canvas count, whether
+a WebGL context exists, renderer/scene/camera yes/no) and how to pass handles
+from **this page’s own console** once you locate them:
 
 ```js
 window.__THREEJS_DOCTOR_ATTACH__ = { autoRun: false }
@@ -103,8 +115,18 @@ await ThreejsDoctorLiveAttach.attachQualityLadder({
 })
 ```
 
+1. In the page’s own sources, find the live `scene`, `camera`, and
+   `WebGLRenderer` (breakpoint on `WebGLRenderer.render`, Three inspector, or
+   whatever global the demo already exposes).
+2. Pass `{ scene, camera, renderer }` as above. Discovery cannot invent them.
+
 Ocean: `window.pelagic.debug` usually has `scene` and `renderer`; camera may be
 on that bag or in the scene graph.
+
+**Claude-of-Tanks** (`https://cot.kevinliu.studio/`): scene/camera/renderer are
+typically closed over in the bundle. Canvas/`__THREE__` discovery is best-effort.
+If the IIFE still throws, you must pass handles explicitly from the page console;
+richer host hooks are still pending. Do not vendor the demo. Do not invent metrics.
 
 ## Bookmarklet
 

@@ -7,7 +7,12 @@ import {
   type QualityLadderReport,
 } from '@threejs-doctor/runtime'
 import type { Profile, QualityMode } from '@threejs-doctor/core'
-import { discoverThreeHandles, type ExplicitHandles } from './discover.js'
+import {
+  attemptDiscovery,
+  formatDiscoveryError,
+  waitForSceneCameraFromRenderer,
+  type ExplicitHandles,
+} from './discover.js'
 import { collectSceneStats } from './scene-stats.js'
 import { wrapRenderer } from './wrap-renderer.js'
 import { waitLiveFrame } from './wait-frame.js'
@@ -54,24 +59,47 @@ export async function attachQualityLadder(
   if (options.camera !== undefined) explicit.camera = options.camera
   if (options.renderer !== undefined) explicit.renderer = options.renderer
 
-  const found = discoverThreeHandles(root, explicit)
-  if (!found) {
-    throw new Error(
-      'threejs-doctor live-attach: could not find scene/camera/renderer. Pass them explicitly: attachQualityLadder({ scene, camera, renderer })',
-    )
+  const attempt = attemptDiscovery(root, explicit)
+  let scene = attempt.scene
+  let camera = attempt.camera
+  let rendererHandle = attempt.renderer
+
+  if (rendererHandle != null && scene == null) {
+    const waitFrameForHook =
+      options.waitFrame ?? (options.now === undefined ? waitLiveFrame(rendererHandle) : undefined)
+    const captured = await waitForSceneCameraFromRenderer(rendererHandle, {
+      maxAttempts: waitFrameForHook ? 32 : 1,
+      ...(waitFrameForHook ? { waitFrame: waitFrameForHook } : {}),
+    })
+    if (captured?.scene != null) {
+      scene = captured.scene
+      camera = captured.camera ?? camera
+    }
+  }
+
+  if (scene == null || rendererHandle == null) {
+    attempt.probe.foundRenderer = rendererHandle != null
+    attempt.probe.foundScene = scene != null
+    throw new Error(formatDiscoveryError(attempt.probe))
+  }
+
+  const found = {
+    scene,
+    camera: camera ?? {},
+    renderer: rendererHandle,
   }
 
   const renderer = wrapRenderer(found.renderer as object)
-  const scene = found.scene as DoctorOptions['scene']
-  const camera = found.camera ?? {}
+  const sceneForDoctor = found.scene as DoctorOptions['scene']
+  const cameraForDoctor = found.camera ?? {}
 
   const useLiveClock = options.now === undefined
   const waitFrame =
     options.waitFrame ?? (useLiveClock ? waitLiveFrame(found.renderer) : undefined)
 
   const doctorOpts: DoctorOptions = {
-    scene,
-    camera,
+    scene: sceneForDoctor,
+    camera: cameraForDoctor,
     renderer,
     profile: options.profile ?? 'game',
     getSceneStats: () => collectSceneStats(found.scene, renderer),

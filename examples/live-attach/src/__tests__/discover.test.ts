@@ -88,4 +88,142 @@ describe('discoverThreeHandles', () => {
     expect(found?.scene).toBe(scene)
     expect(found?.renderer).toBe(renderer)
   })
+
+  it('discovers handles from canvas.__THREE__ without window globals', () => {
+    const scene = fakeScene('canvas-three')
+    const camera = fakeCamera()
+    const renderer = fakeRenderer('canvas-three')
+    const canvas = {
+      nodeType: 1,
+      tagName: 'CANVAS',
+      __THREE__: { scene, camera, renderer },
+      getContext(type: string) {
+        if (type === 'webgl' || type === 'webgl2') return { drawingBufferWidth: 8, drawingBufferHeight: 8 }
+        return null
+      },
+    }
+    const found = discoverThreeHandles({
+      document: {
+        querySelectorAll(sel: string) {
+          return sel === 'canvas' ? [canvas] : []
+        },
+      },
+    })
+    expect(found?.source).toBe('canvas')
+    expect(found?.scene).toBe(scene)
+    expect(found?.camera).toBe(camera)
+    expect(found?.renderer).toBe(renderer)
+  })
+
+  it('discovers a renderer stored on canvas.userData and known internals', () => {
+    const scene = fakeScene('canvas-userData')
+    const camera = fakeCamera()
+    const renderer = fakeRenderer('canvas-userData')
+    const canvas = {
+      nodeType: 1,
+      tagName: 'CANVAS',
+      userData: { scene, camera },
+      _renderer: renderer,
+      getContext() {
+        return null
+      },
+    }
+    const found = discoverThreeHandles({
+      document: {
+        querySelectorAll(sel: string) {
+          return sel === 'canvas' ? [canvas] : []
+        },
+      },
+    })
+    expect(found?.source).toBe('canvas')
+    expect(found?.renderer).toBe(renderer)
+    expect(found?.scene).toBe(scene)
+    expect(found?.camera).toBe(camera)
+  })
+
+  it('walks a WebGL context hanging off the canvas for renderer/scene', () => {
+    const scene = fakeScene('gl')
+    const camera = fakeCamera()
+    const renderer = fakeRenderer('gl')
+    const gl = { drawingBufferWidth: 16, drawingBufferHeight: 16, __THREE__: { renderer, scene, camera } }
+    const canvas = {
+      nodeType: 1,
+      tagName: 'CANVAS',
+      getContext(type: string) {
+        if (type === 'webgl2' || type === 'webgl') return gl
+        return null
+      },
+    }
+    const found = discoverThreeHandles({
+      document: {
+        querySelectorAll(sel: string) {
+          return sel === 'canvas' ? [canvas] : []
+        },
+      },
+    })
+    expect(found?.source).toBe('canvas')
+    expect(found?.renderer).toBe(renderer)
+    expect(found?.scene).toBe(scene)
+  })
+
+  it('finds handles nested under window.game deeper than the shallow global walk', () => {
+    const scene = fakeScene('game')
+    const camera = fakeCamera()
+    const renderer = fakeRenderer('game')
+    const root = {
+      game: { engine: { world: { view: { runtime: { scene, camera, renderer } } } } },
+    }
+    const found = discoverThreeHandles(root)
+    expect(found?.source).toBe('walk')
+    expect(found?.scene).toBe(scene)
+    expect(found?.camera).toBe(camera)
+    expect(found?.renderer).toBe(renderer)
+  })
+
+  it('reads non-enumerable window.__THREE__ and module-like default exports', () => {
+    const scene = fakeScene('ns')
+    const camera = fakeCamera()
+    const renderer = fakeRenderer('ns')
+    const root: Record<string, unknown> = {}
+    Object.defineProperty(root, '__THREE__', {
+      enumerable: false,
+      value: { __esModule: true, default: { scene, camera, renderer } },
+    })
+    const found = discoverThreeHandles(root)
+    expect(found?.scene).toBe(scene)
+    expect(found?.renderer).toBe(renderer)
+    expect(found?.camera).toBe(camera)
+  })
+
+  it('skips crashing bundle-root getters and still reads window.app', () => {
+    const scene = fakeScene('app')
+    const camera = fakeCamera()
+    const renderer = fakeRenderer('app')
+    const root: Record<string, unknown> = {}
+    Object.defineProperty(root, 'game', {
+      enumerable: true,
+      get() {
+        throw new Error('game denied')
+      },
+    })
+    Object.defineProperty(root, 'app', {
+      enumerable: false,
+      value: { scene, camera, renderer },
+    })
+    const found = discoverThreeHandles(root)
+    expect(found?.scene).toBe(scene)
+    expect(found?.renderer).toBe(renderer)
+  })
+
+  it('reads non-enumerable scene/camera on a found renderer', () => {
+    const scene = fakeScene('hidden')
+    const camera = fakeCamera()
+    const renderer = fakeRenderer('hidden')
+    Object.defineProperty(renderer, 'scene', { enumerable: false, value: scene })
+    Object.defineProperty(renderer, 'camera', { enumerable: false, value: camera })
+    const found = discoverThreeHandles({ leftover: true, renderer })
+    expect(found?.renderer).toBe(renderer)
+    expect(found?.scene).toBe(scene)
+    expect(found?.camera).toBe(camera)
+  })
 })

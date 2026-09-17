@@ -86,6 +86,11 @@ FPS bar, real `baseline` / `after` only:
 - Phone-class ocean Pass A (`advise`)
 - Phone-class ocean Pass B (`safe-auto`)
 - [Kinema](https://kinema-play.vercel.app/?forceWebGL=1)
-- [Claude-of-Tanks](https://cot.kevinliu.studio/)
+- [Claude-of-Tanks](https://cot.kevinliu.studio/) — **blocked on live-attach
+  discovery**, not on invented metrics. Scene/camera/renderer are not on
+  `window`; canvas/`__THREE__`/bundle-root walks plus a `render()` hook are
+  best-effort. Until richer host hooks exist, paste still requires an explicit
+  `{ scene, camera, renderer }` from that page’s console when discovery throws.
+  Do not vendor the demo.
 
 Save those JSON files off-repo. Never invent after metrics.

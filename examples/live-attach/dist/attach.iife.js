@@ -2324,6 +2324,56 @@ ${line2}` : line1;
     "external",
     "css"
   ]);
+  var CANVAS_SKIP_KEYS = /* @__PURE__ */ new Set([
+    ...SKIP_KEYS,
+    "parentNode",
+    "parentElement",
+    "offsetParent",
+    "ownerDocument",
+    "style",
+    "classList",
+    "dataset",
+    "attributes",
+    "childNodes",
+    "children",
+    "firstChild",
+    "lastChild",
+    "nextSibling",
+    "previousSibling",
+    "nextElementSibling",
+    "previousElementSibling"
+  ]);
+  var BUNDLE_ROOT_KEYS = [
+    "app",
+    "game",
+    "Game",
+    "engine",
+    "Engine",
+    "THREE",
+    "__THREE__",
+    "three",
+    "__three__",
+    "viewer",
+    "world",
+    "main",
+    "Main",
+    "experience",
+    "application",
+    "Application",
+    "instance",
+    "singleton"
+  ];
+  var CANVAS_HANDLE_KEYS = [
+    "__THREE__",
+    "userData",
+    "__renderer",
+    "_renderer",
+    "renderer",
+    "__webglRenderer"
+  ];
+  var RENDERER_SCENE_KEYS = ["scene", "_scene", "currentScene", "_currentScene"];
+  var RENDERER_CAMERA_KEYS = ["camera", "_camera", "currentCamera", "_currentCamera"];
+  var GL_CONTEXT_IDS = ["webgl2", "webgl", "experimental-webgl"];
   function isRecord(value) {
     return typeof value === "object" && value !== null;
   }
@@ -2340,6 +2390,14 @@ ${line2}` : line1;
   function isCamera(value) {
     if (!isRecord(value)) return false;
     return value.isCamera === true || value.isPerspectiveCamera === true || value.isOrthographicCamera === true;
+  }
+  function readKey(obj, key) {
+    if (!isRecord(obj)) return void 0;
+    try {
+      return obj[key];
+    } catch {
+      return void 0;
+    }
   }
   function pelagicDebug(root) {
     if (!isRecord(root)) return void 0;
@@ -2361,33 +2419,89 @@ ${line2}` : line1;
     const camera = debug.camera ?? findCameraInScene(debug.scene) ?? {};
     return { scene: debug.scene, camera, renderer: debug.renderer, source: "pelagic" };
   }
-  function walk(root) {
+  function mergeHandles(into, extra) {
+    if (!extra) return;
+    if (into.scene == null && extra.scene != null) into.scene = extra.scene;
+    if (into.camera == null && extra.camera != null) into.camera = extra.camera;
+    if (into.renderer == null && extra.renderer != null) into.renderer = extra.renderer;
+  }
+  function fillFromRenderer(renderer) {
+    const out = {};
+    if (!isRecord(renderer)) return out;
+    for (const key of RENDERER_SCENE_KEYS) {
+      const value = readKey(renderer, key);
+      if (isScene(value)) {
+        out.scene = value;
+        break;
+      }
+    }
+    for (const key of RENDERER_CAMERA_KEYS) {
+      const value = readKey(renderer, key);
+      if (isCamera(value)) {
+        out.camera = value;
+        break;
+      }
+    }
+    const userData = readKey(renderer, "userData");
+    if (out.scene == null) {
+      const scene = readKey(userData, "scene");
+      if (isScene(scene)) out.scene = scene;
+    }
+    if (out.camera == null) {
+      const camera = readKey(userData, "camera");
+      if (isCamera(camera)) out.camera = camera;
+    }
+    return out;
+  }
+  function keysToVisit(value, includeNonEnumerable) {
+    const keys = /* @__PURE__ */ new Set();
+    try {
+      for (const key of Object.keys(value)) keys.add(key);
+    } catch {
+    }
+    if (includeNonEnumerable) {
+      try {
+        for (const key of Object.getOwnPropertyNames(value)) keys.add(key);
+      } catch {
+      }
+    }
+    return [...keys];
+  }
+  function enqueueModuleLike(value, queue, depth, seen) {
+    const looksLikeModule = value.__esModule === true || "default" in value || "exports" in value;
+    if (!looksLikeModule) return;
+    for (const key of ["default", "exports"]) {
+      const child = readKey(value, key);
+      if (!isRecord(child) || seen.has(child)) continue;
+      queue.push({ value: child, depth: depth + 1 });
+    }
+  }
+  function walk(root, limits) {
     if (!isRecord(root)) return void 0;
     const seen = /* @__PURE__ */ new Set();
     const queue = [{ value: root, depth: 0 }];
-    let scene;
-    let camera;
-    let renderer;
+    const found = {};
     let visits = 0;
-    while (queue.length > 0 && visits < 400) {
+    while (queue.length > 0 && visits < limits.maxVisits) {
       const next = queue.shift();
       if (!next) break;
       const { value, depth } = next;
-      if (!isRecord(value) || seen.has(value) || depth > 4) continue;
+      if (!isRecord(value) || seen.has(value) || depth > limits.maxDepth) continue;
       if (typeof value.nodeType === "number") continue;
       seen.add(value);
       visits += 1;
       try {
-        if (!renderer && isRenderer(value)) renderer = value;
-        if (!scene && isScene(value)) scene = value;
-        if (!camera && isCamera(value)) camera = value;
+        if (!found.renderer && isRenderer(value)) found.renderer = value;
+        if (!found.scene && isScene(value)) found.scene = value;
+        if (!found.camera && isCamera(value)) found.camera = value;
       } catch {
         continue;
       }
-      if (scene && renderer && camera) break;
+      if (found.scene && found.renderer && found.camera) break;
+      enqueueModuleLike(value, queue, depth, seen);
       let keys = [];
       try {
-        keys = Object.keys(value);
+        keys = keysToVisit(value, limits.includeNonEnumerable === true);
       } catch {
         continue;
       }
@@ -2402,28 +2516,259 @@ ${line2}` : line1;
         }
       }
     }
-    if (!scene || !renderer) return void 0;
-    return { scene, camera: camera ?? {}, renderer, source: "walk" };
+    if (found.renderer && found.scene == null) mergeHandles(found, fillFromRenderer(found.renderer));
+    if (!found.scene && !found.renderer) return void 0;
+    return found;
   }
-  function discoverThreeHandles(root = globalThis, explicit = {}) {
+  function getDocument(root) {
+    const fromRoot = readKey(root, "document");
+    if (fromRoot != null) return fromRoot;
+    if (typeof document !== "undefined") return document;
+    return void 0;
+  }
+  function listCanvases(root) {
+    const doc = getDocument(root);
+    if (!isRecord(doc) || typeof doc.querySelectorAll !== "function") return [];
+    try {
+      return Array.from(doc.querySelectorAll("canvas"));
+    } catch {
+      return [];
+    }
+  }
+  function peekWebGLContext(canvas) {
+    if (!isRecord(canvas) || typeof canvas.getContext !== "function") return void 0;
+    const getContext = canvas.getContext;
+    for (const id of GL_CONTEXT_IDS) {
+      try {
+        const gl = getContext.call(canvas, id);
+        if (gl) return gl;
+      } catch {
+        continue;
+      }
+    }
+    return void 0;
+  }
+  function considerValue(into, value, limits) {
+    if (value == null) return;
+    if (isRenderer(value)) into.renderer ??= value;
+    if (isScene(value)) into.scene ??= value;
+    if (isCamera(value)) into.camera ??= value;
+    if (isRecord(value) && typeof value.nodeType !== "number") {
+      mergeHandles(into, walk(value, limits));
+    }
+  }
+  function inspectCanvas(canvas) {
+    const found = {};
+    const limits = { maxDepth: 4, maxVisits: 200, includeNonEnumerable: true };
+    for (const key of CANVAS_HANDLE_KEYS) {
+      considerValue(found, readKey(canvas, key), limits);
+    }
+    if (isRecord(canvas)) {
+      let names = [];
+      try {
+        names = Object.getOwnPropertyNames(canvas);
+      } catch {
+        try {
+          names = Object.keys(canvas);
+        } catch {
+          names = [];
+        }
+      }
+      for (const key of names) {
+        if (SKIP_KEYS.has(key) || CANVAS_SKIP_KEYS.has(key)) continue;
+        if (CANVAS_HANDLE_KEYS.includes(key)) continue;
+        considerValue(found, readKey(canvas, key), limits);
+      }
+    }
+    const gl = peekWebGLContext(canvas);
+    considerValue(found, gl, limits);
+    considerValue(found, readKey(gl, "__THREE__"), limits);
+    considerValue(found, readKey(gl, "userData"), limits);
+    considerValue(found, readKey(gl, "renderer"), limits);
+    considerValue(found, readKey(gl, "__renderer"), limits);
+    if (found.renderer && found.scene == null) mergeHandles(found, fillFromRenderer(found.renderer));
+    return found;
+  }
+  function fromCanvases(root) {
+    const found = {};
+    for (const canvas of listCanvases(root)) {
+      mergeHandles(found, inspectCanvas(canvas));
+      if (found.scene && found.renderer) break;
+    }
+    if (!found.scene && !found.renderer) return void 0;
+    return found;
+  }
+  function fromBundleRoots(root, probe) {
+    if (!isRecord(root)) return void 0;
+    const found = {};
+    const limits = { maxDepth: 8, maxVisits: 800, includeNonEnumerable: true };
+    for (const key of BUNDLE_ROOT_KEYS) {
+      const value = readKey(root, key);
+      if (value === void 0) continue;
+      probe.bundleRootsPresent.push(key);
+      considerValue(found, value, limits);
+      if (found.scene && found.renderer) break;
+    }
+    if (!found.scene && !found.renderer) return void 0;
+    return found;
+  }
+  function emptyProbe() {
+    return {
+      canvasCount: 0,
+      webglContextCount: 0,
+      foundRenderer: false,
+      foundScene: false,
+      foundCamera: false,
+      bundleRootsPresent: [],
+      tried: []
+    };
+  }
+  function refreshProbe(probe, found) {
+    probe.foundRenderer = found.renderer != null;
+    probe.foundScene = found.scene != null;
+    probe.foundCamera = isCamera(found.camera);
+  }
+  function formatDiscoveryError(probe) {
+    const webgl = probe.canvasCount === 0 ? "n/a" : probe.webglContextCount > 0 ? "yes" : "no";
+    const canvasLabel = `${probe.canvasCount} canvas${probe.canvasCount === 1 ? "" : "es"}`;
+    const parts = [];
+    if (probe.foundRenderer && !probe.foundScene) {
+      parts.push("threejs-doctor live-attach: found WebGLRenderer but not scene/camera.");
+    } else {
+      parts.push("threejs-doctor live-attach: could not find scene/camera/renderer.");
+    }
+    parts.push(
+      `Found: ${canvasLabel}, WebGL context: ${webgl}, renderer: ${probe.foundRenderer ? "yes" : "no"}, scene: ${probe.foundScene ? "yes" : "no"}, camera: ${probe.foundCamera ? "yes" : "no"}.`
+    );
+    if (probe.bundleRootsPresent.length > 0) {
+      parts.push(`Bundle roots present: ${probe.bundleRootsPresent.join(", ")}.`);
+    } else {
+      parts.push("Bundle roots present: none (checked app, game, __THREE__, and module-like singletons).");
+    }
+    if (probe.foundRenderer && !probe.foundScene) {
+      parts.push(
+        "Tried renderer properties and render() hook; still missing. Bundled games often close over scene/camera."
+      );
+    } else if (probe.tried.length > 0) {
+      parts.push(`Tried: ${probe.tried.join(", ")}.`);
+    }
+    parts.push("Pass them explicitly from this page's console once located:");
+    parts.push("  await ThreejsDoctorLiveAttach.attachQualityLadder({ scene, camera, renderer })");
+    return parts.join(" ");
+  }
+  function attemptDiscovery(root = globalThis, explicit = {}) {
+    const probe = emptyProbe();
+    const canvases = listCanvases(root);
+    probe.canvasCount = canvases.length;
+    for (const canvas of canvases) {
+      if (peekWebGLContext(canvas)) probe.webglContextCount += 1;
+    }
+    probe.tried.push(
+      "pelagic.debug",
+      "canvas (__THREE__/userData/internals)",
+      "bundle roots (app, game, __THREE__)",
+      "global walk"
+    );
     if (explicit.scene != null && explicit.camera != null && explicit.renderer != null) {
+      const found2 = { scene: explicit.scene, camera: explicit.camera, renderer: explicit.renderer };
+      refreshProbe(probe, found2);
+      return { ...found2, source: "explicit", probe };
+    }
+    const found = {
+      scene: explicit.scene,
+      camera: explicit.camera,
+      renderer: explicit.renderer
+    };
+    let source = found.scene != null && found.renderer != null ? "explicit" : void 0;
+    const pelagic = fromPelagic(root);
+    if (pelagic) {
+      mergeHandles(found, pelagic);
+      source ??= "pelagic";
+    }
+    if (found.scene == null || found.renderer == null) {
+      const canvasFound = fromCanvases(root);
+      if (canvasFound) {
+        const had = found.scene != null && found.renderer != null;
+        mergeHandles(found, canvasFound);
+        if (!had && found.scene != null && found.renderer != null) source ??= "canvas";
+        else if (canvasFound.renderer != null || canvasFound.scene != null) source ??= "canvas";
+      }
+    }
+    if (found.scene == null || found.renderer == null) {
+      const bundleFound = fromBundleRoots(root, probe);
+      if (bundleFound) {
+        mergeHandles(found, bundleFound);
+        source ??= "walk";
+      }
+    }
+    if (found.scene == null || found.renderer == null) {
+      const walked = walk(root, { maxDepth: 4, maxVisits: 400 });
+      if (walked) {
+        mergeHandles(found, walked);
+        source ??= "walk";
+      }
+    }
+    if (found.renderer != null && found.scene == null) {
+      mergeHandles(found, fillFromRenderer(found.renderer));
+    }
+    if (found.scene != null && found.camera == null) {
+      found.camera = findCameraInScene(found.scene);
+    }
+    refreshProbe(probe, found);
+    return { ...found, probe, ...source ? { source } : {} };
+  }
+  async function waitForSceneCameraFromRenderer(renderer, options = {}) {
+    if (!isRecord(renderer)) return void 0;
+    const extra = fillFromRenderer(renderer);
+    if (extra.scene != null) {
       return {
-        scene: explicit.scene,
-        camera: explicit.camera,
-        renderer: explicit.renderer,
-        source: "explicit"
+        scene: extra.scene,
+        camera: extra.camera ?? findCameraInScene(extra.scene) ?? {}
       };
     }
-    const found = fromPelagic(root) ?? walk(root);
-    const scene = explicit.scene ?? found?.scene;
-    const renderer = explicit.renderer ?? found?.renderer;
-    const camera = explicit.camera ?? found?.camera ?? {};
-    if (scene == null || renderer == null) return void 0;
+    if (typeof renderer.render !== "function") return void 0;
+    const hadOwn = Object.prototype.hasOwnProperty.call(renderer, "render");
+    const original = renderer.render;
+    let captured;
+    renderer.render = function(scene, camera, ...rest) {
+      if (isScene(scene)) {
+        captured = {
+          scene,
+          camera: isCamera(camera) ? camera : findCameraInScene(scene) ?? camera ?? {}
+        };
+      }
+      return original.apply(this, [scene, camera, ...rest]);
+    };
+    const wait = options.waitFrame ?? (async () => {
+    });
+    const maxAttempts = options.maxAttempts ?? 32;
+    try {
+      for (let i = 0; i < maxAttempts && !captured; i += 1) {
+        await wait();
+      }
+    } finally {
+      if (hadOwn) {
+        ;
+        renderer.render = original;
+      } else {
+        try {
+          delete renderer.render;
+        } catch {
+          ;
+          renderer.render = original;
+        }
+      }
+    }
+    return captured;
+  }
+  function discoverThreeHandles(root = globalThis, explicit = {}) {
+    const attempt = attemptDiscovery(root, explicit);
+    if (attempt.scene == null || attempt.renderer == null) return void 0;
     return {
-      scene,
-      camera,
-      renderer,
-      source: found?.source ?? "explicit"
+      scene: attempt.scene,
+      camera: attempt.camera ?? {},
+      renderer: attempt.renderer,
+      source: attempt.source ?? "explicit"
     };
   }
 
@@ -2583,20 +2928,39 @@ ${line2}` : line1;
     if (options.scene !== void 0) explicit.scene = options.scene;
     if (options.camera !== void 0) explicit.camera = options.camera;
     if (options.renderer !== void 0) explicit.renderer = options.renderer;
-    const found = discoverThreeHandles(root, explicit);
-    if (!found) {
-      throw new Error(
-        "threejs-doctor live-attach: could not find scene/camera/renderer. Pass them explicitly: attachQualityLadder({ scene, camera, renderer })"
-      );
+    const attempt = attemptDiscovery(root, explicit);
+    let scene = attempt.scene;
+    let camera = attempt.camera;
+    let rendererHandle = attempt.renderer;
+    if (rendererHandle != null && scene == null) {
+      const waitFrameForHook = options.waitFrame ?? (options.now === void 0 ? waitLiveFrame(rendererHandle) : void 0);
+      const captured = await waitForSceneCameraFromRenderer(rendererHandle, {
+        maxAttempts: waitFrameForHook ? 32 : 1,
+        ...waitFrameForHook ? { waitFrame: waitFrameForHook } : {}
+      });
+      if (captured?.scene != null) {
+        scene = captured.scene;
+        camera = captured.camera ?? camera;
+      }
     }
+    if (scene == null || rendererHandle == null) {
+      attempt.probe.foundRenderer = rendererHandle != null;
+      attempt.probe.foundScene = scene != null;
+      throw new Error(formatDiscoveryError(attempt.probe));
+    }
+    const found = {
+      scene,
+      camera: camera ?? {},
+      renderer: rendererHandle
+    };
     const renderer = wrapRenderer(found.renderer);
-    const scene = found.scene;
-    const camera = found.camera ?? {};
+    const sceneForDoctor = found.scene;
+    const cameraForDoctor = found.camera ?? {};
     const useLiveClock = options.now === void 0;
     const waitFrame = options.waitFrame ?? (useLiveClock ? waitLiveFrame(found.renderer) : void 0);
     const doctorOpts = {
-      scene,
-      camera,
+      scene: sceneForDoctor,
+      camera: cameraForDoctor,
       renderer,
       profile: options.profile ?? "game",
       getSceneStats: () => collectSceneStats(found.scene, renderer)
