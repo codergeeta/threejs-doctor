@@ -9,6 +9,11 @@ export interface DoctorRendererLike {
   antialias?: boolean
   setPixelRatio(value: number): void
   getExtension?: (name: string) => unknown
+  toneMapping?: number
+  shadowMap?: { enabled: boolean }
+  drawingBufferWidth?: number
+  drawingBufferHeight?: number
+  setDrawingBufferSize?: (width: number, height: number, pixelRatio: number) => void
 }
 
 export interface DoctorSceneLike {
@@ -23,7 +28,7 @@ export interface DoctorObjectLike {
   isLight?: boolean
   matrixAutoUpdate?: boolean
   geometry?: { uuid: string }
-  material?: { uuid: string } | Array<{ uuid: string }>
+  material?: { uuid?: string } | Array<{ uuid?: string }>
   position?: { distanceTo: (v: { x: number; y: number; z: number }) => number }
 }
 

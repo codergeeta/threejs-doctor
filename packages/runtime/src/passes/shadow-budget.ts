@@ -14,9 +14,14 @@ export const shadowBudgetPass: OptimizePass = {
               ? 1
               : 2
     const touched: Array<{ obj: DoctorObjectLike; prev: boolean }> = []
+    const shadowMap = ctx.qualityTier === 'potato' ? ctx.renderer.shadowMap : undefined
+    const prevShadowMapEnabled = shadowMap?.enabled
     let kept = 0
     const rollbackTouched = () => {
       for (const t of touched) t.obj.castShadow = t.prev
+      if (shadowMap !== undefined && prevShadowMapEnabled !== undefined) {
+        shadowMap.enabled = prevShadowMapEnabled
+      }
     }
     try {
       ctx.scene.traverse((obj) => {
@@ -29,6 +34,9 @@ export const shadowBudgetPass: OptimizePass = {
         touched.push({ obj, prev: true })
         obj.castShadow = false
       })
+      if (shadowMap !== undefined) {
+        shadowMap.enabled = false
+      }
     } catch (err) {
       rollbackTouched()
       throw err

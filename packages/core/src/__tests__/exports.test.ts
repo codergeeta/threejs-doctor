@@ -6,8 +6,11 @@ describe('core public exports', () => {
   it('keeps material-downgrade out of the default safe pass set', () => {
     const expected: readonly PassId[] = [
       'dpr-cap',
+      'pixel-budget',
       'shadow-budget',
       'postfx-budget',
+      'tone-map-lite',
+      'anisotropy-cap',
       'frameloop-demand',
       'distance-cull',
     ]

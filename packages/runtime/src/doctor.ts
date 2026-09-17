@@ -28,8 +28,11 @@ import type {
   OptimizePass,
 } from './passes/types.js'
 import { dprCapPass } from './passes/dpr-cap.js'
+import { pixelBudgetPass } from './passes/pixel-budget.js'
 import { shadowBudgetPass } from './passes/shadow-budget.js'
 import { postfxBudgetPass } from './passes/postfx-budget.js'
+import { toneMapLitePass } from './passes/tone-map-lite.js'
+import { anisotropyCapPass } from './passes/anisotropy-cap.js'
 import { frameloopDemandPass } from './passes/frameloop-demand.js'
 import { distanceCullPass } from './passes/distance-cull.js'
 import { materialDowngradePass } from './passes/material-downgrade.js'
@@ -66,8 +69,11 @@ export interface DoctorOptions {
 
 const PASS_REGISTRY: Record<PassId, OptimizePass> = {
   'dpr-cap': dprCapPass,
+  'pixel-budget': pixelBudgetPass,
   'shadow-budget': shadowBudgetPass,
   'postfx-budget': postfxBudgetPass,
+  'tone-map-lite': toneMapLitePass,
+  'anisotropy-cap': anisotropyCapPass,
   'frameloop-demand': frameloopDemandPass,
   'distance-cull': distanceCullPass,
   'material-downgrade': materialDowngradePass,

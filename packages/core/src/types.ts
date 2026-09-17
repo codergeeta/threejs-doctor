@@ -4,16 +4,22 @@ export type DeviceTier = 'low' | 'mid' | 'high'
 export type Severity = 'info' | 'warn' | 'error'
 export type PassId =
   | 'dpr-cap'
+  | 'pixel-budget'
   | 'shadow-budget'
   | 'postfx-budget'
+  | 'tone-map-lite'
+  | 'anisotropy-cap'
   | 'frameloop-demand'
   | 'distance-cull'
   | 'material-downgrade'
 
 export const SAFE_PASSES: readonly PassId[] = [
   'dpr-cap',
+  'pixel-budget',
   'shadow-budget',
   'postfx-budget',
+  'tone-map-lite',
+  'anisotropy-cap',
   'frameloop-demand',
   'distance-cull',
 ] as const
