@@ -37,5 +37,17 @@ describe('computeDoctorScore', () => {
     const score = computeDoctorScore(findings, healthy, 'product')
     expect(score).toBeLessThan(80)
     expect(score).toBeGreaterThanOrEqual(0)
+    expect(score).toBe(74)
+  })
+
+  it('penalizes over-budget draw calls without findings', () => {
+    expect(computeDoctorScore([], { ...healthy, drawCalls: 200 }, 'product')).toBe(90)
+    expect(computeDoctorScore([], { ...healthy, drawCalls: 400 }, 'product')).toBe(85)
+  })
+
+  it('penalizes over-budget VRAM without findings', () => {
+    expect(
+      computeDoctorScore([], { ...healthy, estimatedVramBytes: 129_000_000 }, 'product'),
+    ).toBe(90)
   })
 })
