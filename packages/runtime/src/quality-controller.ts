@@ -310,34 +310,21 @@ export class QualityController {
           if (holdsAtTarget >= 3 || decision.reason === 'floor') break
           continue
         }
-        if (decision.reason === 'floor') {
-          const last = this.last!
-          this.last = { ...last, floorFailed: true, tier: 'potato' }
-          break
-        }
-        if (decision.action === 'drop') {
-          this.applyRung(decision.next.tier)
-          state = decision.next
-          holdsAtTarget = 0
-          continue
-        }
-        if (sample.p95FrameTimeMs <= HYSTERESIS.dropP95Ms) holdsAtTarget += 1
-        else holdsAtTarget = 0
-        if (holdsAtTarget >= 3) {
-          if (decision.action === 'climb') {
-            state = { ...decision.next, tier: state.tier }
-          } else {
-            state = decision.next
-          }
-          break
-        }
-        if (decision.action === 'climb') {
+        if (decision.action === 'drop' || decision.action === 'climb') {
           this.applyRung(decision.next.tier)
           state = decision.next
           holdsAtTarget = 0
           continue
         }
         state = decision.next
+        if (decision.reason === 'floor') {
+          const last = this.last!
+          this.last = { ...last, floorFailed: true, tier: 'potato' }
+          break
+        }
+        if (sample.p95FrameTimeMs <= HYSTERESIS.dropP95Ms) holdsAtTarget += 1
+        else holdsAtTarget = 0
+        if (holdsAtTarget >= 3) break
       }
     } catch {
       incomplete = true

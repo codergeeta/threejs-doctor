@@ -70,6 +70,41 @@ describe('QualityController.runLadder', () => {
     }
   })
 
+  it('climbs one rung after 3 fast runtime windows and does not skip a tier', async () => {
+    const applies: QualityTier[] = []
+    const { doctor } = createLadderDoctor({
+      now: (() => {
+        let t = 0
+        return () => {
+          t += 16
+          return t
+        }
+      })(),
+      measureFrames: 4,
+    })
+    const ladder = new QualityController(doctor, {
+      mode: 'safe-auto',
+      startTier: 'potato',
+      maxTier: 'mid',
+      windowFrames: 4,
+      waitForFirstInteractive: async () => {},
+    })
+    ladder.registerAdapter(adapterRecording(applies))
+    await ladder.boot()
+    const settled = await ladder.runLadder()
+    expect(settled.tier).not.toBe('potato')
+    expect(['low', 'mid']).toContain(settled.tier)
+    const uniqueJumps = applies.filter((t, i) => i === 0 || t !== applies[i - 1])
+    expect(uniqueJumps[0]).toBe('potato')
+    expect(uniqueJumps).toContain('low')
+    for (let i = 1; i < uniqueJumps.length; i++) {
+      const order = ['potato', 'low', 'mid', 'high']
+      expect(
+        Math.abs(order.indexOf(uniqueJumps[i]!) - order.indexOf(uniqueJumps[i - 1]!)),
+      ).toBe(1)
+    }
+  })
+
   it('does not climb when still in boot phase windows', async () => {
     const { doctor } = createLadderDoctor({
       now: (() => {
@@ -175,7 +210,7 @@ describe('QualityController.runLadder', () => {
     const { doctor, renderer } = createLadderDoctor({ measureFrames: 4 })
     const ladder = new QualityController(doctor, {
       startTier: 'potato',
-      maxTier: 'mid',
+      maxTier: 'potato',
       windowFrames: 4,
       waitForFirstInteractive: async () => {},
     })
