@@ -72,10 +72,14 @@ function knobsFor(
   const knobs: QualityKnobSet = {}
   const applied: AppliedKnob[] = []
   const advertised = new Set(capabilities)
+  const unsupported: AdapterCapability[] = []
   const maybeSet = <K extends keyof QualityKnobSet>(key: K, cap: AdapterCapability) => {
-    if (!advertised.has(cap)) return
     const value = table[key]
     if (value === undefined) return
+    if (!advertised.has(cap)) {
+      if (!unsupported.includes(cap)) unsupported.push(cap)
+      return
+    }
     knobs[key] = value as QualityKnobSet[K]
     applied.push({ capability: cap, value })
   }
@@ -84,7 +88,7 @@ function knobsFor(
   maybeSet('rtScale', 'rtScale')
   maybeSet('meshLod', 'meshLod')
   maybeSet('deferredHdr', 'deferredHdr')
-  return { knobs, applied, unsupported: [] }
+  return { knobs, applied, unsupported }
 }
 
 function copyExtras(sample: MetricsSample, extras: AdapterExtras | undefined): MetricsSample {
@@ -287,6 +291,8 @@ export class QualityController {
     let after: MetricsSample | undefined
     let incomplete = this.last!.incomplete
     let holdsAtTarget = 0
+    // Consume applyFailed for hysteresis on the next window only (report flag stays).
+    let pendingApplyFailed = this.last!.applyFailed
     // Max 12 windows safety valve (unit tests and production).
     const maxWindows = 12
     try {
@@ -296,8 +302,9 @@ export class QualityController {
         if (!baseline) baseline = this.mergeExtras(sample)
         after = this.mergeExtras(sample)
         const decision = evaluateWindow(state, sample.p95FrameTimeMs, {
-          applyFailed: this.last!.applyFailed,
+          applyFailed: pendingApplyFailed,
         })
+        pendingApplyFailed = false
         if (this.mode === 'advise') {
           state = { ...decision.next, tier: state.tier }
           const last = this.last!
@@ -314,7 +321,7 @@ export class QualityController {
           continue
         }
         if (decision.action === 'drop' || decision.action === 'climb') {
-          this.applyRung(decision.next.tier)
+          pendingApplyFailed = this.applyRung(decision.next.tier)
           state = decision.next
           holdsAtTarget = 0
           continue
@@ -325,7 +332,10 @@ export class QualityController {
           this.last = { ...last, floorFailed: true, tier: 'potato' }
           break
         }
-        if (sample.p95FrameTimeMs <= HYSTERESIS.dropP95Ms) holdsAtTarget += 1
+        const atTarget = sample.p95FrameTimeMs <= HYSTERESIS.dropP95Ms
+        const waitingToClimb =
+          sample.p95FrameTimeMs <= HYSTERESIS.climbP95Ms && decision.reason !== 'ceiling'
+        if (atTarget && !waitingToClimb) holdsAtTarget += 1
         else holdsAtTarget = 0
         if (holdsAtTarget >= 3) break
       }
@@ -390,7 +400,7 @@ export class QualityController {
     this.doctor.reclampPixelRatioCeiling(GENERIC_CAPS[tier].pixelRatio)
   }
 
-  private applyRung(tier: QualityTier): void {
+  private applyRung(tier: QualityTier): boolean {
     for (let i = this.knobHandles.length - 1; i >= 0; i--) {
       try {
         this.knobHandles[i]!.rollback()
@@ -405,13 +415,17 @@ export class QualityController {
     const failedPasses: Array<{ id: PassId; error: string }> = []
     const appliedKnobs: AppliedKnob[] = []
     let unsupportedKnobs: AdapterCapability[] = []
+    let thisRungFailed = false
     let applyFailed = this.last?.applyFailed ?? false
     let adapterUnavailable = this.last?.adapterUnavailable ?? false
 
     const result = this.doctor.applyPassesImmediate([...SAFE_PASSES], { qualityTier: tier })
     appliedPasses.push(...result.appliedPasses)
     failedPasses.push(...result.failedPasses)
-    if (failedPasses.length > 0) applyFailed = true
+    if (failedPasses.length > 0) {
+      applyFailed = true
+      thisRungFailed = true
+    }
 
     if (this.adapter && this.mode !== 'advise') {
       let caps: AdapterCapability[]
@@ -438,6 +452,7 @@ export class QualityController {
             // best-effort
           }
           applyFailed = true
+          thisRungFailed = true
         }
       }
     }
@@ -455,6 +470,7 @@ export class QualityController {
       if (adapterUnavailable) next.adapterUnavailable = true
       this.last = next
     }
+    return thisRungFailed
   }
 
   private finalize(

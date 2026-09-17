@@ -91,6 +91,8 @@ export function evaluateWindow(
   }
 
   if (p95FrameTimeMs >= HYSTERESIS.emergencyP95Ms) return dropTo('emergency')
+  // Failed apply + still below 30 FPS is drop-triggering (do not wait for 2 slow windows).
+  if (opts.applyFailed && p95FrameTimeMs > HYSTERESIS.dropP95Ms) return dropTo('below-target')
 
   let consecutiveSlow = state.consecutiveSlow
   let consecutiveFast = state.consecutiveFast

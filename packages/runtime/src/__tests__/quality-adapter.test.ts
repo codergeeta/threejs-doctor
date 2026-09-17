@@ -28,7 +28,7 @@ describe('QualityController adapter wiring', () => {
       'deferredHdr',
       'rtScale',
     ])
-    expect(boot.unsupportedKnobs).toEqual([])
+    expect(boot.unsupportedKnobs.sort()).toEqual(['fftSize', 'meshLod'])
   })
 
   it('records unsupportedKnobs when apply is given a capability the adapter does not implement', async () => {
@@ -48,6 +48,9 @@ describe('QualityController adapter wiring', () => {
     ladder.registerAdapter(adapter)
     const boot = await ladder.boot()
     expect(boot.unsupportedKnobs).not.toContain('rtScale')
+    expect(boot.unsupportedKnobs).toContain('fftSize')
+    expect(boot.unsupportedKnobs).toContain('meshLod')
+    expect(boot.unsupportedKnobs).toContain('deferredHdr')
     expect(boot.appliedKnobs.some((k) => k.capability === 'fftSize')).toBe(false)
   })
 

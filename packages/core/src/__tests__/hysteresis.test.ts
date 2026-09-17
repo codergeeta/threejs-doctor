@@ -150,4 +150,16 @@ describe('hysteresis state machine', () => {
     expect(state.tier).toBe('low')
     expect(actions.includes('climb')).toBe(false)
   })
+
+  it('drops immediately on applyFailed when p95 is still below 30 FPS', () => {
+    const { state, actions } = runWindows(
+      createHysteresisState({ tier: 'mid', maxTier: 'high', phase: 'runtime' }),
+      [40],
+      0,
+    )
+    expect(p95FromFakeClock(40)).toBeGreaterThan(33.4)
+    expect(p95FromFakeClock(40)).toBeLessThan(50)
+    expect(actions).toEqual(['drop'])
+    expect(state.tier).toBe('low')
+  })
 })

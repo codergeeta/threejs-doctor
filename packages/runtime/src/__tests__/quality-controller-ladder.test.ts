@@ -206,6 +206,172 @@ describe('QualityController.runLadder', () => {
     expect(settled.baseline).toBeDefined()
   })
 
+  it('does not permanently block climb after a one-shot applyFailed', async () => {
+    let applies = 0
+    const adapter: QualityAdapter = {
+      id: 'once-boom',
+      capabilities: () => ['rtScale'],
+      snapshot: () => ({}),
+      apply() {
+        applies += 1
+        if (applies === 1) throw new Error('first apply failed')
+        return { rollback() {} }
+      },
+    }
+    const { doctor } = createLadderDoctor({
+      now: (() => {
+        let t = 0
+        return () => {
+          t += 16
+          return t
+        }
+      })(),
+      measureFrames: 4,
+    })
+    const ladder = new QualityController(doctor, {
+      mode: 'safe-auto',
+      startTier: 'potato',
+      maxTier: 'mid',
+      windowFrames: 4,
+      waitForFirstInteractive: async () => {},
+    })
+    ladder.registerAdapter(adapter)
+    const boot = await ladder.boot()
+    expect(boot.applyFailed).toBe(true)
+    const settled = await ladder.runLadder()
+    expect(settled.applyFailed).toBe(true)
+    expect(settled.tier).not.toBe('potato')
+  })
+
+  it('drops after a failed apply when the next window is still below 30 FPS', async () => {
+    const applies: QualityTier[] = []
+    const adapter: QualityAdapter = {
+      id: 'boom-mid',
+      capabilities: () => ['rtScale'],
+      snapshot: () => ({}),
+      apply(tier) {
+        applies.push(tier)
+        if (applies.length === 1) throw new Error('cannot apply mid knobs')
+        return { rollback() {} }
+      },
+    }
+    let calls = 0
+    const { doctor } = createLadderDoctor({
+      now: (() => {
+        let t = 0
+        return () => {
+          calls += 1
+          // boot measure (4 frames × 2 now) at 16ms; first ladder window at 40ms; rest fast
+          t += calls <= 8 ? 16 : calls <= 16 ? 40 : 16
+          return t
+        }
+      })(),
+      measureFrames: 4,
+      device: {
+        tier: 'mid',
+        maxTextureSize: 8192,
+        webgl: true,
+        webgpu: false,
+        devicePixelRatio: 2,
+        hardwareConcurrency: 8,
+      },
+    })
+    const ladder = new QualityController(doctor, {
+      mode: 'safe-auto',
+      startTier: 'mid',
+      maxTier: 'high',
+      windowFrames: 4,
+      waitForFirstInteractive: async () => {},
+    })
+    ladder.registerAdapter(adapter)
+    await ladder.boot()
+    const settled = await ladder.runLadder()
+    expect(settled.applyFailed).toBe(true)
+    expect(applies).toContain('low')
+    expect(settled.tier).not.toBe('mid')
+  })
+
+  it('emergency-drops through the controller on a single ≥50ms window', async () => {
+    const applies: QualityTier[] = []
+    let calls = 0
+    const { doctor } = createLadderDoctor({
+      now: (() => {
+        let t = 0
+        return () => {
+          calls += 1
+          t += calls <= 8 ? 16 : calls <= 16 ? 50 : 16
+          return t
+        }
+      })(),
+      measureFrames: 4,
+      device: {
+        tier: 'mid',
+        maxTextureSize: 8192,
+        webgl: true,
+        webgpu: false,
+        devicePixelRatio: 2,
+        hardwareConcurrency: 8,
+      },
+    })
+    const ladder = new QualityController(doctor, {
+      mode: 'safe-auto',
+      startTier: 'mid',
+      maxTier: 'high',
+      windowFrames: 4,
+      waitForFirstInteractive: async () => {},
+    })
+    ladder.registerAdapter(adapterRecording(applies))
+    await ladder.boot()
+    const settled = await ladder.runLadder()
+    expect(applies[0]).toBe('mid')
+    expect(applies).toContain('low')
+    expect(applies.indexOf('low')).toBeGreaterThan(0)
+    expect(settled.tier).toBeDefined()
+  })
+
+  it('blocks climb during cooldown windows after an emergency drop', async () => {
+    const applies: QualityTier[] = []
+    const applyAtCalls: number[] = []
+    let calls = 0
+    const { doctor } = createLadderDoctor({
+      now: (() => {
+        let t = 0
+        return () => {
+          calls += 1
+          t += calls <= 8 ? 16 : calls <= 16 ? 50 : 16
+          return t
+        }
+      })(),
+      measureFrames: 4,
+    })
+    const ladder = new QualityController(doctor, {
+      mode: 'safe-auto',
+      startTier: 'low',
+      maxTier: 'low',
+      windowFrames: 4,
+      waitForFirstInteractive: async () => {},
+    })
+    ladder.registerAdapter({
+      id: 'rec',
+      capabilities: () => ['rtScale'],
+      snapshot: () => ({}),
+      apply(tier) {
+        applies.push(tier)
+        applyAtCalls.push(calls)
+        return { rollback() {} }
+      },
+    })
+    await ladder.boot()
+    await ladder.runLadder()
+    expect(applies[0]).toBe('low')
+    expect(applies[1]).toBe('potato')
+    const climbBack = applies.findIndex((t, i) => i > 1 && t === 'low')
+    expect(climbBack).toBeGreaterThan(1)
+    // 4-frame windows use 8 now() ticks. Cooldown is 2 windows, then 3 fast to climb.
+    const ticksBetween = applyAtCalls[climbBack]! - applyAtCalls[1]!
+    expect(ticksBetween).toBeGreaterThanOrEqual(8 * 4)
+  })
+
   it('reclamps DPR if the host raises it above the safe-auto ceiling', async () => {
     const { doctor, renderer } = createLadderDoctor({ measureFrames: 4 })
     const ladder = new QualityController(doctor, {
