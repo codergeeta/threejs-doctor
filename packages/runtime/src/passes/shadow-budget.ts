@@ -12,6 +12,7 @@ export const shadowBudgetPass: OptimizePass = {
     try {
       ctx.scene.traverse((obj) => {
         if (!obj.castShadow) return
+        if (obj.isMesh && !obj.isLight) return
         if (kept < maxCasters) {
           kept += 1
           return

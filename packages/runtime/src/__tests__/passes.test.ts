@@ -85,6 +85,30 @@ describe('safe passes', () => {
     expect(lights.every((l) => l.castShadow)).toBe(true)
   })
 
+  it('shadow-budget does not spend budget on mesh.castShadow', () => {
+    const lights = [
+      { isLight: true, castShadow: true },
+      { isLight: true, castShadow: true },
+      { isLight: true, castShadow: true },
+    ]
+    const mesh = { isMesh: true, castShadow: true }
+    const scene = {
+      children: [...lights, mesh],
+      traverse(cb: (o: { castShadow?: boolean }) => void) {
+        for (const l of lights) cb(l)
+        cb(mesh)
+      },
+    }
+    shadowBudgetPass.apply(
+      baseCtx({
+        scene: scene as never,
+        profile: 'product',
+      }),
+    )
+    expect(mesh.castShadow).toBe(true)
+    expect(lights.filter((l) => l.castShadow).length).toBe(2)
+  })
+
   it('postfx-budget disables postfx on low-tier and rollbacks', () => {
     let enabled = true
     const ctx = baseCtx({

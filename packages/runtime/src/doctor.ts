@@ -2,6 +2,7 @@ import {
   MetricsCollector,
   SAFE_PASSES,
   probeDevice,
+  snapshotScene,
   type MetricsSample,
   type Mode,
   type PassId,
@@ -84,24 +85,45 @@ function diffMetrics(
 function snapshotFrom(
   sample: MetricsSample,
   renderer: DoctorRendererLike,
+  scene: DoctorSceneLike,
   continuousFrameloop: boolean,
 ): SceneSnapshot {
+  let objectCount = 0
+  let meshCount = 0
+  let matrixAutoUpdateCount = 0
+  const geometries: Array<{ uuid: string }> = []
+  const materials: Array<{ uuid: string }> = []
+  scene.traverse((obj) => {
+    objectCount += 1
+    if (obj.isMesh) meshCount += 1
+    if (obj.matrixAutoUpdate) matrixAutoUpdateCount += 1
+    if (obj.geometry?.uuid) geometries.push({ uuid: obj.geometry.uuid })
+    const mats = Array.isArray(obj.material) ? obj.material : obj.material ? [obj.material] : []
+    for (const mat of mats) {
+      if (mat.uuid) materials.push({ uuid: mat.uuid })
+    }
+  })
+  const walked = snapshotScene({
+    objectCount,
+    meshCount,
+    geometries,
+    materials,
+    textures: [],
+    lights: [],
+    drawCalls: sample.drawCalls,
+    triangles: sample.triangles,
+    continuousFrameloop,
+    matrixAutoUpdateCount,
+    rendererPixelRatio: renderer.pixelRatio,
+    antialias: Boolean(renderer.antialias),
+  })
   return {
-    objectCount: 0,
-    meshCount: 0,
+    ...walked,
     geometryCount: sample.geometryCount,
-    materialCount: 0,
     textureCount: sample.textureCount,
     estimatedVramBytes: sample.estimatedVramBytes,
     lightCount: sample.lightCount,
     shadowCastingLightCount: sample.shadowCastingLightCount,
-    drawCalls: sample.drawCalls,
-    triangles: sample.triangles,
-    maxTextureDimension: 2048,
-    continuousFrameloop,
-    matrixAutoUpdateCount: 0,
-    rendererPixelRatio: renderer.pixelRatio,
-    antialias: Boolean(renderer.antialias),
   }
 }
 
@@ -184,7 +206,12 @@ export class Doctor {
   }
 
   private currentSnapshot(sample: MetricsSample): SceneSnapshot {
-    return snapshotFrom(sample, this.opts.renderer, this.frameloop === 'always')
+    return snapshotFrom(
+      sample,
+      this.opts.renderer,
+      this.opts.scene,
+      this.frameloop === 'always',
+    )
   }
 
   private ruleContext(
@@ -251,8 +278,9 @@ export class Doctor {
       },
       frameloop: this.frameloop,
       setFrameloop: (mode) => {
+        if (!this.opts.setFrameloop) return
         this.frameloop = mode
-        this.opts.setFrameloop?.(mode)
+        this.opts.setFrameloop(mode)
       },
     }
     if (cameraPosition) ctx.cameraPosition = cameraPosition

@@ -149,4 +149,56 @@ describe('Doctor', () => {
     expect(report.deltas).toBeUndefined()
     expect(report.baseline.drawCalls).toBe(baseline.drawCalls)
   })
+
+  it('walks the scene so transform findings can fire', async () => {
+    const objects = Array.from({ length: 12 }, () => ({ matrixAutoUpdate: true }))
+    const info: RendererInfoLike = {
+      render: { calls: 20, triangles: 1000 },
+      memory: { geometries: 12, textures: 1 },
+    }
+    const renderer = {
+      info,
+      pixelRatio: 1,
+      antialias: false,
+      setPixelRatio(v: number) {
+        this.pixelRatio = v
+      },
+    }
+    const doctor = new Doctor({
+      scene: {
+        children: objects,
+        traverse(cb: (o: Record<string, unknown>) => void) {
+          for (const o of objects) cb(o)
+        },
+      } as never,
+      camera: {},
+      renderer: renderer as never,
+      profile: 'product',
+      mode: 'diagnose',
+      measureFrames: 2,
+      now: (() => {
+        let t = 0
+        return () => {
+          t += 16
+          return t
+        }
+      })(),
+      getSceneStats: () => ({
+        textureCount: 1,
+        estimatedVramBytes: 1_000_000,
+        geometryCount: 12,
+        lightCount: 1,
+        shadowCastingLightCount: 0,
+      }),
+    })
+    const report = await doctor.diagnose()
+    expect(report.findings.some((f) => f.id === 'transforms/matrix-autoupdate')).toBe(true)
+  })
+
+  it('does not claim demand frameloop when the host provided no setter', async () => {
+    const { doctor } = createHarness()
+    await doctor.optimize({ apply: ['frameloop-demand'] })
+    const report = await doctor.diagnose()
+    expect(report.findings.some((f) => f.id === 'frameloop/continuous-static')).toBe(true)
+  })
 })
