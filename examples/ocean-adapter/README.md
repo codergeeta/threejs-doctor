@@ -39,6 +39,6 @@ If `window.pelagic.debug` is missing (or has no cascades/targets),
 `adapterUnavailable: true` and still runs **generic** Three.js caps only.
 Do not invent `simPassCount` / `after` metrics in that case.
 
-`npx threejs-doctor scan` is a stub and is **not** an acceptance path for ocean
+`threejs-doctor scan` / `ci` are not implemented (exit 1) and are **not** an acceptance path for ocean
 quality. Headless CI runs unit tests only. Live TTFI/FPS proof is a phone
 capture against the URL above, not a checked-in JSON fixture.

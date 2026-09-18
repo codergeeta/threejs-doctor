@@ -370,9 +370,9 @@
     "postfx-budget",
     "tone-map-lite",
     "anisotropy-cap",
-    "frameloop-demand",
-    "distance-cull"
+    "frameloop-demand"
   ];
+  var AGGRESSIVE_PASSES = ["distance-cull"];
 
   // ../../packages/core/src/device-probe.ts
   function classifyTier(input) {
@@ -849,17 +849,19 @@
         PROFILE_BUDGETS[profile].maxDpr,
         ctx.device.tier === "low" ? 1.5 : PROFILE_BUDGETS[profile].maxDpr
       );
-      if (ctx.snapshot.rendererPixelRatio <= maxDpr) return [];
+      const dpr = ctx.snapshot.rendererPixelRatio;
+      if (typeof dpr !== "number" || !Number.isFinite(dpr)) return [];
+      if (dpr <= maxDpr) return [];
       return [
         {
           id: "renderer/uncapped-dpr",
           severity: ctx.device.tier === "low" ? "error" : "warn",
           evidence: {
-            rendererPixelRatio: ctx.snapshot.rendererPixelRatio,
+            rendererPixelRatio: dpr,
             maxDpr,
             tier: ctx.device.tier
           },
-          message: `Renderer pixel ratio ${ctx.snapshot.rendererPixelRatio} exceeds cap ${maxDpr}`,
+          message: `Renderer pixel ratio ${dpr} exceeds cap ${maxDpr}`,
           suggestedFix: "Cap setPixelRatio for the active device tier",
           autoFix: "dpr-cap"
         }
@@ -1010,6 +1012,32 @@
     return rules.flatMap((rule) => rule.run(ctx));
   }
 
+  // ../../packages/runtime/src/renderer-read.ts
+  function readRendererPixelRatio(renderer) {
+    if (typeof renderer.getPixelRatio === "function") {
+      try {
+        const value = renderer.getPixelRatio();
+        if (Number.isFinite(value)) return value;
+      } catch {
+      }
+    }
+    if (typeof renderer.pixelRatio === "number" && Number.isFinite(renderer.pixelRatio)) {
+      return renderer.pixelRatio;
+    }
+    return void 0;
+  }
+  function readRendererAntialias(renderer) {
+    if (typeof renderer.getContext === "function") {
+      try {
+        const attrs = renderer.getContext()?.getContextAttributes?.();
+        if (attrs && typeof attrs.antialias === "boolean") return attrs.antialias;
+      } catch {
+      }
+    }
+    if (typeof renderer.antialias === "boolean") return renderer.antialias;
+    return void 0;
+  }
+
   // ../../packages/runtime/src/passes/dpr-cap.ts
   function restorePixelRatio(setPixelRatio, prev) {
     try {
@@ -1017,13 +1045,24 @@
     } catch {
     }
   }
+  function capFor(ctx, prev) {
+    if (ctx.qualityTier) {
+      return ctx.qualityTier === "potato" ? 1 : ctx.qualityTier === "low" ? 1.25 : ctx.qualityTier === "mid" ? 1.5 : 2;
+    }
+    return ctx.device.tier === "low" ? 1.5 : ctx.device.tier === "mid" ? 2 : Math.min(prev, 2);
+  }
   var dprCapPass = {
     id: "dpr-cap",
     apply(ctx) {
-      const prev = ctx.renderer.pixelRatio;
-      const cap = ctx.qualityTier ? ctx.qualityTier === "potato" ? 1 : ctx.qualityTier === "low" ? 1.25 : ctx.qualityTier === "mid" ? 1.5 : 2 : ctx.device.tier === "low" ? 1.5 : ctx.device.tier === "mid" ? 2 : Math.min(prev, 2);
+      const prev = readRendererPixelRatio(ctx.renderer);
+      if (prev === void 0) return { rollback() {
+      } };
+      const cap = capFor(ctx, prev);
+      const next = Math.min(prev, cap);
+      if (!Number.isFinite(next)) return { rollback() {
+      } };
       try {
-        ctx.renderer.setPixelRatio(Math.min(prev, cap));
+        ctx.renderer.setPixelRatio(next);
       } catch (err) {
         restorePixelRatio(ctx.renderer.setPixelRatio.bind(ctx.renderer), prev);
         throw err;
@@ -1043,7 +1082,9 @@
       if (ctx.qualityTier === void 0) return { rollback() {
       } };
       const renderer = ctx.renderer;
-      const prevRatio = renderer.pixelRatio;
+      const prevRatio = readRendererPixelRatio(renderer);
+      if (prevRatio === void 0) return { rollback() {
+      } };
       const prevW = renderer.drawingBufferWidth;
       const prevH = renderer.drawingBufferHeight;
       const capPixels = GENERIC_CAPS[ctx.qualityTier].drawingBufferPixels;
@@ -1074,6 +1115,10 @@
       }
       const scale = Math.sqrt(capPixels / current);
       const newRatio = Math.min(prevRatio, prevRatio * scale);
+      if (!Number.isFinite(newRatio)) {
+        return { rollback() {
+        } };
+      }
       try {
         if (renderer.setDrawingBufferSize) {
           const newW = Math.max(1, Math.floor(width * scale));
@@ -1261,6 +1306,86 @@
   };
 
   // ../../packages/runtime/src/passes/distance-cull.ts
+  function isFiniteVec(v) {
+    return Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z);
+  }
+  function distance(a, b) {
+    return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+  }
+  function transformPoint(elements, p) {
+    const x = p.x;
+    const y = p.y;
+    const z = p.z;
+    const w = elements[3] * x + elements[7] * y + elements[11] * z + elements[15];
+    const invW = w !== 0 && Number.isFinite(w) ? 1 / w : 1;
+    return {
+      x: (elements[0] * x + elements[4] * y + elements[8] * z + elements[12]) * invW,
+      y: (elements[1] * x + elements[5] * y + elements[9] * z + elements[13]) * invW,
+      z: (elements[2] * x + elements[6] * y + elements[10] * z + elements[14]) * invW
+    };
+  }
+  function worldAabb(obj) {
+    const geom = obj.geometry;
+    if (!geom) return void 0;
+    if (!geom.boundingBox && typeof geom.computeBoundingBox === "function") {
+      try {
+        geom.computeBoundingBox();
+      } catch {
+      }
+    }
+    const box = geom.boundingBox;
+    if (!box?.min || !box?.max || !isFiniteVec(box.min) || !isFiniteVec(box.max)) return void 0;
+    const corners = [
+      { x: box.min.x, y: box.min.y, z: box.min.z },
+      { x: box.min.x, y: box.min.y, z: box.max.z },
+      { x: box.min.x, y: box.max.y, z: box.min.z },
+      { x: box.min.x, y: box.max.y, z: box.max.z },
+      { x: box.max.x, y: box.min.y, z: box.min.z },
+      { x: box.max.x, y: box.min.y, z: box.max.z },
+      { x: box.max.x, y: box.max.y, z: box.min.z },
+      { x: box.max.x, y: box.max.y, z: box.max.z }
+    ];
+    const elements = obj.matrixWorld?.elements;
+    const worldCorners = elements && elements.length >= 16 ? corners.map((c) => transformPoint(elements, c)) : void 0;
+    if (!worldCorners) return void 0;
+    const min = { x: Infinity, y: Infinity, z: Infinity };
+    const max = { x: -Infinity, y: -Infinity, z: -Infinity };
+    for (const c of worldCorners) {
+      if (!isFiniteVec(c)) return void 0;
+      min.x = Math.min(min.x, c.x);
+      min.y = Math.min(min.y, c.y);
+      min.z = Math.min(min.z, c.z);
+      max.x = Math.max(max.x, c.x);
+      max.y = Math.max(max.y, c.y);
+      max.z = Math.max(max.z, c.z);
+    }
+    return { min, max };
+  }
+  function worldDistanceToCamera(obj, cam) {
+    const aabb = worldAabb(obj);
+    if (aabb) {
+      const closest = {
+        x: Math.min(aabb.max.x, Math.max(aabb.min.x, cam.x)),
+        y: Math.min(aabb.max.y, Math.max(aabb.min.y, cam.y)),
+        z: Math.min(aabb.max.z, Math.max(aabb.min.z, cam.z))
+      };
+      return distance(closest, cam);
+    }
+    if (typeof obj.getWorldPosition !== "function") return void 0;
+    const pos = { x: 0, y: 0, z: 0 };
+    try {
+      obj.getWorldPosition(pos);
+    } catch {
+      return void 0;
+    }
+    if (!isFiniteVec(pos)) return void 0;
+    const radius = obj.geometry?.boundingSphere?.radius;
+    const dist = distance(pos, cam);
+    if (typeof radius === "number" && Number.isFinite(radius) && radius > 0) {
+      return Math.max(0, dist - radius);
+    }
+    return dist;
+  }
   var distanceCullPass = {
     id: "distance-cull",
     apply(ctx) {
@@ -1272,8 +1397,9 @@
       };
       try {
         ctx.scene.traverse((obj) => {
-          if (!obj.isMesh || !obj.position) return;
-          const dist = obj.position.distanceTo(cam);
+          if (!obj.isMesh) return;
+          const dist = worldDistanceToCamera(obj, cam);
+          if (dist === void 0 || !Number.isFinite(dist)) return;
           const wasVisible = obj.visible !== false;
           if (dist > maxDist && wasVisible) {
             touched.push({ obj, prev: wasVisible });
@@ -1418,8 +1544,8 @@ ${line2}` : line1;
       triangles: sample.triangles,
       continuousFrameloop,
       matrixAutoUpdateCount,
-      rendererPixelRatio: renderer.pixelRatio,
-      antialias: Boolean(renderer.antialias)
+      rendererPixelRatio: readRendererPixelRatio(renderer),
+      antialias: readRendererAntialias(renderer)
     });
     return {
       ...walked,
@@ -1442,7 +1568,7 @@ ${line2}` : line1;
     const ids = [];
     const seen = /* @__PURE__ */ new Set();
     for (const token of tokens) {
-      const chunk = token === "safe" ? SAFE_PASSES : [token];
+      const chunk = token === "safe" ? SAFE_PASSES : token === "aggressive" ? AGGRESSIVE_PASSES : [token];
       for (const id of chunk) {
         if (seen.has(id)) continue;
         seen.add(id);
@@ -1468,11 +1594,15 @@ ${line2}` : line1;
     postfxEnabled;
     device() {
       if (this.opts.device) return this.opts.device;
-      const hostDpr = typeof globalThis !== "undefined" && typeof globalThis.devicePixelRatio === "number" ? globalThis.devicePixelRatio : this.opts.renderer.pixelRatio;
+      const windowDpr = typeof globalThis !== "undefined" && typeof globalThis.devicePixelRatio === "number" ? globalThis.devicePixelRatio : void 0;
+      const rendererDpr = readRendererPixelRatio(this.opts.renderer);
+      const hostDpr = windowDpr ?? rendererDpr;
       const probe = {
-        webgl: true,
-        devicePixelRatio: hostDpr
+        webgl: true
       };
+      if (typeof hostDpr === "number" && Number.isFinite(hostDpr)) {
+        probe.devicePixelRatio = hostDpr;
+      }
       if (typeof navigator !== "undefined") {
         if (typeof navigator.hardwareConcurrency === "number") {
           probe.hardwareConcurrency = navigator.hardwareConcurrency;
@@ -1637,7 +1767,8 @@ ${line2}` : line1;
       this.overlay?.refresh();
     }
     reclampPixelRatioCeiling(maxRatio) {
-      if (this.opts.renderer.pixelRatio > maxRatio) {
+      const current = readRendererPixelRatio(this.opts.renderer);
+      if (current !== void 0 && current > maxRatio) {
         this.opts.renderer.setPixelRatio(maxRatio);
       }
     }
@@ -1652,8 +1783,9 @@ ${line2}` : line1;
       const scale = Math.sqrt(maxPixels / current);
       const newW = Math.max(1, Math.floor(width * scale));
       const newH = Math.max(1, Math.floor(height * scale));
-      const prevRatio = renderer.pixelRatio;
-      const pr = prevRatio > 0 ? prevRatio : 1;
+      const prevRatio = readRendererPixelRatio(renderer);
+      if (prevRatio === void 0 || !(prevRatio > 0)) return;
+      const pr = prevRatio;
       try {
         renderer.setDrawingBufferSize(newW / pr, newH / pr, pr);
       } catch {
@@ -3164,9 +3296,7 @@ ${line2}` : line1;
 
   // src/wrap-renderer.ts
   function readPixelRatio(raw) {
-    if (typeof raw.getPixelRatio === "function") return raw.getPixelRatio();
-    if (typeof raw.pixelRatio === "number") return raw.pixelRatio;
-    return 1;
+    return readRendererPixelRatio(raw);
   }
   function readDrawingBufferWidth(raw) {
     if (typeof raw.drawingBufferWidth === "number") return raw.drawingBufferWidth;
@@ -3195,7 +3325,10 @@ ${line2}` : line1;
         return readPixelRatio(r);
       },
       set pixelRatio(value) {
-        r.setPixelRatio(value);
+        if (typeof value === "number" && Number.isFinite(value)) r.setPixelRatio(value);
+      },
+      getPixelRatio() {
+        return readPixelRatio(r);
       },
       setPixelRatio(value) {
         r.setPixelRatio(value);
@@ -3220,7 +3353,7 @@ ${line2}` : line1;
       }
     };
     defineOptional(wrapped, "antialias", {
-      get: () => r.antialias
+      get: () => readRendererAntialias(r)
     });
     defineOptional(wrapped, "toneMapping", {
       get: () => r.toneMapping,
@@ -3290,7 +3423,10 @@ ${line2}` : line1;
     const partial = { webgl: true };
     const hostDpr = globalThis.devicePixelRatio;
     if (typeof hostDpr === "number") partial.devicePixelRatio = hostDpr;
-    else if (typeof renderer?.pixelRatio === "number") partial.devicePixelRatio = renderer.pixelRatio;
+    else {
+      const rendererDpr = readRendererPixelRatio(renderer ?? {});
+      if (rendererDpr !== void 0) partial.devicePixelRatio = rendererDpr;
+    }
     if (typeof navigator !== "undefined") {
       if (typeof navigator.hardwareConcurrency === "number") {
         partial.hardwareConcurrency = navigator.hardwareConcurrency;

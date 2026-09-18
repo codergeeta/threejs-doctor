@@ -51,9 +51,10 @@ export async function main(
   const write = deps?.write ?? ((t: string) => console.log(t))
   if (args.command === 'help') {
     write(`Usage:
-  npx threejs-doctor scan [path] [--format human|json] [--profile auto|marketing|product|game|cad]
-  npx threejs-doctor bench --profile <profile> --budget low [--format human|json]
-  npx threejs-doctor ci [--min-score 70] [--format human|json]`)
+  # Not published to npm yet. From a git clone after pnpm install && pnpm build:
+  node packages/cli/bin/threejs-doctor.js bench --profile <profile> --budget low [--format human|json]
+  node packages/cli/bin/threejs-doctor.js scan  # not implemented (exits 1)
+  node packages/cli/bin/threejs-doctor.js ci    # not implemented (exits 1)`)
     return 0
   }
 
@@ -65,8 +66,19 @@ export async function main(
   const runScan = deps?.runScan ?? (await import('./commands/scan.js')).runScan
   const runBench = deps?.runBench ?? (await import('./commands/bench.js')).runBench
 
-  const report =
-    args.command === 'bench' ? await runBench(args) : await runScan(args)
+  let report: DoctorReport
+  try {
+    report = args.command === 'bench' ? await runBench(args) : await runScan(args)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    const code =
+      err && typeof err === 'object' && 'code' in err ? (err as { code?: string }).code : undefined
+    if (code === 'SCAN_NOT_IMPLEMENTED' || message.toLowerCase().includes('not implemented')) {
+      write(message)
+      return 1
+    }
+    throw err
+  }
 
   write(args.format === 'json' ? formatJsonReport(report) : formatHumanReport(report))
 

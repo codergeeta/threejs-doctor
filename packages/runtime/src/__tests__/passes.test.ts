@@ -142,16 +142,28 @@ describe('safe passes', () => {
     expect(mode).toBe('always')
   })
 
-  it('distance-cull hides far meshes and rollbacks', () => {
+  it('distance-cull hides far meshes in world space and rollbacks', () => {
     const near = {
       isMesh: true,
       visible: true,
       position: { distanceTo: () => 10 },
+      getWorldPosition(target: { x: number; y: number; z: number }) {
+        target.x = 10
+        target.y = 0
+        target.z = 0
+        return target
+      },
     }
     const far = {
       isMesh: true,
       visible: true,
-      position: { distanceTo: () => 200 },
+      position: { distanceTo: () => 0 },
+      getWorldPosition(target: { x: number; y: number; z: number }) {
+        target.x = 200
+        target.y = 0
+        target.z = 0
+        return target
+      },
     }
     const scene = {
       children: [near, far],
@@ -209,9 +221,9 @@ describe('v2 generic passes', () => {
       'tone-map-lite',
       'anisotropy-cap',
       'frameloop-demand',
-      'distance-cull',
     ])
     expect(SAFE_PASSES).not.toContain('material-downgrade')
+    expect(SAFE_PASSES).not.toContain('distance-cull')
   })
 
   it('pixel-budget lowers drawing-buffer pixels to the tier cap and rollbacks', () => {

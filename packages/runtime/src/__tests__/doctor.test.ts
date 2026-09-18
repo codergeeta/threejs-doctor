@@ -115,11 +115,12 @@ describe('Doctor', () => {
     }
   })
 
-  it('does not apply material-downgrade in the default safe set', async () => {
+  it('does not apply material-downgrade or distance-cull in the default safe set', async () => {
     const { doctor } = createHarness()
     const report = await doctor.optimize({ apply: ['safe'] })
     expect(report.appliedPasses).toEqual([...SAFE_PASSES])
     expect(report.appliedPasses).not.toContain('material-downgrade')
+    expect(report.appliedPasses).not.toContain('distance-cull')
   })
 
   it('applies material-downgrade only when opted in', async () => {

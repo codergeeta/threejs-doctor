@@ -4,6 +4,7 @@ import {
   type DeviceCapabilities,
   type DeviceProbeInput,
 } from '@threejs-doctor/core'
+import { readRendererPixelRatio } from '@threejs-doctor/runtime'
 
 /** Phone-class overlay for live-attach. Never includes WEBGL_debug_renderer_info. */
 export const PHONE_CLASS_PROBE: Partial<DeviceProbeInput> = {
@@ -24,12 +25,16 @@ const BLOCKED_GL_EXTENSIONS = new Set([
 
 function collectLiveProbe(renderer?: {
   getExtension?: (name: string) => unknown
-  pixelRatio?: number
+  getPixelRatio?: () => number | undefined
+  pixelRatio?: number | undefined
 }): Partial<DeviceProbeInput> {
   const partial: Partial<DeviceProbeInput> = { webgl: true }
   const hostDpr = (globalThis as { devicePixelRatio?: unknown }).devicePixelRatio
   if (typeof hostDpr === 'number') partial.devicePixelRatio = hostDpr
-  else if (typeof renderer?.pixelRatio === 'number') partial.devicePixelRatio = renderer.pixelRatio
+  else {
+    const rendererDpr = readRendererPixelRatio(renderer ?? {})
+    if (rendererDpr !== undefined) partial.devicePixelRatio = rendererDpr
+  }
 
   if (typeof navigator !== 'undefined') {
     if (typeof navigator.hardwareConcurrency === 'number') {
@@ -67,7 +72,11 @@ function collectLiveProbe(renderer?: {
  */
 export function resolveAttachDevice(
   option: AttachDeviceOption | undefined,
-  renderer?: { getExtension?: (name: string) => unknown; pixelRatio?: number },
+  renderer?: {
+    getExtension?: (name: string) => unknown
+    getPixelRatio?: () => number | undefined
+    pixelRatio?: number | undefined
+  },
 ): DeviceCapabilities | undefined {
   if (option === undefined) return undefined
   const overlay: Partial<DeviceProbeInput> = option === 'phone' ? { ...PHONE_CLASS_PROBE } : { ...option }

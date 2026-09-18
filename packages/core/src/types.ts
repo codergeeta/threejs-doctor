@@ -21,8 +21,10 @@ export const SAFE_PASSES: readonly PassId[] = [
   'tone-map-lite',
   'anisotropy-cap',
   'frameloop-demand',
-  'distance-cull',
 ] as const
+
+/** One-shot passes that are not safe by default (world-space distance-cull hides permanently). */
+export const AGGRESSIVE_PASSES: readonly PassId[] = ['distance-cull'] as const
 
 export interface DeviceCapabilities {
   tier: DeviceTier
@@ -70,8 +72,10 @@ export interface SceneSnapshot {
   maxTextureDimension: number
   continuousFrameloop: boolean
   matrixAutoUpdateCount: number
-  rendererPixelRatio: number
-  antialias: boolean
+  /** Finite renderer DPR when known; omitted/undefined means do not flag uncapped-dpr. */
+  rendererPixelRatio?: number | undefined
+  /** MSAA flag from GL context attributes when known. */
+  antialias?: boolean | undefined
 }
 
 export interface RendererInfoLike {

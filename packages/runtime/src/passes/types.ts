@@ -5,9 +5,17 @@ export interface DoctorRendererLike {
     render: { calls: number; triangles: number }
     memory: { geometries: number; textures: number }
   }
-  pixelRatio: number
-  antialias?: boolean
+  /** Optional duck-typed field. Real THREE.WebGLRenderer has getPixelRatio(), not this. */
+  pixelRatio?: number | undefined
+  antialias?: boolean | undefined
   setPixelRatio(value: number): void
+  getPixelRatio?: () => number | undefined
+  getContext?: () => {
+    getContextAttributes?: () => { antialias?: boolean } | null
+    drawingBufferWidth?: number
+    drawingBufferHeight?: number
+    getExtension?: (name: string) => unknown
+  } | null
   getExtension?: (name: string) => unknown
   toneMapping?: number
   shadowMap?: { enabled: boolean }
@@ -27,9 +35,16 @@ export interface DoctorObjectLike {
   isMesh?: boolean
   isLight?: boolean
   matrixAutoUpdate?: boolean
-  geometry?: { uuid: string }
+  geometry?: {
+    uuid?: string
+    boundingBox?: { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } }
+    boundingSphere?: { radius: number }
+    computeBoundingBox?: () => void
+  }
   material?: { uuid?: string } | Array<{ uuid?: string }>
   position?: { distanceTo: (v: { x: number; y: number; z: number }) => number }
+  matrixWorld?: { elements: ArrayLike<number> }
+  getWorldPosition?: (target: { x: number; y: number; z: number }) => { x: number; y: number; z: number }
 }
 
 export interface PassContext {

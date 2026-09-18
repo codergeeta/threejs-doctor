@@ -18,8 +18,8 @@ export interface SnapshotInput {
   triangles: number
   continuousFrameloop: boolean
   matrixAutoUpdateCount: number
-  rendererPixelRatio: number
-  antialias: boolean
+  rendererPixelRatio?: number | undefined
+  antialias?: boolean | undefined
 }
 
 export function snapshotScene(input: SnapshotInput): SceneSnapshot {

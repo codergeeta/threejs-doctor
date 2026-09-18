@@ -18,5 +18,4 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
-      - name: threejs-doctor ci
-        run: pnpm --filter @threejs-doctor/cli exec node ./bin/threejs-doctor.js ci --min-score 0
+      # `threejs-doctor scan` / `ci` are not implemented (exit 1). Do not use them as a score gate.

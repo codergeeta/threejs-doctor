@@ -1,3 +1,4 @@
+import { readRendererAntialias, readRendererPixelRatio } from '@threejs-doctor/runtime'
 import type { DoctorRendererLike } from '@threejs-doctor/runtime'
 
 interface RawRenderer {
@@ -17,15 +18,14 @@ interface RawRenderer {
     drawingBufferWidth: number
     drawingBufferHeight: number
     getExtension?: (name: string) => unknown
+    getContextAttributes?: () => { antialias?: boolean } | null
   }
   setDrawingBufferSize?: (width: number, height: number, pixelRatio: number) => void
   setSize?: (width: number, height: number, updateStyle?: boolean) => void
 }
 
-function readPixelRatio(raw: RawRenderer): number {
-  if (typeof raw.getPixelRatio === 'function') return raw.getPixelRatio()
-  if (typeof raw.pixelRatio === 'number') return raw.pixelRatio
-  return 1
+function readPixelRatio(raw: RawRenderer): number | undefined {
+  return readRendererPixelRatio(raw)
 }
 
 function readDrawingBufferWidth(raw: RawRenderer): number | undefined {
@@ -59,11 +59,14 @@ export function wrapRenderer(raw: object): DoctorRendererLike {
     get info() {
       return r.info
     },
-    get pixelRatio() {
+    get pixelRatio(): number | undefined {
       return readPixelRatio(r)
     },
-    set pixelRatio(value: number) {
-      r.setPixelRatio(value)
+    set pixelRatio(value: number | undefined) {
+      if (typeof value === 'number' && Number.isFinite(value)) r.setPixelRatio(value)
+    },
+    getPixelRatio() {
+      return readPixelRatio(r)
     },
     setPixelRatio(value: number) {
       r.setPixelRatio(value)
@@ -89,7 +92,7 @@ export function wrapRenderer(raw: object): DoctorRendererLike {
   }
 
   defineOptional(wrapped, 'antialias', {
-    get: () => r.antialias,
+    get: () => readRendererAntialias(r),
   })
   defineOptional(wrapped, 'toneMapping', {
     get: () => r.toneMapping,

@@ -1,3 +1,4 @@
+import { readRendererPixelRatio } from '../renderer-read.js'
 import type { OptimizePass } from './types.js'
 
 function restorePixelRatio(
@@ -11,25 +12,29 @@ function restorePixelRatio(
   }
 }
 
+function capFor(ctx: Parameters<OptimizePass['apply']>[0], prev: number): number {
+  if (ctx.qualityTier) {
+    return ctx.qualityTier === 'potato'
+      ? 1.0
+      : ctx.qualityTier === 'low'
+        ? 1.25
+        : ctx.qualityTier === 'mid'
+          ? 1.5
+          : 2
+  }
+  return ctx.device.tier === 'low' ? 1.5 : ctx.device.tier === 'mid' ? 2 : Math.min(prev, 2)
+}
+
 export const dprCapPass: OptimizePass = {
   id: 'dpr-cap',
   apply(ctx) {
-    const prev = ctx.renderer.pixelRatio
-    const cap = ctx.qualityTier
-      ? ctx.qualityTier === 'potato'
-        ? 1.0
-        : ctx.qualityTier === 'low'
-          ? 1.25
-          : ctx.qualityTier === 'mid'
-            ? 1.5
-            : 2
-      : ctx.device.tier === 'low'
-        ? 1.5
-        : ctx.device.tier === 'mid'
-          ? 2
-          : Math.min(prev, 2)
+    const prev = readRendererPixelRatio(ctx.renderer)
+    if (prev === undefined) return { rollback() {} }
+    const cap = capFor(ctx, prev)
+    const next = Math.min(prev, cap)
+    if (!Number.isFinite(next)) return { rollback() {} }
     try {
-      ctx.renderer.setPixelRatio(Math.min(prev, cap))
+      ctx.renderer.setPixelRatio(next)
     } catch (err) {
       restorePixelRatio(ctx.renderer.setPixelRatio.bind(ctx.renderer), prev)
       throw err

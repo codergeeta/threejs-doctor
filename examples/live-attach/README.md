@@ -267,6 +267,6 @@ if the IIFE cannot find handles.
 
 ## Notes
 
-- `npx threejs-doctor scan` is a stub and is not this path.
+- `threejs-doctor scan` / `ci` are not implemented (exit 1) and are not this path.
 - Headless CI does not gate live TTFI/FPS.
 - Incomplete runs: keep baseline, set `incomplete: true`, do not paste fixture numbers.

@@ -1,6 +1,7 @@
 import {
   MetricsCollector,
   SAFE_PASSES,
+  AGGRESSIVE_PASSES,
   probeDevice,
   readWebglQualitySignals,
   snapshotScene,
@@ -38,6 +39,7 @@ import { distanceCullPass } from './passes/distance-cull.js'
 import { materialDowngradePass } from './passes/material-downgrade.js'
 import { mountOverlay as mountOverlayImpl, type OverlayHandle } from './overlay/mount-overlay.js'
 import type { QualityHudState } from './overlay/format-quality-hud.js'
+import { readRendererAntialias, readRendererPixelRatio } from './renderer-read.js'
 
 export interface DoctorReport {
   profile: Exclude<Profile, 'auto'>
@@ -129,8 +131,8 @@ function snapshotFrom(
     triangles: sample.triangles,
     continuousFrameloop,
     matrixAutoUpdateCount,
-    rendererPixelRatio: renderer.pixelRatio,
-    antialias: Boolean(renderer.antialias),
+    rendererPixelRatio: readRendererPixelRatio(renderer),
+    antialias: readRendererAntialias(renderer),
   })
   return {
     ...walked,
@@ -156,11 +158,12 @@ function cameraPositionOf(camera: unknown): PassContext['cameraPosition'] {
   return { x: pos.x, y: pos.y, z: pos.z }
 }
 
-function resolvePassIds(tokens: Array<'safe' | PassId>): PassId[] {
+function resolvePassIds(tokens: Array<'safe' | 'aggressive' | PassId>): PassId[] {
   const ids: PassId[] = []
   const seen = new Set<PassId>()
   for (const token of tokens) {
-    const chunk: readonly PassId[] = token === 'safe' ? SAFE_PASSES : [token]
+    const chunk: readonly PassId[] =
+      token === 'safe' ? SAFE_PASSES : token === 'aggressive' ? AGGRESSIVE_PASSES : [token]
     for (const id of chunk) {
       if (seen.has(id)) continue
       seen.add(id)
@@ -188,14 +191,18 @@ export class Doctor {
 
   private device(): DeviceCapabilities {
     if (this.opts.device) return this.opts.device
-    const hostDpr =
+    const windowDpr =
       typeof globalThis !== 'undefined' &&
       typeof (globalThis as { devicePixelRatio?: unknown }).devicePixelRatio === 'number'
         ? (globalThis as { devicePixelRatio: number }).devicePixelRatio
-        : this.opts.renderer.pixelRatio
+        : undefined
+    const rendererDpr = readRendererPixelRatio(this.opts.renderer)
+    const hostDpr = windowDpr ?? rendererDpr
     const probe: Parameters<typeof probeDevice>[0] = {
       webgl: true,
-      devicePixelRatio: hostDpr,
+    }
+    if (typeof hostDpr === 'number' && Number.isFinite(hostDpr)) {
+      probe.devicePixelRatio = hostDpr
     }
     if (typeof navigator !== 'undefined') {
       if (typeof navigator.hardwareConcurrency === 'number') {
@@ -392,7 +399,8 @@ export class Doctor {
   }
 
   reclampPixelRatioCeiling(maxRatio: number): void {
-    if (this.opts.renderer.pixelRatio > maxRatio) {
+    const current = readRendererPixelRatio(this.opts.renderer)
+    if (current !== undefined && current > maxRatio) {
       this.opts.renderer.setPixelRatio(maxRatio)
     }
   }
@@ -408,8 +416,9 @@ export class Doctor {
     const scale = Math.sqrt(maxPixels / current)
     const newW = Math.max(1, Math.floor(width * scale))
     const newH = Math.max(1, Math.floor(height * scale))
-    const prevRatio = renderer.pixelRatio
-    const pr = prevRatio > 0 ? prevRatio : 1
+    const prevRatio = readRendererPixelRatio(renderer)
+    if (prevRatio === undefined || !(prevRatio > 0)) return
+    const pr = prevRatio
     try {
       renderer.setDrawingBufferSize(newW / pr, newH / pr, pr)
     } catch {
@@ -443,7 +452,7 @@ export class Doctor {
     }
   }
 
-  async optimize(options: { apply?: Array<'safe' | PassId> } = {}): Promise<DoctorReport> {
+  async optimize(options: { apply?: Array<'safe' | 'aggressive' | PassId> } = {}): Promise<DoctorReport> {
     const diagnosed = await this.buildDiagnoseReport()
     const passIds = resolvePassIds(options.apply ?? ['safe'])
     const { appliedPasses, failedPasses } = this.applyPassesImmediate(passIds)

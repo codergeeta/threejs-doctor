@@ -21,4 +21,36 @@ describe('dprRule', () => {
     expect(findings.some((f) => f.id === 'renderer/uncapped-dpr')).toBe(true)
     expect(findings[0]?.autoFix).toBe('dpr-cap')
   })
+
+  it('does not fire uncapped-dpr when renderer pixel ratio is undefined', () => {
+    const device: DeviceCapabilities = {
+      tier: 'low', maxTextureSize: 4096, webgl: true, webgpu: false,
+      devicePixelRatio: 3, hardwareConcurrency: 4,
+    }
+    const snapshot: SceneSnapshot = {
+      objectCount: 5, meshCount: 2, geometryCount: 2, materialCount: 2,
+      textureCount: 2, estimatedVramBytes: 4_000_000, lightCount: 1,
+      shadowCastingLightCount: 0, drawCalls: 5, triangles: 2000,
+      maxTextureDimension: 2048, continuousFrameloop: true,
+      matrixAutoUpdateCount: 0, rendererPixelRatio: undefined, antialias: false,
+    }
+    const findings = dprRule.run({ snapshot, device, profile: 'marketing' })
+    expect(findings).toEqual([])
+  })
+
+  it('does not fire uncapped-dpr when renderer pixel ratio is NaN', () => {
+    const device: DeviceCapabilities = {
+      tier: 'low', maxTextureSize: 4096, webgl: true, webgpu: false,
+      devicePixelRatio: 3, hardwareConcurrency: 4,
+    }
+    const snapshot: SceneSnapshot = {
+      objectCount: 5, meshCount: 2, geometryCount: 2, materialCount: 2,
+      textureCount: 2, estimatedVramBytes: 4_000_000, lightCount: 1,
+      shadowCastingLightCount: 0, drawCalls: 5, triangles: 2000,
+      maxTextureDimension: 2048, continuousFrameloop: true,
+      matrixAutoUpdateCount: 0, rendererPixelRatio: Number.NaN, antialias: false,
+    }
+    const findings = dprRule.run({ snapshot, device, profile: 'marketing' })
+    expect(findings).toEqual([])
+  })
 })

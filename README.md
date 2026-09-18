@@ -6,19 +6,41 @@ Inspired by [react-doctor](https://github.com/millionco/react-doctor). Design: [
 
 ## Install / run
 
-```bash
-npx threejs-doctor
-npx threejs-doctor scan ./path --format json
-npx threejs-doctor bench --profile product --budget low
-npx threejs-doctor ci --min-score 70
-```
+**Not on npm yet.** Root `package.json` name is `threejs-doctor` (`private: true`). `npx threejs-doctor` / `npm install threejs-doctor` will not install this repo.
 
-From a git checkout, build first so the CLI bin can load `dist/`:
+### Git install (current)
 
 ```bash
+git clone https://github.com/codergeeta/threejs-doctor.git
+cd threejs-doctor
 pnpm install
 pnpm build
-node packages/cli/bin/threejs-doctor.js scan ./path --format json
+node packages/cli/bin/threejs-doctor.js bench --profile product --budget low
+```
+
+From GitHub (monorepo root, not a published CLI package):
+
+```bash
+pnpm add github:codergeeta/threejs-doctor
+```
+
+Prefer a clone + `pnpm build` until `@threejs-doctor/*` is published. **TODO:** publish `threejs-doctor` / `@threejs-doctor/*` to npm (reserve the name). Do not invent a registry listing.
+
+### Security
+
+The npm name `threejs-doctor` is unpublished. `npx threejs-doctor` can run a **different** package if someone squats the name. Until we publish, install only from [github.com/codergeeta/threejs-doctor](https://github.com/codergeeta/threejs-doctor).
+
+### CLI status
+
+| Command | Status |
+|---------|--------|
+| `bench` | Works after `pnpm build` (headless fixtures) |
+| `scan` | **Not implemented** — exits 1 with a clear message |
+| `ci` | **Not implemented** — exits 1; **not** a working `--min-score` gate |
+
+```bash
+node packages/cli/bin/threejs-doctor.js scan ./path --format json   # exits 1
+node packages/cli/bin/threejs-doctor.js ci --min-score 70           # exits 1
 ```
 
 ## Monorepo scripts
@@ -38,7 +60,7 @@ pnpm test
 pnpm build
 ```
 
-CI (`.github/workflows/ci.yml`) runs `typecheck`, `test`, `build`, then `threejs-doctor ci --min-score 0`.
+CI (`.github/workflows/ci.yml`) runs `typecheck`, `test`, and `build`. It does **not** run `threejs-doctor ci` (that command is not implemented).
 
 ## Runtime (vanilla Three.js)
 
@@ -54,7 +76,7 @@ doctor.mountOverlay()
 
 Live ocean attach notes for the unpublished Quality Ladder adapter (this repo does not vendor the demo) are in [`examples/ocean-adapter/README.md`](examples/ocean-adapter/README.md). Pasteable DevTools IIFE: [`examples/live-attach`](examples/live-attach/README.md). Local unpublished hosts (no pelagic) for live-attach discovery: [`examples/acceptance-fixture`](examples/acceptance-fixture/README.md) and the heavier [`examples/acceptance-fixture-game`](examples/acceptance-fixture-game/README.md). How a real game exposes `{ scene, camera, renderer }`: [`docs/superpowers/acceptance/host-integration.md`](docs/superpowers/acceptance/host-integration.md).
 
-Safe passes: `dpr-cap`, `shadow-budget`, `postfx-budget`, `frameloop-demand`, `distance-cull`. Opt-in: `material-downgrade`. Quality Ladder also runs `pixel-budget`, `tone-map-lite`, and `anisotropy-cap` when `qualityTier` is set; those three are no-ops for v1 `optimize({ apply: ['safe'] })`.
+Safe passes: `dpr-cap`, `pixel-budget` (no-op unless `qualityTier` is set), `shadow-budget`, `postfx-budget`, `tone-map-lite` / `anisotropy-cap` (same), `frameloop-demand`. Opt-in: `material-downgrade`, `distance-cull` (`apply: ['aggressive']` or `apply: ['distance-cull']`). `distance-cull` is world-space and **one-shot** — hosts must re-run it as the camera moves; it is not in default `SAFE_PASSES`. See [`docs/superpowers/acceptance/real-host-followups.md`](docs/superpowers/acceptance/real-host-followups.md).
 
 ## React Three Fiber
 
@@ -75,7 +97,7 @@ import { DoctorCanvas, useDoctor } from '@threejs-doctor/r3f'
 | `@threejs-doctor/core` | Probe, snapshot, metrics |
 | `@threejs-doctor/rules` | Findings + Doctor Score |
 | `@threejs-doctor/runtime` | Doctor API + overlay |
-| `@threejs-doctor/cli` | `npx threejs-doctor` |
+| `@threejs-doctor/cli` | CLI bin (git clone; not on npm) |
 | `@threejs-doctor/bench` | Four fixtures + low-end budgets |
 | `@threejs-doctor/r3f` | `DoctorCanvas` / `useDoctor` |
 
@@ -95,7 +117,7 @@ Numbers below are copied from that JSON (`baseline` / `after` / `deltas`, plus D
 
 | Profile | Metric | Baseline (fixture) | After safe passes | Notes |
 |---------|--------|--------------------|-------------------|-------|
-| marketing | drawCalls | 90 | 90 (Δ 0) | score 75; applied `dpr-cap`, `shadow-budget`, `postfx-budget`, `frameloop-demand`, `distance-cull` |
+| marketing | drawCalls | 90 | 90 (Δ 0) | score 75; applied default safe set (`dpr-cap`, `shadow-budget`, `postfx-budget`, `frameloop-demand`; `distance-cull` is opt-in) |
 | marketing | renderer DPR | 3 | 1.5 | low-tier `dpr-cap` (`Math.min(prev, 1.5)`); DPR is not a report metric field |
 | marketing | shadowCastingLightCount | 2 | 1 (Δ −1) | `shadow-budget` keeps 1 caster on marketing |
 | product | drawCalls | 110 | 110 (Δ 0) | score 75; same safe set |

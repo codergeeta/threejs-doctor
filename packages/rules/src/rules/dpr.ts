@@ -9,17 +9,19 @@ export const dprRule: Rule = {
       PROFILE_BUDGETS[profile].maxDpr,
       ctx.device.tier === 'low' ? 1.5 : PROFILE_BUDGETS[profile].maxDpr,
     )
-    if (ctx.snapshot.rendererPixelRatio <= maxDpr) return []
+    const dpr = ctx.snapshot.rendererPixelRatio
+    if (typeof dpr !== 'number' || !Number.isFinite(dpr)) return []
+    if (dpr <= maxDpr) return []
     return [
       {
         id: 'renderer/uncapped-dpr',
         severity: ctx.device.tier === 'low' ? 'error' : 'warn',
         evidence: {
-          rendererPixelRatio: ctx.snapshot.rendererPixelRatio,
+          rendererPixelRatio: dpr,
           maxDpr,
           tier: ctx.device.tier,
         },
-        message: `Renderer pixel ratio ${ctx.snapshot.rendererPixelRatio} exceeds cap ${maxDpr}`,
+        message: `Renderer pixel ratio ${dpr} exceeds cap ${maxDpr}`,
         suggestedFix: 'Cap setPixelRatio for the active device tier',
         autoFix: 'dpr-cap',
       },
