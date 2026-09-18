@@ -74,6 +74,23 @@ export const POTATO_NEAR_MISS_CAPS = {
 /** Inclusive lower bound for the high-20s near-miss floor nudge. */
 export const POTATO_NEAR_MISS_MIN_AVG_FPS = 24
 
+/**
+ * Extra generic caps when the potato floor still misses and avgFps stays
+ * below 10. Do not apply meshLod/rtScale here.
+ */
+export const POTATO_HOPELESS_CAPS = {
+  pixelRatio: 0.35,
+  drawingBufferPixels: 4e5,
+  shadowCasters: 0,
+  postfxOff: true,
+} as const
+
+/** Exclusive upper bound: hopeless floor only when avgFps is below this. */
+export const POTATO_HOPELESS_MAX_AVG_FPS = 10
+
+/** `spectrumEveryNFrames` value that pauses updateSpectrum/runPass entirely. */
+export const SPECTRUM_PAUSE_EVERY_N = 0
+
 export const ADAPTER_KNOBS: Record<QualityTier, QualityKnobSet> = {
   potato: {
     fftSize: [64, 0, 0],

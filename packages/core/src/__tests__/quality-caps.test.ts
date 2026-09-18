@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { ADAPTER_KNOBS, POTATO_FLOOR_CAPS, POTATO_NEAR_MISS_CAPS } from '../quality-caps.js'
+import {
+  ADAPTER_KNOBS,
+  POTATO_FLOOR_CAPS,
+  POTATO_HOPELESS_CAPS,
+  POTATO_HOPELESS_MAX_AVG_FPS,
+  POTATO_NEAR_MISS_CAPS,
+} from '../quality-caps.js'
 
 describe('ADAPTER_KNOBS', () => {
   it('omits meshLod and rtScale from potato (RT resize breaks WebGL)', () => {
@@ -25,5 +31,11 @@ describe('potato floor caps', () => {
     expect(POTATO_NEAR_MISS_CAPS.drawingBufferPixels).toBeLessThan(
       POTATO_FLOOR_CAPS.drawingBufferPixels,
     )
+  })
+
+  it('uses pixelRatio 0.35 for a hopeless floor below 10 FPS', () => {
+    expect(POTATO_HOPELESS_CAPS.pixelRatio).toBeLessThanOrEqual(0.35)
+    expect(POTATO_HOPELESS_CAPS.pixelRatio).toBeLessThan(POTATO_NEAR_MISS_CAPS.pixelRatio)
+    expect(POTATO_HOPELESS_MAX_AVG_FPS).toBe(10)
   })
 })

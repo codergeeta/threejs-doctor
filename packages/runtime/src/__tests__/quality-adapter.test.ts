@@ -29,6 +29,45 @@ describe('QualityController adapter wiring', () => {
     expect(boot.appliedKnobs.some((k) => k.capability === 'rtScale')).toBe(false)
   })
 
+  it('re-applies potato knobs with spectrumEveryNFrames 0 when hopeless floor fires', async () => {
+    const seen: QualityKnobSet[] = []
+    const adapter: QualityAdapter = {
+      id: 'ocean-full',
+      capabilities: () => ['fftSize', 'rtScale', 'meshLod', 'deferredHdr'],
+      snapshot: () => ({}),
+      apply(_tier: QualityTier, knobs: QualityKnobSet) {
+        seen.push({ ...knobs })
+        return { rollback() {} }
+      },
+    }
+    const { doctor } = createLadderDoctor({
+      now: (() => {
+        let t = 0
+        return () => {
+          t += 120
+          return t
+        }
+      })(),
+      measureFrames: 4,
+    })
+    const ladder = new QualityController(doctor, {
+      mode: 'safe-auto',
+      startTier: 'potato',
+      maxTier: 'potato',
+      windowFrames: 4,
+      waitForFirstInteractive: async () => {},
+    })
+    ladder.registerAdapter(adapter)
+    const settled = await ladder.runLadder()
+    expect(settled.floorFailed).toBe(true)
+    expect(seen.length).toBeGreaterThan(1)
+    const last = seen[seen.length - 1]!
+    expect(last.spectrumEveryNFrames).toBe(0)
+    expect(last.fftSize).toEqual([64, 0, 0])
+    expect(last.meshLod).toBeUndefined()
+    expect(last.rtScale).toBeUndefined()
+  })
+
   it('passes only advertised knobs and records unsupportedKnob for unknown keys on the adapter side', async () => {
     const seen: QualityKnobSet[] = []
     const adapter: QualityAdapter = {

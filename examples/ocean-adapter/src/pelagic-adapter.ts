@@ -136,12 +136,14 @@ function applyKnobs(debug: PelagicDebugHandle, knobs: QualityKnobSet): KnobHandl
 }
 
 function applySpectrumCadence(debug: PelagicDebugHandle, everyN: number): () => void {
-  if (everyN <= 1) return () => {}
+  if (everyN === 1) return () => {}
   const origUpdate = debug.updateSpectrum
   const origRunPass = debug.runPass
+  const pause = !Number.isFinite(everyN) || everyN <= 0
   let frames = 0
   let skipping = false
   const due = () => {
+    if (pause) return false
     const run = frames % everyN === 0
     frames += 1
     return run
@@ -159,7 +161,7 @@ function applySpectrumCadence(debug: PelagicDebugHandle, everyN: number): () => 
   if (origRunPass) {
     debug.runPass = (...args: unknown[]) => {
       if (origUpdate) {
-        if (skipping) return
+        if (skipping || pause) return
         return origRunPass.apply(debug, args)
       }
       if (!due()) return

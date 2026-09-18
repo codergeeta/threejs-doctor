@@ -3,8 +3,11 @@ import {
   GENERIC_CAPS,
   HYSTERESIS,
   POTATO_FLOOR_CAPS,
+  POTATO_HOPELESS_CAPS,
+  POTATO_HOPELESS_MAX_AVG_FPS,
   POTATO_NEAR_MISS_CAPS,
   POTATO_NEAR_MISS_MIN_AVG_FPS,
+  SPECTRUM_PAUSE_EVERY_N,
   SAFE_PASSES,
   createHysteresisState,
   evaluateWindow,
@@ -175,6 +178,7 @@ export class QualityController {
   private last: QualityLadderReport | undefined
   private potatoFloorTightened = false
   private potatoFloorNudged = false
+  private potatoFloorHopeless = false
 
   constructor(
     private readonly doctor: Doctor,
@@ -538,7 +542,24 @@ export class QualityController {
       }
       if (
         this.potatoFloorTightened &&
+        !this.potatoFloorHopeless &&
+        sample.p95FrameTimeMs > HYSTERESIS.dropP95Ms &&
+        sample.avgFps < POTATO_HOPELESS_MAX_AVG_FPS
+      ) {
+        this.tightenPotatoFloor(POTATO_HOPELESS_CAPS)
+        this.pausePotatoSpectrum()
+        this.potatoFloorHopeless = true
+        return {
+          state: decision.next,
+          pendingApplyFailed: false,
+          holdsAtTarget: 0,
+          stop: false,
+        }
+      }
+      if (
+        this.potatoFloorTightened &&
         !this.potatoFloorNudged &&
+        !this.potatoFloorHopeless &&
         sample.p95FrameTimeMs > HYSTERESIS.dropP95Ms &&
         sample.avgFps >= POTATO_NEAR_MISS_MIN_AVG_FPS &&
         sample.avgFps < HYSTERESIS.targetFps
@@ -602,6 +623,7 @@ export class QualityController {
   }
 
   private potatoPixelCeiling(): number | undefined {
+    if (this.potatoFloorHopeless) return POTATO_HOPELESS_CAPS.pixelRatio
     if (this.potatoFloorNudged) return POTATO_NEAR_MISS_CAPS.pixelRatio
     if (this.potatoFloorTightened) return POTATO_FLOOR_CAPS.pixelRatio
     return undefined
@@ -622,6 +644,33 @@ export class QualityController {
     this.doctor.forceDrawingBufferPixels(caps.drawingBufferPixels)
     this.doctor.forcePostfxOff()
     this.doctor.forceShadowsOff()
+  }
+
+  private pausePotatoSpectrum(): void {
+    if (!this.adapter || this.mode === 'advise') return
+    let caps: AdapterCapability[]
+    try {
+      caps = this.adapter.capabilities()
+    } catch {
+      return
+    }
+    if (caps.length === 0) return
+    const filtered = knobsFor('potato', caps)
+    if (filtered.knobs.spectrumEveryNFrames === undefined) return
+    filtered.knobs.spectrumEveryNFrames = SPECTRUM_PAUSE_EVERY_N
+    const applied = filtered.applied.map((knob) =>
+      knob.capability === 'fftSize' && knob.value === ADAPTER_KNOBS.potato.spectrumEveryNFrames
+        ? { capability: knob.capability, value: SPECTRUM_PAUSE_EVERY_N }
+        : knob,
+    )
+    this.rollbackAdapterKnobs()
+    try {
+      const handle = this.adapter.apply('potato', filtered.knobs)
+      this.knobHandles.push(handle)
+      if (this.last) this.last = { ...this.last, appliedKnobs: applied }
+    } catch {
+      // keep generic hopeless caps even if the adapter pause fails
+    }
   }
 
   private rollbackAdapterKnobs(): void {

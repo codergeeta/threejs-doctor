@@ -297,3 +297,37 @@ logged `THREE.WebGLRenderer not found` on both:
 The prototype hook is shipped and unit-tested with fakes. These two live hosts
 still need explicit `attachQualityLadder({ scene, camera, renderer })` until
 they expose `THREE` (or `__THREE__.WebGLRenderer`).
+
+## Chrome iPhone emulation 390×844 DPR3 (NOT a real phone GPU)
+
+DevTools / Chrome device emulation, viewport **390×844**, DPR **3**. This is
+**mobile-emulation**, not the phone in [live-ocean-capture.md](./live-ocean-capture.md)
+§1 and **not** a real-phone GPU. Not spec §3 bar proof.
+
+`startTier` **low**, `maxTier` **mid**, settled **potato**. `floorFailed: true`
+with `quality/floor-failed`. Canvas stayed alive (not a collapsed-geometry
+`applyFailed` run).
+
+Applied potato knobs (cadence **4** on this capture — older than the table
+value 8 now in `ADAPTER_KNOBS.potato`):
+
+- `fftSize`: `[64, 0, 0]`
+- `spectrumEveryNFrames`: 4
+- `deferredHdr`: true
+- no `rtScale`, no `meshLod`
+
+Triangles were reported as ~1.43e6 on both samples. Do not invent a more
+precise triangle count.
+
+| Field | Baseline | After |
+|-------|----------|-------|
+| `avgFps` | 1.267 | 2.251 |
+| `p95FrameTimeMs` | 965.9 | 582.9 |
+| `drawCalls` | 59 | 25 |
+| `triangles` | ~1.43e6 | ~1.43e6 |
+| `drawingBufferPixels` | 484825 | 20467 |
+
+After 2.251 FPS / p95 582.9 still miss `avgFps ≥ 30` / `p95FrameTimeMs ≤ 33.4`.
+Draw calls moved (59→25); triangle count did not meaningfully move. Drawing
+buffer dropped 484825→20467. Floor failed on emulation, not a claimed win.
+

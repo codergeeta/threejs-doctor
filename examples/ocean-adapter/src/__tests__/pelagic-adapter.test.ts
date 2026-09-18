@@ -180,6 +180,29 @@ describe('createOceanAdapter', () => {
     expect(adapter.readExtras?.()?.simPassCount).toBe(7)
   })
 
+  it('pauses updateSpectrum and runPass entirely when spectrumEveryNFrames is 0', () => {
+    const debug = fakeDebug()
+    const adapter = createOceanAdapter(debug)
+    const handle = adapter.apply('potato', { spectrumEveryNFrames: 0 })
+    debug.updateSpectrum?.()
+    debug.updateSpectrum?.()
+    debug.runPass?.()
+    expect(adapter.readExtras?.()?.simPassCount).toBeUndefined()
+    handle.rollback()
+    debug.updateSpectrum?.()
+    expect(adapter.readExtras?.()?.simPassCount).toBe(2)
+  })
+
+  it('keeps fftSize 0 cascade.update as a no-op when spectrum cadence is also applied', () => {
+    const debug = hostLikeDebug()
+    const adapter = createOceanAdapter(debug)
+    adapter.apply('potato', { fftSize: [64, 0, 0], spectrumEveryNFrames: 8 })
+    expect(() => hostSpectrumTick(debug)).not.toThrow()
+    expect((debug.cascades![1] as HostCascade).updates).toBe(0)
+    expect((debug.cascades![2] as HostCascade).updates).toBe(0)
+    expect((debug.cascades![0] as HostCascade).updates).toBeGreaterThan(0)
+  })
+
   it('does not throw when cascades or RT targets are null', () => {
     const debug: PelagicDebugHandle = {
       cascades: [null, undefined, { size: 128, dispose() {}, resize(n: number) { this.size = n } }],

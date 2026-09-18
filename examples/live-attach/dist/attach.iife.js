@@ -111,13 +111,15 @@
     };
   }
   function applySpectrumCadence(debug, everyN) {
-    if (everyN <= 1) return () => {
+    if (everyN === 1) return () => {
     };
     const origUpdate = debug.updateSpectrum;
     const origRunPass = debug.runPass;
+    const pause = !Number.isFinite(everyN) || everyN <= 0;
     let frames = 0;
     let skipping = false;
     const due = () => {
+      if (pause) return false;
       const run = frames % everyN === 0;
       frames += 1;
       return run;
@@ -135,7 +137,7 @@
     if (origRunPass) {
       debug.runPass = (...args) => {
         if (origUpdate) {
-          if (skipping) return;
+          if (skipping || pause) return;
           return origRunPass.apply(debug, args);
         }
         if (!due()) return;
@@ -518,6 +520,14 @@
     postfxOff: true
   };
   var POTATO_NEAR_MISS_MIN_AVG_FPS = 24;
+  var POTATO_HOPELESS_CAPS = {
+    pixelRatio: 0.35,
+    drawingBufferPixels: 4e5,
+    shadowCasters: 0,
+    postfxOff: true
+  };
+  var POTATO_HOPELESS_MAX_AVG_FPS = 10;
+  var SPECTRUM_PAUSE_EVERY_N = 0;
   var ADAPTER_KNOBS = {
     potato: {
       fftSize: [64, 0, 0],
@@ -1791,6 +1801,7 @@ ${line2}` : line1;
     last;
     potatoFloorTightened = false;
     potatoFloorNudged = false;
+    potatoFloorHopeless = false;
     registerAdapter(adapter) {
       this.adapter = adapter;
     }
@@ -2106,7 +2117,18 @@ ${line2}` : line1;
             stop: false
           };
         }
-        if (this.potatoFloorTightened && !this.potatoFloorNudged && sample.p95FrameTimeMs > HYSTERESIS.dropP95Ms && sample.avgFps >= POTATO_NEAR_MISS_MIN_AVG_FPS && sample.avgFps < HYSTERESIS.targetFps) {
+        if (this.potatoFloorTightened && !this.potatoFloorHopeless && sample.p95FrameTimeMs > HYSTERESIS.dropP95Ms && sample.avgFps < POTATO_HOPELESS_MAX_AVG_FPS) {
+          this.tightenPotatoFloor(POTATO_HOPELESS_CAPS);
+          this.pausePotatoSpectrum();
+          this.potatoFloorHopeless = true;
+          return {
+            state: decision.next,
+            pendingApplyFailed: false,
+            holdsAtTarget: 0,
+            stop: false
+          };
+        }
+        if (this.potatoFloorTightened && !this.potatoFloorNudged && !this.potatoFloorHopeless && sample.p95FrameTimeMs > HYSTERESIS.dropP95Ms && sample.avgFps >= POTATO_NEAR_MISS_MIN_AVG_FPS && sample.avgFps < HYSTERESIS.targetFps) {
           this.tightenPotatoFloor(POTATO_NEAR_MISS_CAPS);
           this.potatoFloorNudged = true;
           return {
@@ -2162,6 +2184,7 @@ ${line2}` : line1;
       return copyExtras(sample, extras);
     }
     potatoPixelCeiling() {
+      if (this.potatoFloorHopeless) return POTATO_HOPELESS_CAPS.pixelRatio;
       if (this.potatoFloorNudged) return POTATO_NEAR_MISS_CAPS.pixelRatio;
       if (this.potatoFloorTightened) return POTATO_FLOOR_CAPS.pixelRatio;
       return void 0;
@@ -2176,6 +2199,29 @@ ${line2}` : line1;
       this.doctor.forceDrawingBufferPixels(caps.drawingBufferPixels);
       this.doctor.forcePostfxOff();
       this.doctor.forceShadowsOff();
+    }
+    pausePotatoSpectrum() {
+      if (!this.adapter || this.mode === "advise") return;
+      let caps;
+      try {
+        caps = this.adapter.capabilities();
+      } catch {
+        return;
+      }
+      if (caps.length === 0) return;
+      const filtered = knobsFor("potato", caps);
+      if (filtered.knobs.spectrumEveryNFrames === void 0) return;
+      filtered.knobs.spectrumEveryNFrames = SPECTRUM_PAUSE_EVERY_N;
+      const applied = filtered.applied.map(
+        (knob) => knob.capability === "fftSize" && knob.value === ADAPTER_KNOBS.potato.spectrumEveryNFrames ? { capability: knob.capability, value: SPECTRUM_PAUSE_EVERY_N } : knob
+      );
+      this.rollbackAdapterKnobs();
+      try {
+        const handle = this.adapter.apply("potato", filtered.knobs);
+        this.knobHandles.push(handle);
+        if (this.last) this.last = { ...this.last, appliedKnobs: applied };
+      } catch {
+      }
     }
     rollbackAdapterKnobs() {
       for (let i = this.knobHandles.length - 1; i >= 0; i--) {

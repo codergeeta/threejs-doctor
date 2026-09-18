@@ -666,6 +666,60 @@ describe('QualityController.runLadder', () => {
     expect(renderer.pixelRatio).toBeLessThanOrEqual(0.4)
   })
 
+  it('drops potato floor to pixelRatio 0.35 when floorFailed and avgFps stays below 10', async () => {
+    const { doctor, renderer } = createLadderDoctor({
+      now: (() => {
+        let t = 0
+        return () => {
+          t += 120
+          return t
+        }
+      })(),
+      measureFrames: 4,
+    })
+    const ladder = new QualityController(doctor, {
+      mode: 'safe-auto',
+      startTier: 'potato',
+      maxTier: 'potato',
+      windowFrames: 4,
+      waitForFirstInteractive: async () => {},
+    })
+    const settled = await ladder.runLadder()
+    expect(settled.floorFailed).toBe(true)
+    expect(settled.tier).toBe('potato')
+    expect(settled.after?.avgFps).toBeLessThan(10)
+    expect(renderer.pixelRatio).toBeLessThanOrEqual(0.35)
+    renderer.pixelRatio = 0.8
+    await ladder.runLadder()
+    expect(renderer.pixelRatio).toBeLessThanOrEqual(0.35)
+  })
+
+  it('does not apply 0.35 hopeless floor when avgFps is in the teens after the first floor', async () => {
+    const { doctor, renderer } = createLadderDoctor({
+      now: (() => {
+        let t = 0
+        return () => {
+          t += 50
+          return t
+        }
+      })(),
+      measureFrames: 4,
+    })
+    const ladder = new QualityController(doctor, {
+      mode: 'safe-auto',
+      startTier: 'potato',
+      maxTier: 'potato',
+      windowFrames: 4,
+      waitForFirstInteractive: async () => {},
+    })
+    const settled = await ladder.runLadder()
+    expect(settled.floorFailed).toBe(true)
+    expect(settled.after?.avgFps).toBeGreaterThanOrEqual(10)
+    expect(settled.after?.avgFps).toBeLessThan(24)
+    expect(renderer.pixelRatio).toBeLessThanOrEqual(0.5)
+    expect(renderer.pixelRatio).toBeGreaterThan(0.35)
+  })
+
   it('clears floorFailed when later windows hold ≥30 FPS after the potato floor', async () => {
     let afterBoot = false
     const { doctor } = createLadderDoctor({
