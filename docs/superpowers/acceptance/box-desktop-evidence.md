@@ -89,9 +89,9 @@ captures.
   `{ app: { gfx: { renderer } } }` is still covered by cheap bundle-root
   discovery. The optional deep walk is **opt-in**
   (`__THREEJS_DOCTOR_ATTACH__.deepWalk`) and hard-capped (5000 nodes / depth 8 /
-  80ms) after live moonbase froze on the old 50k sync BFS. **Re-test on the box
-  is still required** — this revision did not recapture tanks. If the live
-  renderer is fully closed over, explicit
+  80ms) after live moonbase froze on the old 50k sync BFS. **Blocked pending a
+  host hook** — this revision did not recapture tanks (prior ~125-canvas OOM).
+  If the live renderer is fully closed over, explicit
   `attachQualityLadder({ scene, camera, renderer })` is still required from the
   page console.
 - Additional note (second attempt): combat rendered, then ~125 canvases, then
@@ -109,15 +109,20 @@ captures.
 
 ### Catapult (https://sina-ghiasi.github.io/threejs-catapult-game/)
 
-- Status: **BLOCKED** on scene discovery
-- Observed: canvas present, **no** discoverable scene/camera/renderer handles
-  on the last box attempt (prototype hook never armed: `window.THREE` missing,
-  `window.__THREE__` a string). Bounded opt-in deep walk now ships in
-  live-attach + host-shim; **re-test catapult on the box is still required**.
-  No FPS / after metrics recorded.
-- Needs a successful deep-walk / render-hook capture, or explicit
-  `attachQualityLadder({ scene, camera, renderer })` / a
-  `window.__THREEJS_DOCTOR_HOST__` hook
+- Status: **BLOCKED** on scene discovery — pending a host hook
+  ([host-integration.md](./host-integration.md)). **v3 recapture** on this VM
+  with `window.__THREEJS_DOCTOR_ATTACH__ = { deepWalk: true }` did **not freeze**.
+- Copied from `/opt/cursor/artifacts/catapult-deepwalk-v3.json`. Attach returned
+  in **10.699999999953434 ms** (`wallMs` 11). `frozen: false`. Page title stayed
+  `Catapult Game`. **No** `LAST_REPORT`. **No FPS**. Do not invent any.
+- Observed: **1 canvas**, WebGL context **yes**, renderer **no**, scene **no**,
+  camera **no**. `window.THREE` missing (`undefined`). `window.__THREE__` is the
+  string `"174"`, not the library. Bundle roots present: `__THREE__`. Probe
+  listed `deep walk (window/document/canvas, bounded)` among tried paths.
+- Menu **Start** opened Level Selection; a canvas/WebGL context was already
+  present. Deep walk still could not find a `WebGLRenderer`. Explicit
+  `attachQualityLadder({ scene, camera, renderer })` or
+  `window.__THREEJS_DOCTOR_HOST__` is required.
 
 ### Apophenoth (https://izzoizzoizzo.github.io/Apophenoth/)
 
@@ -126,31 +131,46 @@ captures.
 ### What is injectable on this box today
 
 Among **external** hosts tried here, **only ocean-simulation is fully
-injectable** (`window.pelagic.debug`). Tanks, Kinema, and catapult are not:
-they need explicit inject or host hooks.
+injectable** (`window.pelagic.debug`). Tanks, Kinema, and catapult remain
+**blocked pending host hooks** ([host-integration.md](./host-integration.md)).
+Catapult v3 with opt-in `deepWalk` still cannot find the renderer; it does not
+freeze.
 
-## In-repo acceptance-fixture (not phone-class, not an external game)
+In-repo unpublished fixtures (`acceptance-fixture`, `acceptance-fixture-game`)
+expose `__THREEJS_DOCTOR_HOST__` and are measurable on this VM. They are **not**
+those GitHub games and **not** a phone.
 
-Local unpublished [`examples/acceptance-fixture`](../../../examples/acceptance-fixture/README.md)
-on this VM (`pnpm --filter @threejs-doctor/acceptance-fixture dev` →
-http://127.0.0.1:5174/). Vanilla Three.js, `window.__THREEJS_DOCTOR_HOST__`,
-**no** `window.pelagic`. Paste `examples/live-attach/dist/attach.iife.js`.
-This is an injectability + generic-caps check, **not** spec §3 and **not** an
-external-host proof.
+## In-repo fixtures (not phone-class, not external GitHub games)
 
-Capture JSON is off-repo
-(`/opt/cursor/artifacts/fixture-pass-a-advise.json`,
-`/opt/cursor/artifacts/fixture-pass-b-safe-auto.json`). Numbers below are
-copied from those files. Do not invent further metrics. `ttfiMs` was omitted
-(paste-after-load).
+Local unpublished hosts on this VM (SwiftShader WebGL). **Not** the phone in
+[live-ocean-capture.md](./live-ocean-capture.md) §1. **Not** spec §3.
+**Not** Claude-of-Tanks / Kinema / catapult / moonbase. Discovery:
+`window.__THREEJS_DOCTOR_HOST__` (see [host-integration.md](./host-integration.md)).
+No `window.pelagic`. Ocean adapter **not registered** (`appliedKnobs` empty).
+Paste unpublished `examples/live-attach/dist/attach.iife.js`, `profile: 'game'`.
+`ttfiMs` omitted (paste-after-load). Do not invent further metrics.
 
-- Class: same box-desktop VM (SwiftShader WebGL), not the phone in
-  [live-ocean-capture.md](./live-ocean-capture.md) §1
-- Attach: unpublished live-attach IIFE, `profile: 'game'`
-- Discovery: `__THREEJS_DOCTOR_HOST__` (no pelagic)
-- Ocean adapter: **not registered** (`appliedKnobs` empty on both passes)
+Vite on this VM binds `localhost` (IPv6 `::1`), not `127.0.0.1`.
 
-### Fixture Pass A — `advise`
+### Acceptance bar progress (this session)
+
+- **Fixture ×2 measurable wins** on box-desktop generic caps (numbers below).
+- **Ocean injectable** on this box (`window.pelagic.debug`) but **not** §3:
+  SwiftShader ocean / phone-probe / emulation still ≪ 30.
+- **Remaining gate = real phone ocean only** (Pass A + Pass B on the device in
+  live-ocean-capture.md §1). External tanks / kinema / catapult / moonbase are
+  blocked pending host hooks; they are not this remaining gate.
+
+## In-repo acceptance-fixture (this session remeasure)
+
+[`examples/acceptance-fixture`](../../../examples/acceptance-fixture/README.md)
+`pnpm --filter @threejs-doctor/acceptance-fixture dev` → http://localhost:5174/
+
+Capture JSON off-repo:
+`/opt/cursor/artifacts/fixture-pass-a-advise.json`,
+`/opt/cursor/artifacts/fixture-pass-b-safe-auto.json`.
+
+### Fixture Pass A — `advise` (this session)
 
 Read-only. `appliedPasses` empty. Overlay stays advise.
 
@@ -162,10 +182,11 @@ Read-only. `appliedPasses` empty. Overlay stays advise.
 | recommendedTier | `potato` |
 | incomplete | false |
 | floorFailed | false |
-| baseline `avgFps` | 12.906001290600129 |
-| baseline `p95FrameTimeMs` | 145.5 |
-| after `avgFps` | 13.332148253488395 |
-| after `p95FrameTimeMs` | 140.80000000004657 |
+| applyFailed | false |
+| baseline `avgFps` | 14.408529849670762 |
+| baseline `p95FrameTimeMs` | 136.09999999997672 |
+| after `avgFps` | 14.37814521926658 |
+| after `p95FrameTimeMs` | 133.20000000001164 |
 | `drawCalls` | 66 |
 | `triangles` | 19010 |
 | `shadowCastingLightCount` | 2 |
@@ -173,19 +194,16 @@ Read-only. `appliedPasses` empty. Overlay stays advise.
 | `appliedPasses` | (none) |
 | `appliedKnobs` | (none) |
 
-Advise did not improve FPS (12.906 → 13.332). Score 100 is hygiene, not a win.
+Advise did not improve FPS (14.408529849670762 → 14.37814521926658). Score 100
+is hygiene, not a win.
 
-### Fixture Pass B — `safe-auto` (cold reload, after potato-floor work)
+### Fixture Pass B — `safe-auto` (this session, cold reload)
 
-`window.__THREEJS_DOCTOR_ATTACH__ = { mode: 'safe-auto' }` then paste IIFE.
-Generic caps only. Settled tier **potato**. Overlay/report `floorFailed: false`.
-After `avgFps` 52.313 ≥ 30 and `p95FrameTimeMs` 29.2 ≤ 33.4 — **this remeasure
-cleared 30 FPS**. That clearance is the **0.5 second-stage floor plus clearing a
-stale `floorFailed` latch** after later windows held the target. After
-`drawingBufferPixels` 256000 is still 0.5 DPR (1280×800×0.5²). The high-20s
-**0.4 near-miss did not fire** on this session (settled avgFps was already
-above 30). Not proof that 0.4 DPR would have rescued the earlier 28.275 /
-p95 83.6 miss.
+`window.__THREEJS_DOCTOR_ATTACH__ = { mode: 'safe-auto' }` then IIFE.
+Generic caps only. Settled tier **potato**. `floorFailed: false`.
+After `avgFps` 60.01200240048196 ≥ 30 and `p95FrameTimeMs` 24.800000000046566
+≤ 33.4. After `drawingBufferPixels` 256000 is the **0.5** second-stage floor
+(1280×800×0.5²). Not §3 proof.
 
 Applied passes: `dpr-cap`, `pixel-budget`, `shadow-budget`, `postfx-budget`,
 `tone-map-lite`, `anisotropy-cap`, `frameloop-demand`, `distance-cull`.
@@ -193,70 +211,121 @@ No adapter knobs.
 
 | Field | Baseline | After |
 |-------|----------|-------|
-| `avgFps` | 17.149717029668555 | 52.313415484770275 |
-| `p95FrameTimeMs` | 171.40000000002328 | 29.199999999953434 |
+| `avgFps` | 19.45651468966903 | 60.01200240048196 |
+| `p95FrameTimeMs` | 99.20000000001164 | 24.800000000046566 |
 | `drawCalls` | 66 | 66 |
 | `triangles` | 19010 | 19010 |
 | `shadowCastingLightCount` | 1 | 0 |
 | `drawingBufferPixels` | 1024000 | 256000 |
 
-`safe-auto` **did** raise fixture FPS versus this file's advise after
-(13.332 → 52.313) and versus its own baseline (17.150 → 52.313). Not §3 proof.
+`safe-auto` raised this fixture versus this session's advise after
+(14.37814521926658 → 60.01200240048196) and versus its own baseline
+(19.45651468966903 → 60.01200240048196).
 
-### Fixture Pass B remeasure (after hopeless 0.35 floor)
+### Prior fixture runs (same PR, earlier sessions)
 
-Same unpublished local fixture, same VM, `mode: 'safe-auto'`. Copied from
-`/opt/cursor/artifacts/fixture-pass-b-after-hopeless-floor.json`. Hopeless
-`pixelRatio` 0.35 only fires when avgFps stays **below 10** after the first
-floor; this run never entered that band. After `drawingBufferPixels` 256000 is
-still the **0.5** second-stage floor. After `avgFps` 53.970 ≥ 30 and
-`p95FrameTimeMs` 32 ≤ 33.4. `floorFailed: false`. Still not §3 proof.
+Kept for history. Not this session.
+
+Pass A (prior): after `avgFps` 13.332148253488395 / p95 140.80000000004657.
+
+Pass B after potato-floor work: after `avgFps` 52.313415484770275 / p95
+29.199999999953434, `floorFailed` false, `drawingBufferPixels` 256000.
+
+Pass B after hopeless 0.35 floor: after `avgFps` 53.96977692490396 / p95 32,
+`floorFailed` false. Copied from
+`/opt/cursor/artifacts/fixture-pass-b-after-hopeless-floor.json` (that file is
+not from this session).
+
+Pre-nudge Pass B after: `avgFps` 28.275212064090482 / p95 83.5999999998603 /
+`floorFailed` true / `drawingBufferPixels` 257985. Advise after in that
+session was 7.318917776024768 / p95 187.5999999998603.
+
+## In-repo acceptance-fixture-game (this session; heavier unpublished mini-game)
+
+[`examples/acceptance-fixture-game`](../../../examples/acceptance-fixture-game/README.md)
+`pnpm --filter @threejs-doctor/acceptance-fixture-game dev` → http://localhost:5175/
+
+Heavier than the first fixture: 12×12 boxes, extra spheres/toruses, 4096
+particles, four shadow-casting lights. Same host hook. **Not** an external
+game. **Not** phone-class. **Not** §3.
+
+Capture JSON off-repo:
+`/opt/cursor/artifacts/fixture-game-pass-a-advise.json`,
+`/opt/cursor/artifacts/fixture-game-pass-b-safe-auto.json`.
+
+### Game fixture Pass A — `advise`
+
+Read-only. `appliedPasses` / `appliedKnobs` empty. Findings present:
+`draw-calls/too-many` (158 vs game budget 150) and `shadows/too-many-casters`
+(4 vs budget 3). Score 74 is hygiene.
+
+| Field | Measured |
+|-------|----------|
+| score | 74 |
+| startTier | `low` |
+| tier | `low` |
+| recommendedTier | `potato` |
+| incomplete | false |
+| floorFailed | false |
+| applyFailed | false |
+| baseline `avgFps` | 6.27615062761514 |
+| baseline `p95FrameTimeMs` | 329.0999999999767 |
+| after `avgFps` | 6.472864314379904 |
+| after `p95FrameTimeMs` | 310.19999999995343 |
+| `drawCalls` | 158 |
+| `triangles` | 52418 |
+| `shadowCastingLightCount` | 4 |
+| `drawingBufferPixels` | 1024000 |
+| `appliedPasses` | (none) |
+| `appliedKnobs` | (none) |
+
+Advise did not improve FPS (6.27615062761514 → 6.472864314379904).
+
+### Game fixture Pass B — `safe-auto` (cold reload)
+
+Generic caps only. Settled tier **potato**. `floorFailed: true` because after
+`p95FrameTimeMs` 60.29999999993015 > 33.4 (the latch uses p95, not avgFps
+alone). After `avgFps` 32.05128205128338 ≥ 30. After `drawingBufferPixels`
+256000 is the 0.5 floor. Draw calls stayed 158; shadow casters 1→0.
+
+Applied passes: `dpr-cap`, `pixel-budget`, `shadow-budget`, `postfx-budget`,
+`tone-map-lite`, `anisotropy-cap`, `frameloop-demand`, `distance-cull`.
+No adapter knobs.
 
 | Field | Baseline | After |
 |-------|----------|-------|
-| `avgFps` | 15.414654197924527 | 53.96977692490396 |
-| `p95FrameTimeMs` | 125.29999999981374 | 32 |
-| `drawCalls` | 66 | 66 |
-| `triangles` | 19010 | 19010 |
+| `avgFps` | 12.88272426675789 | 32.05128205128338 |
+| `p95FrameTimeMs` | 148.80000000004657 | 60.29999999993015 |
+| `drawCalls` | 158 | 158 |
+| `triangles` | 52418 | 52418 |
+| `shadowCastingLightCount` | 1 | 0 |
 | `drawingBufferPixels` | 1024000 | 256000 |
 
-### Pre-nudge fixture Pass B (same PR, earlier session)
-
-Copied from the previous `LAST_REPORT` write-up on this PR, before the
-potato near-miss caps and `floorFailed` latch clear. Not this session.
-
-| Field | After |
-|-------|-------|
-| `avgFps` | 28.275212064090482 |
-| `p95FrameTimeMs` | 83.5999999998603 |
-| `floorFailed` | true |
-| `drawingBufferPixels` | 257985 |
-
-Advise after in that session was 7.318917776024768 / p95 187.5999999998603.
-That ~28 FPS / floorFailed true run is why the second-stage floor was nudged.
+`safe-auto` raised this heavier fixture versus its advise after
+(6.472864314379904 → 32.05128205128338) and versus its own baseline
+(12.88272426675789 → 32.05128205128338). avgFps cleared 30; p95 did not.
+`floorFailed` true. Still not §3 proof.
 
 ## Remaining gates
 
 This file does not close acceptance. Still required:
 
-- Phone-class ocean Pass A (`advise`) and Pass B (`safe-auto`) on the **real**
-  device in [live-ocean-capture.md](./live-ocean-capture.md) §1, same
-  TTFI-then-30 FPS bar, real `baseline` / `after` only. Chrome iPhone
-  **emulation** Pass B after 2.251 FPS (`floorFailed`) is not that bar. The
-  `device: 'phone'` overlay run (after ~0.92 / p95 ~4074, `floorFailed`) is
-  also an emulator / SwiftShader and does **not** replace §3. Box SwiftShader
-  cannot prove the ocean bar.
+- **Real-phone ocean** Pass A (`advise`) and Pass B (`safe-auto`) on the device
+  in [live-ocean-capture.md](./live-ocean-capture.md) §1, same TTFI-then-30 FPS
+  bar, real `baseline` / `after` only. That is the remaining §3 gate.
+  Chrome iPhone **emulation** Pass B after 2.251 FPS (`floorFailed`) is not
+  that bar. The `device: 'phone'` overlay run (after ~0.92 / p95 ~4074,
+  `floorFailed`) is also an emulator / SwiftShader and does **not** replace §3.
+  Box SwiftShader cannot prove the ocean bar. Ocean is injectable here; it is
+  not a §3 pass.
 - External [Claude-of-Tanks](https://cot.kevinliu.studio/) /
   [Kinema](https://kinema-play.vercel.app/?forceWebGL=1) /
-  [catapult](https://sina-ghiasi.github.io/threejs-catapult-game/) still need a
-  **box re-test**. Cheap-path discovery plus an **opt-in** bounded deep walk
-  (`deepWalk: true`, 5000 / 8 / 80ms) replaced the 50k sync BFS that froze
-  moonbase. This revision did **not** recapture those live hosts. If the
-  renderer is fully closed over, explicit
-  `attachQualityLadder({ scene, camera, renderer })` is still required.
-  Previous host-shim probe: `THREE.WebGLRenderer` not on `window` (`window.THREE`
-  missing; `window.__THREE__` a **string**). Do not treat unit tests as a live
-  tanks/catapult pass.
+  [catapult](https://sina-ghiasi.github.io/threejs-catapult-game/) /
+  [moonbase](https://konstantinsteinmiller.github.io/moonbase) stay **blocked
+  pending host hooks**. Catapult v3 with `deepWalk: true` did not freeze and
+  still found no renderer (see above). Tanks previously OOM'd; kinema was
+  WebGPU despite `forceWebGL=1`; moonbase froze on the old uncapped walk.
+  Do not treat unit tests or in-repo fixtures as those live hosts.
 
 Save those JSON files off-repo. Never invent after metrics.
 
@@ -329,11 +398,11 @@ logged `THREE.WebGLRenderer not found` on both:
 The prototype hook is shipped and unit-tested with fakes. Deep walk from
 window / document / canvas is **opt-in** (`__THREEJS_DOCTOR_ATTACH__.deepWalk`)
 with hard caps (5000 nodes, depth 8, 80ms wall clock; abort returns undefined).
-The previous default 50k sync walk froze live moonbase. **Re-test tanks /
-catapult on the box** — this revision did not recapture those hosts.
-Until a live capture succeeds, they still need explicit
-`attachQualityLadder({ scene, camera, renderer })` if the renderer is not on
-the cheap-path graph.
+The previous default 50k sync walk froze live moonbase. **Catapult v3** with
+`deepWalk: true` is recorded above (no freeze, no renderer). Tanks were not
+recaptured this revision (prior OOM). Until a live capture succeeds, they still
+need explicit `attachQualityLadder({ scene, camera, renderer })` if the
+renderer is not on the cheap-path graph.
 
 ## Chrome iPhone emulation 390×844 DPR3 (NOT a real phone GPU)
 
@@ -413,12 +482,19 @@ Fix shipped this revision:
 - Host-shim `capture.js` matches: no graph walk unless `deepWalk: true`, same
   caps.
 
-**Re-test catapult / tanks / moonbase on the box** — not done this revision.
-Do not invent FPS.
+**Re-test catapult on the box — done this revision (v3).** Opt-in `deepWalk: true`
+returned in **10.699999999953434 ms**, page stayed responsive, **no freeze**,
+**no renderer**. `window.__THREE__` is the string `"174"`. Still blocked pending
+a host hook. No FPS copied (no `LAST_REPORT`). Do not invent them.
 
-In-repo fixture Pass B was **not remeasured**. The last copied run remains
-after `avgFps` **53.970** / p95 **32** on the 0.5 DPR floor (`floorFailed:
-false`), which is still ≥30. Default attach still finds the fixture host
-(`window.__THREEJS_DOCTOR_HOST__`) on the cheap path.
+Tanks / kinema / moonbase were **not** recaptured this revision (prior OOM /
+WebGPU / freeze). They stay blocked pending host hooks. Unit tests are not a
+live capture.
+
+In-repo fixtures **were** remeasured this revision (see above). First fixture
+Pass B after `avgFps` **60.01200240048196** / p95 **24.800000000046566**,
+`floorFailed: false`. Game fixture Pass B after `avgFps` **32.05128205128338**
+/ p95 **60.29999999993015**, `floorFailed: true`. Cheap-path host object
+(`window.__THREEJS_DOCTOR_HOST__`) found both.
 
 

@@ -145,7 +145,7 @@ construct `attachQualityLadder` yourself.
 | acceptance-fixture-game (unpublished, local, heavier) | `pnpm --filter @threejs-doctor/acceptance-fixture-game dev` → http://localhost:5175/ | Generic caps. Same host hook; denser meshes, particles, more shadow casters. Not spec §3. See [host-integration.md](../../docs/superpowers/acceptance/host-integration.md). |
 | claude-of-tanks | https://cot.kevinliu.studio/ | Generic caps. No ocean adapter. Discovery may still miss closed-over scene/camera/renderer — see below. Needs explicit inject or a host hook. |
 | Kinema | https://kinema-play.vercel.app/?forceWebGL=1 | Generic caps. Use the documented WebGL compatibility query so the capture stays on WebGL. Homepage: https://kinema-play.vercel.app. Needs explicit inject or a host hook. |
-| catapult | https://sina-ghiasi.github.io/threejs-catapult-game/ | Generic caps. Canvas present; no discoverable handles on box-desktop. Needs explicit inject or a host hook. |
+| catapult | https://sina-ghiasi.github.io/threejs-catapult-game/ | Generic caps. v3 box recapture with `deepWalk: true`: no freeze, no renderer (`window.__THREE__` is the string `"174"`). Blocked pending a host hook. |
 
 ## Arm `renderer.prototype.render` capture (tanks / catapult)
 
@@ -230,8 +230,10 @@ on that bag or in the scene graph.
 scene/camera/renderer are typically closed over in the bundle. Default paste
 stays on cheap paths. For a bounded instance walk on those hosts, set
 `window.__THREEJS_DOCTOR_ATTACH__ = { deepWalk: true }` before pasting (or
-before host-shim). **Re-test those hosts on the box** — unit tests are not a
-live capture. If the renderer is fully closed over, pass
+before host-shim). **Catapult v3** on this box with `deepWalk: true` did **not
+freeze** and still found no renderer (`window.__THREE__` string `"174"`). Tanks /
+kinema / moonbase stay blocked pending host hooks. Unit tests are not a live
+capture. If the renderer is fully closed over, pass
 `{ scene, camera, renderer }` explicitly from the page console. Do not vendor
 the demo. Do not invent metrics.
 

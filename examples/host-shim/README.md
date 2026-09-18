@@ -43,7 +43,8 @@ window.__THREEJS_DOCTOR_ATTACH__ = { autoRun: false }
 await ThreejsDoctorLiveAttach.attachQualityLadder({ scene, camera, renderer })
 ```
 
-**Re-test tanks / catapult on the box.** Unit tests are not a live capture.
+**Re-test tanks / catapult on the box.** Catapult v3 (`deepWalk: true`) did not
+freeze and still found no renderer. Unit tests are not a live capture.
 
 ## Bookmarklet
 
