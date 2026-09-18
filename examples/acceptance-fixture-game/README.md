@@ -1,10 +1,11 @@
 # Unpublished acceptance mini-game
 
 Heavier unpublished Three.js host than
-[`examples/acceptance-fixture`](../acceptance-fixture/README.md): a denser box
-grid, extra spheres and toruses, a particle fountain, and **four**
-shadow-casting lights so generic Quality Ladder caps have more work to do.
-**Not** a live FPS proof and **not** the spec §3 bar.
+[`examples/acceptance-fixture`](../acceptance-fixture/README.md): a denser
+**InstancedMesh** box field, instanced spheres/toruses, a 64-beacon ring, a
+particle fountain, and **two** shadow-casting lights (fewer casters than the
+uninstanced 158-call version). Draw units and triangles stay above the light
+fixture (66 / 19010). **Not** a live FPS proof and **not** the spec §3 bar.
 
 **This package is `private: true`.** It is not published. It does not vendor
 ocean-simulation, Claude-of-Tanks, Kinema, or catapult.
@@ -69,5 +70,7 @@ evidence for spec §3.
 pnpm --filter @threejs-doctor/acceptance-fixture-game test
 ```
 
-Node/jsdom-free smoke: host object shape and that this scene is heavier than
-the first unpublished fixture. No FPS numbers.
+Node/jsdom-free smoke: host object shape, InstancedMesh draw-unit accounting,
+and that this scene stays heavier than the first unpublished fixture (more
+draw units and triangles, particles kept) without 158 uninstanced calls.
+No FPS numbers.
