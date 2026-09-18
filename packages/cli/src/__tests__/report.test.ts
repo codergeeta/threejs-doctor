@@ -67,4 +67,15 @@ describe('reports', () => {
     expect(text).toContain('Failed passes:')
     expect(text).toContain('shadow-budget: boom')
   })
+
+  it('says applied passes were rolled back on a confirmed visual delta', () => {
+    const text = formatHumanReport({
+      ...report,
+      visualDelta: true,
+      rolledBackDueToVisual: true,
+    })
+    expect(text).toMatch(/visual delta/i)
+    expect(text).toMatch(/rolled back/i)
+    expect(text).toMatch(/fixed viewpoint/i)
+  })
 })

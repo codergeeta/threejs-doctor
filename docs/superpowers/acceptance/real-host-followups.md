@@ -2,7 +2,7 @@
 
 P0 from the real-host report (dpr-cap NaN, distance-cull hiding nested meshes, honest scan/ci, unpublished npm name) is handled in the runtime/CLI.
 
-## Round 3 — arcade racer @16976c9 (this PR)
+## Round 3 — audit of arcade racer @16976c9 (fixes in this PR)
 
 Round-2 GPU timer (57/60 frames, median 1.39ms on waitFrame), drawn triangles, composer, instance bounds, leaks, measure wrap, and 0.5% visual gate remain **verified good on a real RTX 3050**. This PR lands the still-open correctness from that audit. **Do not merge until the user re-audits.**
 

@@ -473,6 +473,44 @@ describe('R2: measure wraps host render and uses median drawCalls', () => {
     expect(sample.p95FrameTimeMs).toBe(8)
   })
 
+  it('does not double-count nested composer.render that calls renderer.render', async () => {
+    let t = 0
+    const now = () => t
+    const renderer = {
+      info: {
+        render: { calls: 1, triangles: 10 },
+        memory: { geometries: 0, textures: 0 },
+      },
+      setPixelRatio() {},
+      render() {
+        t += 4
+      },
+    }
+    const composer = {
+      isEffectComposer: true,
+      passes: [],
+      renderTarget1: { width: 8, height: 8 },
+      render() {
+        renderer.render()
+        t += 1
+      },
+    }
+    const doctor = new Doctor({
+      scene: { children: [], traverse() {} } as never,
+      camera: {},
+      renderer: renderer as never,
+      composer,
+      profile: 'game',
+      measureFrames: 2,
+      now,
+      waitFrame: async () => {
+        composer.render()
+      },
+    })
+    const sample = await doctor.measure()
+    expect(sample.p95FrameTimeMs).toBe(5)
+  })
+
   it('uses the median drawCalls across sampled frames, not the last frame only', async () => {
     const frames = [10, 12, 100]
     let i = 0

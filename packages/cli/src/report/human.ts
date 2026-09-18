@@ -33,5 +33,12 @@ export function formatHumanReport(report: DoctorReport): string {
   if (report.incomplete) {
     lines.push('Run incomplete: after metrics unavailable; baseline retained.')
   }
+  if (report.visualDelta) {
+    lines.push(
+      report.rolledBackDueToVisual
+        ? 'Visual delta vs control (confirmed); applied passes were rolled back. Capture must use a fixed viewpoint.'
+        : 'Visual delta vs control; do not treat apply: [safe] as visually safe.',
+    )
+  }
   return lines.join('\n')
 }

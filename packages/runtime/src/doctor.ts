@@ -67,6 +67,8 @@ export interface DoctorReport {
   visualDelta?: boolean
   /** GPU sampler existed but this run produced no GPU times (see MetricsSample.gpuTimingSkipped). */
   gpuTimingSkipped?: boolean
+  /** Applied passes were rolled back after a confirmed visual delta vs control. */
+  rolledBackDueToVisual?: boolean
 }
 
 export interface DoctorOptions {
@@ -454,17 +456,22 @@ export class Doctor {
     let workMs: number | undefined
     const restores: Array<() => void> = []
     const hooked = new Set<object>()
+    let renderDepth = 0
     const hook = (obj: { render?: (...args: never[]) => unknown } | undefined) => {
       if (!obj || typeof obj.render !== 'function') return
       if (hooked.has(obj)) return
       hooked.add(obj)
       const original = obj.render
       obj.render = function wrappedRender(this: unknown, ...args: never[]) {
+        renderDepth += 1
         const t0 = now()
         try {
           return original.apply(this, args)
         } finally {
-          workMs = (workMs ?? 0) + (now() - t0)
+          renderDepth -= 1
+          if (renderDepth === 0) {
+            workMs = (workMs ?? 0) + (now() - t0)
+          }
         }
       }
       restores.push(() => {
@@ -750,6 +757,7 @@ export class Doctor {
     const { appliedPasses, failedPasses } = this.applyPassesImmediate(passIds)
     const device = this.device()
 
+    const snapshotBeforeCandidate = this.lastSnapshot
     let after: MetricsSample | undefined
     let incomplete = false
     try {
@@ -760,9 +768,9 @@ export class Doctor {
     }
 
     const sampleForRules = after ?? diagnosed.baseline
-    const snap = this.currentSnapshot(sampleForRules)
-    const findings = runRules(this.ruleContext(snap, device, diagnosed.profile))
-    const score = computeDoctorScore(findings, snap, diagnosed.profile, this.previousSnapshot)
+    let snap = this.currentSnapshot(sampleForRules)
+    let findings = runRules(this.ruleContext(snap, device, diagnosed.profile))
+    let score = computeDoctorScore(findings, snap, diagnosed.profile, this.previousSnapshot)
     const report: DoctorReport = {
       profile: diagnosed.profile,
       mode: 'optimize',
@@ -807,6 +815,14 @@ export class Doctor {
         if (confirmed.visualDelta) {
           this.rollbackAll()
           report.visualDelta = true
+          report.rolledBackDueToVisual = true
+          this.baseline = diagnosed.baseline
+          this.lastSnapshot = snapshotBeforeCandidate ?? this.currentSnapshot(diagnosed.baseline)
+          snap = this.lastSnapshot
+          findings = runRules(this.ruleContext(snap, device, diagnosed.profile))
+          score = computeDoctorScore(findings, snap, diagnosed.profile, this.previousSnapshot)
+          report.findings = findings
+          report.score = score
         }
       }
     }

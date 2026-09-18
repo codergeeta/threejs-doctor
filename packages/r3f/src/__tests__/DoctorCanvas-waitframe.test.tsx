@@ -37,6 +37,7 @@ vi.mock('@threejs-doctor/runtime', async (importOriginal) => {
 })
 
 import { DoctorCanvas } from '../DoctorCanvas.js'
+import { waitGpuMacrotask } from '@threejs-doctor/runtime'
 
 describe('DoctorCanvas waitFrame', () => {
   it('passes a waitFrame hook so GPU queries can complete on the default r3f path', () => {
@@ -48,5 +49,6 @@ describe('DoctorCanvas waitFrame', () => {
     )
     expect(constructed.length).toBeGreaterThan(0)
     expect(typeof constructed[0]?.waitFrame).toBe('function')
+    expect(constructed[0]?.waitFrame).toBe(waitGpuMacrotask)
   })
 })

@@ -2981,17 +2981,22 @@ ${line2}` : line1;
       let workMs;
       const restores = [];
       const hooked = /* @__PURE__ */ new Set();
+      let renderDepth = 0;
       const hook = (obj) => {
         if (!obj || typeof obj.render !== "function") return;
         if (hooked.has(obj)) return;
         hooked.add(obj);
         const original = obj.render;
         obj.render = function wrappedRender(...args) {
+          renderDepth += 1;
           const t0 = now();
           try {
             return original.apply(this, args);
           } finally {
-            workMs = (workMs ?? 0) + (now() - t0);
+            renderDepth -= 1;
+            if (renderDepth === 0) {
+              workMs = (workMs ?? 0) + (now() - t0);
+            }
           }
         };
         restores.push(() => {
@@ -3232,6 +3237,7 @@ ${line2}` : line1;
       const passIds = resolvePassIds(options.apply ?? ["safe"], diagnosed.profile);
       const { appliedPasses, failedPasses } = this.applyPassesImmediate(passIds);
       const device = this.device();
+      const snapshotBeforeCandidate = this.lastSnapshot;
       let after;
       let incomplete = false;
       try {
@@ -3241,9 +3247,9 @@ ${line2}` : line1;
         after = void 0;
       }
       const sampleForRules = after ?? diagnosed.baseline;
-      const snap = this.currentSnapshot(sampleForRules);
-      const findings = runRules(this.ruleContext(snap, device, diagnosed.profile));
-      const score = computeDoctorScore(findings, snap, diagnosed.profile, this.previousSnapshot);
+      let snap = this.currentSnapshot(sampleForRules);
+      let findings = runRules(this.ruleContext(snap, device, diagnosed.profile));
+      let score = computeDoctorScore(findings, snap, diagnosed.profile, this.previousSnapshot);
       const report = {
         profile: diagnosed.profile,
         mode: "optimize",
@@ -3284,6 +3290,14 @@ ${line2}` : line1;
           if (confirmed.visualDelta) {
             this.rollbackAll();
             report.visualDelta = true;
+            report.rolledBackDueToVisual = true;
+            this.baseline = diagnosed.baseline;
+            this.lastSnapshot = snapshotBeforeCandidate ?? this.currentSnapshot(diagnosed.baseline);
+            snap = this.lastSnapshot;
+            findings = runRules(this.ruleContext(snap, device, diagnosed.profile));
+            score = computeDoctorScore(findings, snap, diagnosed.profile, this.previousSnapshot);
+            report.findings = findings;
+            report.score = score;
           }
         }
       }

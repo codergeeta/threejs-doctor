@@ -179,6 +179,7 @@ describe('P3: pixel-diff visual gate is opt-in', () => {
     })
     expect(captures).toBeGreaterThanOrEqual(4)
     expect(report.visualDelta).toBe(true)
+    expect(report.rolledBackDueToVisual).toBe(true)
     expect(renderer.pixelRatio).toBe(3)
   })
 
@@ -227,6 +228,7 @@ describe('P3: pixel-diff visual gate is opt-in', () => {
     })
     expect(captures).toBeGreaterThanOrEqual(4)
     expect(report.visualDelta).toBeUndefined()
+    expect(report.rolledBackDueToVisual).toBeUndefined()
     expect(renderer.pixelRatio).toBeLessThan(3)
   })
 })

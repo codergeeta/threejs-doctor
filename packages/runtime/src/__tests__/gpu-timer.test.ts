@@ -286,8 +286,8 @@ describe('GPU timer uses WebGL2RenderingContext methods, not the EXT object', ()
       now: clock(),
     })
     const first = await doctor.measure(6)
+    expect(first.gpuTimingSkipped).toBe(true)
     expect(Object.prototype.hasOwnProperty.call(first, 'gpuFrameTimeMs')).toBe(false)
-    expect(first.gpuTimingSkipped === true || first.gpuFrameTimeMs === undefined).toBe(true)
     expect(gl.liveQueries()).toHaveLength(0)
 
     gl.setNs(2_000_000)
