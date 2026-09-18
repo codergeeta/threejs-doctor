@@ -119,7 +119,12 @@ export function createGpuFrameSampler(renderer: DoctorRendererLike): {
         ns = undefined
       }
       deleteQuery(query)
-      if (disjoint) continue
+      if (disjoint) {
+        while (pending.length > 0) {
+          deleteQuery(pending.shift())
+        }
+        return undefined
+      }
       if (typeof ns === 'number' && Number.isFinite(ns)) return ns / 1e6
     }
     return undefined

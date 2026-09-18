@@ -23,21 +23,27 @@ function webgl2TimerGl(opts?: { delayFrames?: number; disjoint?: boolean; ns?: n
   const queries: Array<{ ended: boolean; createdAt: number; availableAfter: number }> = []
   let frame = 0
   const deleted: unknown[] = []
+  let disjointFlag = opts?.disjoint === true
 
   const gl = {
     QUERY_RESULT_AVAILABLE,
     QUERY_RESULT,
     createQuery() {
+      if (this !== gl) throw new TypeError('Illegal invocation')
       const q = { id: queries.length, ended: false, createdAt: frame, availableAfter: frame + delay }
       queries.push(q)
       return q
     },
-    beginQuery(_target: number, _query: unknown) {},
+    beginQuery(_target: number, _query: unknown) {
+      if (this !== gl) throw new TypeError('Illegal invocation')
+    },
     endQuery(_target: number) {
+      if (this !== gl) throw new TypeError('Illegal invocation')
       const q = queries[queries.length - 1]
       if (q) q.ended = true
     },
     getQueryParameter(query: { ended?: boolean; availableAfter?: number }, pname: number) {
+      if (this !== gl) throw new TypeError('Illegal invocation')
       if (pname === QUERY_RESULT_AVAILABLE) {
         if (!query?.ended) return false
         return frame > (query.availableAfter ?? 0)
@@ -46,10 +52,16 @@ function webgl2TimerGl(opts?: { delayFrames?: number; disjoint?: boolean; ns?: n
       return 0
     },
     getParameter(pname: number) {
-      if (pname === GPU_DISJOINT_EXT) return opts?.disjoint === true
+      if (this !== gl) throw new TypeError('Illegal invocation')
+      if (pname === GPU_DISJOINT_EXT) {
+        const value = disjointFlag
+        disjointFlag = false
+        return value
+      }
       return 0
     },
     deleteQuery(query: unknown) {
+      if (this !== gl) throw new TypeError('Illegal invocation')
       deleted.push(query)
     },
     getExtension(name: string) {
@@ -180,5 +192,22 @@ describe('GPU timer uses WebGL2RenderingContext methods, not the EXT object', ()
     })
     const sample = await doctor.measure()
     expect(Object.prototype.hasOwnProperty.call(sample, 'gpuFrameTimeMs')).toBe(false)
+  })
+
+  it('keeps the sampler across measure() calls so a delayed query can complete later', async () => {
+    const { gl, ext } = webgl2TimerGl({ delayFrames: 2, ns: 5_000_000 })
+    const renderer = rendererFor(gl, { ext })
+    const doctor = new Doctor({
+      scene: { children: [], traverse() {} } as never,
+      camera: {},
+      renderer: renderer as never,
+      profile: 'game',
+      measureFrames: 1,
+      now: clock(),
+    })
+    expect(Object.prototype.hasOwnProperty.call(await doctor.measure(1), 'gpuFrameTimeMs')).toBe(false)
+    expect(Object.prototype.hasOwnProperty.call(await doctor.measure(1), 'gpuFrameTimeMs')).toBe(false)
+    const third = await doctor.measure(1)
+    expect(third.gpuFrameTimeMs).toBe(5)
   })
 })

@@ -2588,7 +2588,12 @@ ${line2}` : line1;
           ns = void 0;
         }
         deleteQuery(query);
-        if (disjoint) continue;
+        if (disjoint) {
+          while (pending.length > 0) {
+            deleteQuery(pending.shift());
+          }
+          return void 0;
+        }
         if (typeof ns === "number" && Number.isFinite(ns)) return ns / 1e6;
       }
       return void 0;
@@ -2748,6 +2753,7 @@ ${line2}` : line1;
     postfxEnabled;
     pinnedAutoProfile;
     instanceLeaks = new InstanceLeakTracker();
+    gpuSampler = void 0;
     device() {
       if (this.opts.device) return this.opts.device;
       const windowDpr = typeof globalThis !== "undefined" && typeof globalThis.devicePixelRatio === "number" ? globalThis.devicePixelRatio : void 0;
@@ -2868,6 +2874,10 @@ ${line2}` : line1;
     resolvedComposer() {
       return this.opts.composer ?? findComposer(this.opts.scene, this.opts.renderer, void 0);
     }
+    gpuFrameSampler() {
+      this.gpuSampler ??= createGpuFrameSampler(this.opts.renderer);
+      return this.gpuSampler;
+    }
     getDevice() {
       return this.device();
     }
@@ -2880,7 +2890,7 @@ ${line2}` : line1;
       const info = this.opts.renderer.info;
       const hadAutoReset = Object.prototype.hasOwnProperty.call(info, "autoReset");
       const prevAutoReset = info.autoReset;
-      const gpu = createGpuFrameSampler(this.opts.renderer);
+      const gpu = this.gpuFrameSampler();
       info.autoReset = false;
       const callSamples = [];
       const triangleSamples = [];

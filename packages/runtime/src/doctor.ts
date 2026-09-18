@@ -270,6 +270,7 @@ export class Doctor {
   private postfxEnabled: boolean
   private pinnedAutoProfile: Exclude<Profile, 'auto'> | undefined
   private readonly instanceLeaks = new InstanceLeakTracker()
+  private gpuSampler: ReturnType<typeof createGpuFrameSampler> = undefined
 
   constructor(private readonly opts: DoctorOptions) {
     this.frameloop = opts.frameloop ?? 'always'
@@ -418,6 +419,11 @@ export class Doctor {
     )
   }
 
+  private gpuFrameSampler(): ReturnType<typeof createGpuFrameSampler> {
+    this.gpuSampler ??= createGpuFrameSampler(this.opts.renderer)
+    return this.gpuSampler
+  }
+
   getDevice(): DeviceCapabilities {
     return this.device()
   }
@@ -431,7 +437,7 @@ export class Doctor {
     const info = this.opts.renderer.info
     const hadAutoReset = Object.prototype.hasOwnProperty.call(info, 'autoReset')
     const prevAutoReset = info.autoReset
-    const gpu = createGpuFrameSampler(this.opts.renderer)
+    const gpu = this.gpuFrameSampler()
     info.autoReset = false
     const callSamples: number[] = []
     const triangleSamples: number[] = []

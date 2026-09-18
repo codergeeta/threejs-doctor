@@ -45,6 +45,6 @@ test('InstancedMesh world radius matches computeBoundingSphere()', async ({ page
 
 test('drawn triangle cost drops after chunking even if unused geometry remains', async ({ page }) => {
   const r = await report(page)
-  expect(r.geometryTrianglesAfter).toBeGreaterThanOrEqual(r.geometryTrianglesBefore)
+  expect(r.geometryTrianglesAfter).toBeGreaterThan(r.geometryTrianglesBefore)
   expect(r.drawnTrianglesAfter).toBeLessThan(r.drawnTrianglesBefore)
 })
