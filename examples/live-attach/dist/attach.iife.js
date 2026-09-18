@@ -823,10 +823,15 @@
     if (direction === "lower-better") return delta < 0 ? "win" : "loss";
     return delta > 0 ? "win" : "loss";
   }
+  function medianAbsDeviation(values) {
+    const mid = median(values);
+    return median(values.map((value) => Math.abs(value - mid)));
+  }
   function noiseFromControl(values) {
     const mid = median(values);
     const halfRange = (Math.max(...values) - Math.min(...values)) / 2;
-    const abs = Math.max(halfRange, 0);
+    const mad = medianAbsDeviation(values);
+    const abs = Math.max(halfRange, mad * 1.4826, 0);
     const rel = Math.abs(mid) > 0 ? abs / Math.abs(mid) : 0;
     return { abs, rel };
   }
@@ -868,9 +873,10 @@
       const bSeries = numericSeries(input.b, key);
       const bVal = after[key];
       const aVal = before[key];
-      if (typeof aVal !== "number" || typeof bVal !== "number" || !aSeries || !bSeries) continue;
+      const bandSeries = input.control ? numericSeries(input.control, key) : aSeries;
+      if (typeof aVal !== "number" || typeof bVal !== "number" || !aSeries || !bSeries || !bandSeries) continue;
       deltas[key] = bVal - aVal;
-      const band = noiseFromControl(aSeries);
+      const band = noiseFromControl(bandSeries);
       noiseBand[key] = band;
       const direction = HIGHER_BETTER.includes(key) ? "higher-better" : "lower-better";
       if (!LOWER_BETTER.includes(key) && !HIGHER_BETTER.includes(key)) continue;
@@ -1088,7 +1094,7 @@
           severity: "warn",
           evidence: { zeroIntensityLightCount: zero },
           message: `${zero} visible light(s) have intensity 0 but still participate in lighting`,
-          suggestedFix: "Keep a fixed-size light pool and disable unused lights via intensity = 0 or visible = false. Removing lights from the scene recompiles materials and can hitch."
+          suggestedFix: "Keep visible light count fixed and move/reassign a small pool. If count must change, pre-compile both variants with renderer.compile / compileAsync."
         });
       }
       return findings;
@@ -2027,48 +2033,81 @@ ${line2}` : line1;
     }
     return known ? bytes : void 0;
   }
+  var LEAK_AFTER_MISSING_SCANS = 2;
   var InstanceLeakTracker = class {
-    known = /* @__PURE__ */ new Map();
+    known = [];
     alive = /* @__PURE__ */ new Set();
+    recordFor(obj) {
+      this.prune();
+      for (const rec of this.known) {
+        if (rec.ref.deref() === obj) return rec;
+      }
+      return void 0;
+    }
+    prune() {
+      for (let i = this.known.length - 1; i >= 0; i--) {
+        if (this.known[i].ref.deref() === void 0) this.known.splice(i, 1);
+      }
+    }
     beginScan() {
       this.alive.clear();
     }
     watch(obj) {
       if (obj.isInstancedMesh !== true) return;
-      let rec = this.known.get(obj);
+      let rec = this.recordFor(obj);
       if (!rec) {
-        rec = { bytes: instancedBufferBytes(obj) ?? 0, disposed: false, leaked: false };
-        this.known.set(obj, rec);
+        rec = {
+          ref: new WeakRef(obj),
+          bytes: instancedBufferBytes(obj) ?? 0,
+          disposed: false,
+          leaked: false,
+          missingScans: 0
+        };
+        this.known.push(rec);
         if (typeof obj.addEventListener === "function") {
           try {
             obj.addEventListener("dispose", () => {
               rec.disposed = true;
               rec.leaked = false;
+              rec.missingScans = 0;
             });
-            obj.addEventListener("removed", () => {
-              if (!rec.disposed) rec.leaked = true;
+            obj.addEventListener("added", () => {
+              rec.leaked = false;
+              rec.missingScans = 0;
             });
           } catch {
           }
         }
       } else {
         rec.bytes = instancedBufferBytes(obj) ?? rec.bytes;
+        rec.missingScans = 0;
+        rec.leaked = false;
       }
       this.alive.add(obj);
     }
     endScan() {
-      for (const [obj, rec] of this.known) {
+      this.prune();
+      for (const rec of this.known) {
+        const obj = rec.ref.deref();
+        if (obj === void 0) continue;
         if (this.alive.has(obj)) {
+          rec.missingScans = 0;
           rec.leaked = false;
           continue;
         }
-        if (!rec.disposed) rec.leaked = true;
+        if (rec.disposed) {
+          rec.leaked = false;
+          continue;
+        }
+        rec.missingScans += 1;
+        rec.leaked = rec.missingScans >= LEAK_AFTER_MISSING_SCANS;
       }
     }
     snapshot() {
+      this.prune();
       let count = 0;
       let bytes = 0;
-      for (const rec of this.known.values()) {
+      for (const rec of this.known) {
         if (!rec.leaked) continue;
         count += 1;
         bytes += rec.bytes;
@@ -2538,6 +2577,15 @@ ${line2}` : line1;
     }
     return void 0;
   }
+  function waitGpuMacrotask() {
+    return new Promise((resolve) => {
+      if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(() => resolve());
+        return;
+      }
+      setTimeout(resolve, 0);
+    });
+  }
   function createGpuFrameSampler(renderer) {
     const gl = renderer.getContext?.();
     if (!gl) return void 0;
@@ -2553,21 +2601,41 @@ ${line2}` : line1;
     const resultPname = typeof gl.QUERY_RESULT === "number" ? gl.QUERY_RESULT : QUERY_RESULT;
     const pending = [];
     let active;
+    let measureId = 0;
     const deleteQuery = (query) => {
       try {
         gl.deleteQuery?.(query);
       } catch {
       }
     };
-    const harvest = () => {
+    const discardAll = () => {
+      if (active !== void 0) {
+        try {
+          gl.endQuery(target);
+        } catch {
+        }
+        deleteQuery(active.query);
+        active = void 0;
+      }
       while (pending.length > 0) {
-        const query = pending[0];
+        deleteQuery(pending.shift().query);
+      }
+    };
+    const harvest = () => {
+      const times = [];
+      while (pending.length > 0) {
+        const item = pending[0];
+        if (item.measureId !== measureId) {
+          pending.shift();
+          deleteQuery(item.query);
+          continue;
+        }
         let available;
         try {
-          available = gl.getQueryParameter(query, availablePname);
+          available = gl.getQueryParameter(item.query, availablePname);
         } catch {
           pending.shift();
-          deleteQuery(query);
+          deleteQuery(item.query);
           continue;
         }
         if (available !== true && available !== 1) break;
@@ -2583,48 +2651,62 @@ ${line2}` : line1;
         }
         let ns;
         try {
-          ns = gl.getQueryParameter(query, resultPname);
+          ns = gl.getQueryParameter(item.query, resultPname);
         } catch {
           ns = void 0;
         }
-        deleteQuery(query);
+        deleteQuery(item.query);
         if (disjoint) {
-          while (pending.length > 0) {
-            deleteQuery(pending.shift());
-          }
-          return void 0;
+          discardAll();
+          return [];
         }
-        if (typeof ns === "number" && Number.isFinite(ns)) return ns / 1e6;
+        if (typeof ns === "number" && Number.isFinite(ns)) times.push(ns / 1e6);
       }
-      return void 0;
+      return times;
+    };
+    const closeActive = () => {
+      if (active === void 0) return;
+      try {
+        gl.endQuery(target);
+        pending.push(active);
+      } catch {
+        deleteQuery(active.query);
+      }
+      active = void 0;
     };
     return {
       begin() {
         try {
-          if (active !== void 0) {
-            gl.endQuery(target);
-            pending.push(active);
-            active = void 0;
-          }
+          closeActive();
           const query = gl.createQuery();
           if (!query) return;
           gl.beginQuery(target, query);
-          active = query;
+          active = { query, measureId };
         } catch {
           active = void 0;
         }
       },
       end() {
         try {
-          if (active !== void 0) {
-            gl.endQuery(target);
-            pending.push(active);
-            active = void 0;
-          }
+          closeActive();
           return harvest();
         } catch {
-          return void 0;
+          return [];
         }
+      },
+      harvest() {
+        try {
+          return harvest();
+        } catch {
+          return [];
+        }
+      },
+      beginMeasure() {
+        measureId += 1;
+        discardAll();
+      },
+      endMeasure() {
+        discardAll();
       }
     };
   }
@@ -2891,21 +2973,25 @@ ${line2}` : line1;
       const hadAutoReset = Object.prototype.hasOwnProperty.call(info, "autoReset");
       const prevAutoReset = info.autoReset;
       const gpu = this.gpuFrameSampler();
+      const liveClock = this.opts.now === void 0;
       info.autoReset = false;
       const callSamples = [];
       const triangleSamples = [];
       const gpuTimes = [];
       let workMs;
       const restores = [];
+      const hooked = /* @__PURE__ */ new Set();
       const hook = (obj) => {
         if (!obj || typeof obj.render !== "function") return;
+        if (hooked.has(obj)) return;
+        hooked.add(obj);
         const original = obj.render;
         obj.render = function wrappedRender(...args) {
           const t0 = now();
           try {
             return original.apply(this, args);
           } finally {
-            workMs = now() - t0;
+            workMs = (workMs ?? 0) + (now() - t0);
           }
         };
         restores.push(() => {
@@ -2918,6 +3004,7 @@ ${line2}` : line1;
       if (composer && typeof composer === "object") {
         hook(composer);
       }
+      gpu?.beginMeasure();
       try {
         for (let i = 0; i < frames; i++) {
           info.reset?.();
@@ -2927,14 +3014,21 @@ ${line2}` : line1;
           gpu?.begin();
           if (waitFrame) await waitFrame();
           else if (renderFrame) await renderFrame();
-          const gpuMs = gpu?.end();
-          if (gpuMs !== void 0) gpuTimes.push(gpuMs);
+          gpuTimes.push(...gpu?.end() ?? []);
           const end = workMs !== void 0 ? start + workMs : now();
           collector.endFrame(end);
           callSamples.push(info.render.calls);
           triangleSamples.push(info.render.triangles);
+          if (gpu && !waitFrame && liveClock) await waitGpuMacrotask();
+        }
+        if (gpu && liveClock) {
+          for (let i = 0; i < 4; i++) {
+            await waitGpuMacrotask();
+            gpuTimes.push(...gpu.harvest());
+          }
         }
       } finally {
+        gpu?.endMeasure();
         for (let i = restores.length - 1; i >= 0; i--) restores[i]();
         if (hadAutoReset) info.autoReset = prevAutoReset;
         else delete info.autoReset;
@@ -2944,8 +3038,9 @@ ${line2}` : line1;
       if (triangleSamples.length > 0) sample.triangles = median(triangleSamples);
       if (gpuTimes.length > 0) {
         sample.gpuFrameTimeMs = median(gpuTimes);
+      } else if (gpu) {
+        sample.gpuTimingSkipped = true;
       }
-      const liveClock = this.opts.now === void 0;
       const validityInput = {
         frameTimesMs: [...collector.frameTimes()]
       };
@@ -2982,6 +3077,7 @@ ${line2}` : line1;
         incomplete: false
       };
       markReportValidity(report, baseline);
+      if (baseline.gpuTimingSkipped) report.gpuTimingSkipped = true;
       return report;
     }
     async diagnose() {
@@ -3119,7 +3215,9 @@ ${line2}` : line1;
         b.push(await this.measure(opts2.frames));
         await opts2.restoreA?.();
       }
-      return compareAbSamples({ a, b });
+      const input = { a, b };
+      if (opts2.control) input.control = opts2.control;
+      return compareAbSamples(input);
     }
     async optimize(options = {}) {
       const diagnosed = await this.buildDiagnoseReport();
@@ -3161,6 +3259,7 @@ ${line2}` : line1;
         report.deltas = diffMetrics(diagnosed.baseline, after);
       }
       markReportValidity(report, after ?? diagnosed.baseline);
+      if ((after ?? diagnosed.baseline).gpuTimingSkipped) report.gpuTimingSkipped = true;
       if (options.visualGate && baselinePixels) {
         const candidate = await options.visualGate.capture();
         const candidateChangedRatio = pixelChangedRatio(
@@ -3172,8 +3271,21 @@ ${line2}` : line1;
         if (options.visualGate.maxChangedRatio !== void 0) {
           verdictOpts.maxChangedRatio = options.visualGate.maxChangedRatio;
         }
-        const verdict = classifyVisualSafety(verdictOpts);
-        if (verdict.visualDelta) report.visualDelta = true;
+        const firstVerdict = classifyVisualSafety(verdictOpts);
+        if (firstVerdict.visualDelta) {
+          const confirm = await options.visualGate.capture();
+          const confirmRatio = pixelChangedRatio(
+            baselinePixels,
+            confirm,
+            options.visualGate.channelThreshold
+          );
+          const confirmOpts = { ...verdictOpts, candidateChangedRatio: confirmRatio };
+          const confirmed = classifyVisualSafety(confirmOpts);
+          if (confirmed.visualDelta) {
+            this.rollbackAll();
+            report.visualDelta = true;
+          }
+        }
       }
       this.lastReport = report;
       this.overlay?.refresh();
