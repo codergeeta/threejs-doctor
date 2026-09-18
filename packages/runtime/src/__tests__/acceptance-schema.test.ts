@@ -40,10 +40,14 @@ describe('live acceptance artifacts', () => {
     expect(schemaText).not.toMatch(/"avgFps":\s*3[0-9]/)
   })
 
-  it('CI workflow stays headless (no gpu / playwright live job)', () => {
+  it('CI workflow stays headless (Playwright fixture is SwiftShader; no live ocean / npm publish)', () => {
     const yml = readFileSync(resolve(process.cwd(), '../../.github/workflows/ci.yml'), 'utf8')
     expect(yml).toContain('node-version: 22')
-    expect(yml).not.toMatch(/playwright/i)
+    expect(yml).toMatch(/playwright/i)
+    expect(yml).toMatch(/SwiftShader/)
+    expect(yml).toMatch(/check:iife/)
     expect(yml).not.toMatch(/ocean-simulation/)
+    expect(yml).not.toMatch(/^\s+- run: npm publish/m)
+    expect(yml).not.toMatch(/^\s+- run: pnpm publish/m)
   })
 })

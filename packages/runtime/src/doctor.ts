@@ -18,6 +18,7 @@ import {
   type SceneStatsLike,
   type QualityTier,
   type AbCompareResult,
+  median,
 } from '@threejs-doctor/core'
 import {
   computeDoctorScore,
@@ -45,8 +46,10 @@ import { materialDowngradePass } from './passes/material-downgrade.js'
 import { mountOverlay as mountOverlayImpl, type OverlayHandle } from './overlay/mount-overlay.js'
 import type { QualityHudState } from './overlay/format-quality-hud.js'
 import { readRendererAntialias, readRendererPixelRatio } from './renderer-read.js'
-import { collectHostSceneStats, applyHostInsights } from './scene-stats.js'
+import { collectHostSceneStats, applyHostInsights, type CollectHostSceneOptions } from './scene-stats.js'
 import { createGpuFrameSampler } from './gpu-timer.js'
+import { findComposer, notifyPixelRatioChange } from './composer.js'
+import { InstanceLeakTracker } from './instance-leak-tracker.js'
 
 export interface DoctorReport {
   profile: Exclude<Profile, 'auto'>
@@ -88,6 +91,19 @@ export interface DoctorOptions {
    * Used when `waitFrame` is omitted. If omitted, Doctor calls `renderer.render(scene, camera)` when present.
    */
   renderFrame?: () => void | Promise<void>
+  /**
+   * Explicit EffectComposer (three.js or pmndrs). Preferred over scene/renderer property discovery.
+   */
+  composer?: unknown
+  /**
+   * The renderer the host actually calls `.render` on (raw THREE.WebGLRenderer).
+   * `measure()` wraps this so CPU time is work, not vsync, when waitFrame is rAF.
+   */
+  hostRenderer?: { render?: (...args: never[]) => unknown }
+  /**
+   * Host hook so a post chain can match a DPR cap when the composer has no setPixelRatio.
+   */
+  onPixelRatioChange?: (ratio: number) => void
 }
 
 export interface CameraPose {
@@ -135,6 +151,7 @@ function snapshotFrom(
   scene: DoctorSceneLike,
   continuousFrameloop: boolean,
   camera?: unknown,
+  extras?: { composer?: unknown; leakTracker?: InstanceLeakTracker },
 ): SceneSnapshot {
   let objectCount = 0
   let meshCount = 0
@@ -151,7 +168,10 @@ function snapshotFrom(
       if (mat.uuid) materials.push({ uuid: mat.uuid })
     }
   })
-  const collected = collectHostSceneStats(scene, renderer, camera)
+  const collectOpts: CollectHostSceneOptions = {}
+  if (extras?.composer !== undefined) collectOpts.composer = extras.composer
+  if (extras?.leakTracker) collectOpts.leakTracker = extras.leakTracker
+  const collected = collectHostSceneStats(scene, renderer, camera, collectOpts)
   const walked = snapshotScene({
     objectCount,
     meshCount,
@@ -249,6 +269,8 @@ export class Doctor {
   private frameloop: 'always' | 'demand'
   private postfxEnabled: boolean
   private pinnedAutoProfile: Exclude<Profile, 'auto'> | undefined
+  private readonly instanceLeaks = new InstanceLeakTracker()
+  private gpuSampler: ReturnType<typeof createGpuFrameSampler> = undefined
 
   constructor(private readonly opts: DoctorOptions) {
     this.frameloop = opts.frameloop ?? 'always'
@@ -327,7 +349,10 @@ export class Doctor {
       getRendererInfo: () => this.opts.renderer.info,
       getSceneStats:
         this.opts.getSceneStats ??
-        (() => collectHostSceneStats(this.opts.scene, this.opts.renderer).stats),
+        (() => collectHostSceneStats(this.opts.scene, this.opts.renderer, this.opts.camera, {
+          composer: this.opts.composer,
+          leakTracker: this.instanceLeaks,
+        }).stats),
     })
   }
 
@@ -338,6 +363,7 @@ export class Doctor {
       this.opts.scene,
       this.frameloop === 'always',
       this.opts.camera,
+      { composer: this.opts.composer, leakTracker: this.instanceLeaks },
     )
   }
 
@@ -375,11 +401,27 @@ export class Doctor {
 
   private hostRenderPath(): (() => void | Promise<void>) | undefined {
     if (this.opts.renderFrame) return this.opts.renderFrame
+    const composer = this.resolvedComposer() as { render?: () => void } | undefined
+    if (composer && typeof composer.render === 'function') {
+      return () => composer.render!()
+    }
     const render = this.opts.renderer.render
     if (typeof render === 'function') {
       return () => render.call(this.opts.renderer, this.opts.scene, this.opts.camera)
     }
     return undefined
+  }
+
+  private resolvedComposer(): unknown {
+    return (
+      this.opts.composer ??
+      findComposer(this.opts.scene, this.opts.renderer, undefined)
+    )
+  }
+
+  private gpuFrameSampler(): ReturnType<typeof createGpuFrameSampler> {
+    this.gpuSampler ??= createGpuFrameSampler(this.opts.renderer)
+    return this.gpuSampler
   }
 
   getDevice(): DeviceCapabilities {
@@ -395,14 +437,38 @@ export class Doctor {
     const info = this.opts.renderer.info
     const hadAutoReset = Object.prototype.hasOwnProperty.call(info, 'autoReset')
     const prevAutoReset = info.autoReset
-    const gpu = createGpuFrameSampler(this.opts.renderer)
+    const gpu = this.gpuFrameSampler()
     info.autoReset = false
-    let lastCalls = info.render.calls
-    let lastTriangles = info.render.triangles
+    const callSamples: number[] = []
+    const triangleSamples: number[] = []
     const gpuTimes: number[] = []
+    let workMs: number | undefined
+    const restores: Array<() => void> = []
+    const hook = (obj: { render?: (...args: never[]) => unknown } | undefined) => {
+      if (!obj || typeof obj.render !== 'function') return
+      const original = obj.render
+      obj.render = function wrappedRender(this: unknown, ...args: never[]) {
+        const t0 = now()
+        try {
+          return original.apply(this, args)
+        } finally {
+          workMs = now() - t0
+        }
+      }
+      restores.push(() => {
+        obj.render = original
+      })
+    }
+    hook(this.opts.renderer)
+    hook(this.opts.hostRenderer)
+    const composer = this.resolvedComposer()
+    if (composer && typeof composer === 'object') {
+      hook(composer as { render?: (...args: never[]) => unknown })
+    }
     try {
       for (let i = 0; i < frames; i++) {
         info.reset?.()
+        workMs = undefined
         const start = now()
         collector.beginFrame(start)
         gpu?.begin()
@@ -410,19 +476,21 @@ export class Doctor {
         else if (renderFrame) await renderFrame()
         const gpuMs = gpu?.end()
         if (gpuMs !== undefined) gpuTimes.push(gpuMs)
-        collector.endFrame(now())
-        lastCalls = info.render.calls
-        lastTriangles = info.render.triangles
+        const end = workMs !== undefined ? start + workMs : now()
+        collector.endFrame(end)
+        callSamples.push(info.render.calls)
+        triangleSamples.push(info.render.triangles)
       }
     } finally {
+      for (let i = restores.length - 1; i >= 0; i--) restores[i]!()
       if (hadAutoReset) info.autoReset = prevAutoReset
       else delete (info as { autoReset?: boolean }).autoReset
     }
     const sample = collector.sample()
-    sample.drawCalls = lastCalls
-    sample.triangles = lastTriangles
+    if (callSamples.length > 0) sample.drawCalls = median(callSamples)
+    if (triangleSamples.length > 0) sample.triangles = median(triangleSamples)
     if (gpuTimes.length > 0) {
-      sample.gpuFrameTimeMs = gpuTimes.reduce((a, b) => a + b, 0) / gpuTimes.length
+      sample.gpuFrameTimeMs = median(gpuTimes)
     }
     const liveClock = this.opts.now === undefined
     const validityInput: { visibilityState?: string; frameTimesMs: number[] } = {
@@ -501,6 +569,9 @@ export class Doctor {
     }
     if (cameraPosition) ctx.cameraPosition = cameraPosition
     if (extras?.qualityTier) ctx.qualityTier = extras.qualityTier
+    const composer = this.resolvedComposer()
+    if (composer !== undefined) ctx.composer = composer
+    if (this.opts.onPixelRatioChange) ctx.onPixelRatioChange = this.opts.onPixelRatioChange
 
     const appliedPasses: PassId[] = []
     const failedPasses: Array<{ id: PassId; error: string }> = []
@@ -550,6 +621,15 @@ export class Doctor {
     const current = readRendererPixelRatio(this.opts.renderer)
     if (current !== undefined && current > maxRatio) {
       this.opts.renderer.setPixelRatio(maxRatio)
+      const pixelRatioArgs: {
+        renderer: DoctorRendererLike
+        composer?: unknown
+        onPixelRatioChange?: (ratio: number) => void
+      } = { renderer: this.opts.renderer }
+      const composer = this.resolvedComposer()
+      if (composer !== undefined) pixelRatioArgs.composer = composer
+      if (this.opts.onPixelRatioChange) pixelRatioArgs.onPixelRatioChange = this.opts.onPixelRatioChange
+      notifyPixelRatioChange(pixelRatioArgs, maxRatio)
     }
   }
 

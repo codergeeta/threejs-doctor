@@ -25,6 +25,8 @@ export interface AttachQualityLadderOptions {
   scene?: unknown
   camera?: unknown
   renderer?: unknown
+  composer?: unknown
+  onPixelRatioChange?: (ratio: number) => void
   root?: unknown
   now?: () => number
   waitFrame?: () => Promise<void>
@@ -153,11 +155,20 @@ export async function attachQualityLadder(
     profile: options.profile ?? 'game',
     getSceneStats: () => collectSceneStats(found.scene, found.renderer),
   }
+  if (found.renderer && typeof found.renderer === 'object') {
+    doctorOpts.hostRenderer = found.renderer as { render?: (...args: never[]) => unknown }
+  }
   if (options.now) doctorOpts.now = options.now
   if (options.measureFrames !== undefined) doctorOpts.measureFrames = options.measureFrames
   if (waitFrame) doctorOpts.waitFrame = waitFrame
   const device = resolveAttachDevice(options.device, renderer)
   if (device) doctorOpts.device = device
+  const composer =
+    options.composer ??
+    (found.renderer as { composer?: unknown } | undefined)?.composer ??
+    (found.scene as { userData?: { composer?: unknown } } | undefined)?.userData?.composer
+  if (composer !== undefined) doctorOpts.composer = composer
+  if (options.onPixelRatioChange) doctorOpts.onPixelRatioChange = options.onPixelRatioChange
 
   const doctor = new Doctor(doctorOpts)
   const qcOpts: QualityControllerOptions = {

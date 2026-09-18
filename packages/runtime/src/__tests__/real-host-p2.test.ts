@@ -23,10 +23,10 @@ function indexedGeometry(triangles: number, uuid: string) {
   }
 }
 
-function rendererStub() {
+function rendererStub(triangles = 8_000) {
   return {
     info: {
-      render: { calls: 40, triangles: 8_000 },
+      render: { calls: 40, triangles },
       memory: { geometries: 4, textures: 2 },
     },
     setPixelRatio() {},
@@ -76,9 +76,13 @@ describe('P2: triangle budget and top contributors', () => {
         cb(curb)
       },
     }
-    const report = await doctorFor(scene, { profile: 'marketing' }).diagnose()
+    const report = await doctorFor(scene, {
+      profile: 'marketing',
+      renderer: rendererStub(82_000 + 180),
+    }).diagnose()
     const hit = report.findings.find((f) => f.id === 'triangles/too-many')
     expect(hit).toBeDefined()
+    expect(Number(hit?.evidence.triangles)).toBe(82_000 + 180)
     expect(Number(hit?.evidence.geometryTriangleCount)).toBe(82_000 + 180)
     expect(Number(hit?.evidence.topContributorShare)).toBeCloseTo(82000 / 82180, 2)
     expect(String(hit?.evidence.topContributor)).toMatch(/trees/i)
@@ -295,7 +299,7 @@ describe('P2: intensity-0 lights still cost', () => {
     const hit = report.findings.find((f) => f.id === 'lights/zero-intensity')
     expect(hit).toBeDefined()
     expect(Number(hit?.evidence.zeroIntensityLightCount)).toBe(1)
-    expect(hit?.suggestedFix).toMatch(/remove|disable/i)
+    expect(hit?.suggestedFix).toMatch(/pool|disable|recompil/i)
   })
 })
 

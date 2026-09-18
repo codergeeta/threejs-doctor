@@ -18,4 +18,22 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+      # Rebuild the pasteable IIFE and fail if the committed dist drifted.
+      - name: Verify committed live-attach IIFE
+        run: pnpm check:iife
       # `threejs-doctor scan` / `ci` are not implemented (exit 1). Do not use them as a score gate.
+      # npm publish is documented in docs/publish-checklist.md and is not run here (no tokens).
+
+  real-host-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install
+      - name: Install Chromium (SwiftShader OK)
+        run: pnpm --filter @threejs-doctor/real-host-e2e exec playwright install --with-deps chromium
+      - run: pnpm test:e2e

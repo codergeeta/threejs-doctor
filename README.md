@@ -24,7 +24,7 @@ From GitHub (monorepo root, not a published CLI package):
 pnpm add github:codergeeta/threejs-doctor
 ```
 
-Prefer a clone + `pnpm build` until `@threejs-doctor/*` is published. **TODO:** publish `threejs-doctor` / `@threejs-doctor/*` to npm (reserve the name). Do not invent a registry listing.
+Prefer a clone + `pnpm build` until `@threejs-doctor/*` is published. **Not on npm yet.** See [`docs/publish-checklist.md`](docs/publish-checklist.md) (reserve unscoped `threejs-doctor`; publish `@threejs-doctor/*` with provenance). This PR does not publish.
 
 ### Security
 
@@ -60,7 +60,7 @@ pnpm test
 pnpm build
 ```
 
-CI (`.github/workflows/ci.yml`) runs `typecheck`, `test`, and `build`. It does **not** run `threejs-doctor ci` (that command is not implemented).
+CI (`.github/workflows/ci.yml`) runs `typecheck`, `test`, `build`, and a **live-attach IIFE checksum** (`pnpm check:iife` rebuilds `examples/live-attach/dist/attach.iife.js` and fails if the committed file drifted). A second job runs Playwright against a real Three.js + EffectComposer + InstancedMesh fixture (SwiftShader is fine; GPU times are still omitted when the timer query has no result). It does **not** run `threejs-doctor ci` (that command is not implemented) and does **not** `npm publish` (see [`docs/publish-checklist.md`](docs/publish-checklist.md)).
 
 ## Runtime (vanilla Three.js)
 
@@ -71,9 +71,11 @@ const doctor = new Doctor({
   scene,
   camera,
   renderer,
+  composer, // EffectComposer or pmndrs postprocessing; also discovered from scene.userData
+  onPixelRatioChange: (ratio) => composer.setPixelRatio?.(ratio),
   profile: 'game', // games: set explicitly; 'auto' pins the first resolution
   mode: 'diagnose',
-  // Host rAF is the render path. Omit waitFrame to let Doctor call renderer.render.
+  // Host rAF waits for the next frame. Doctor wraps renderer.render / composer.render for CPU work.
   waitFrame: () => new Promise(requestAnimationFrame),
 })
 // Times the waitFrame / renderFrame / renderer.render between beginFrame and endFrame.
@@ -83,9 +85,11 @@ const after = await doctor.optimize({ apply: ['safe'] })
 doctor.mountOverlay()
 ```
 
-`measure()` does not invent GPU times. `gpuFrameTimeMs` is set only when `EXT_disjoint_timer_query_webgl2` returns a query result. Draw-call totals use `renderer.info.autoReset = false` for the sample so EffectComposer passes accumulate. Lights, textures, and render-target VRAM come from the scene graph when dimensions are known (otherwise those fields are omitted).
+`measure()` does not invent GPU times. `gpuFrameTimeMs` is set only when `EXT_disjoint_timer_query_webgl2` returns a **queued** query result (`QUERY_RESULT_AVAILABLE` on a later frame, discarded on `GPU_DISJOINT_EXT`). Timer methods are called on the **WebGL2RenderingContext**; the EXT object only supplies constants. Prefer `renderer.extensions.get('EXT_disjoint_timer_query_webgl2')`. Draw-call and drawn-triangle totals are the **median** across sampled frames (`renderer.info.autoReset = false` so EffectComposer passes accumulate). CPU time prefers wrapping the host `renderer.render` / `composer.render` rather than the rAF vsync interval. Lights, textures, and render-target VRAM come from the scene graph when dimensions are known (otherwise those fields are omitted).
 
-Hidden tabs and throttled rAF mark the sample `invalid` (and the report `incomplete`). For A/B, use `doctor.compareAb({ rounds, poses, applyB })` or `compareAbSamples` — never claim a win inside the noise band. Pixel-diff before calling a pass visually safe is **opt-in**: `optimize({ apply: ['safe'], visualGate: { capture } })`. Fixed-clock unit tests are not proof of safe passes; see [`docs/superpowers/acceptance/real-host-followups.md`](docs/superpowers/acceptance/real-host-followups.md).
+Pass `composer` (or let Doctor discover an EffectComposer-like object, including pmndrs `inputBuffer`/`outputBuffer`) so `dpr-cap` can call `setPixelRatio`/`setSize` or `onPixelRatioChange`. Triangle **cost** is `renderer.info.triangles` (drawn, including extra shadow/composer passes when measured). Scene-graph `geometryTriangleCount` is attribution only — after chunking, drawn cost can drop even if unused geometry remains.
+
+Hidden tabs and throttled rAF mark the sample `invalid` (and the report `incomplete`). For A/B, use `doctor.compareAb({ rounds, poses, applyB })` or `compareAbSamples` — **medians**, with an A-vs-A control; never claim a win inside the noise band. Pixel-diff before calling a pass visually safe is **opt-in** and **not** implied by `apply: ['safe']`: `optimize({ apply: ['safe'], visualGate: { capture } })`. Default `maxChangedRatio` is **0.5%** of pixels (tighter than 2% / ~18k at 720p). Reproduce the control capture before treating a pass as visually safe. Fixed-clock unit tests are not proof of safe passes; see [`docs/superpowers/acceptance/real-host-followups.md`](docs/superpowers/acceptance/real-host-followups.md).
 
 Live ocean attach notes for the unpublished Quality Ladder adapter (this repo does not vendor the demo) are in [`examples/ocean-adapter/README.md`](examples/ocean-adapter/README.md). Pasteable DevTools IIFE: [`examples/live-attach`](examples/live-attach/README.md). Local unpublished hosts (no pelagic) for live-attach discovery: [`examples/acceptance-fixture`](examples/acceptance-fixture/README.md) and the heavier [`examples/acceptance-fixture-game`](examples/acceptance-fixture-game/README.md). How a real game exposes `{ scene, camera, renderer }`: [`docs/superpowers/acceptance/host-integration.md`](docs/superpowers/acceptance/host-integration.md).
 
@@ -96,7 +100,7 @@ Safe passes: `dpr-cap`, `pixel-budget` (no-op unless `qualityTier` is set), `sha
 ```tsx
 import { DoctorCanvas, useDoctor } from '@threejs-doctor/r3f'
 
-<DoctorCanvas profile="product" showOverlay>
+<DoctorCanvas profile="product" showOverlay composer={composer} onPixelRatioChange={(ratio) => composer.setPixelRatio(ratio)}>
   {/* scene */}
 </DoctorCanvas>
 ```

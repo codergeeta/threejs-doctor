@@ -1,0 +1,20 @@
+{
+  "name": "@threejs-doctor/real-host-e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 4177 --strictPort",
+    "test": "playwright test"
+  },
+  "dependencies": {
+    "@threejs-doctor/runtime": "workspace:*",
+    "three": "^0.172.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.51.0",
+    "@types/three": "^0.172.0",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.0"
+  }
+}

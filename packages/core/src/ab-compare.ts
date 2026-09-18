@@ -1,4 +1,5 @@
 import type { MetricsSample } from './types.js'
+import { median } from './stats-math.js'
 
 export type AbDirection = 'lower-better' | 'higher-better'
 export type AbClaim = 'win' | 'loss' | 'inside-noise'
@@ -36,15 +37,11 @@ export function claimAbDelta(
   return delta > 0 ? 'win' : 'loss'
 }
 
-function mean(values: number[]): number {
-  return values.reduce((a, b) => a + b, 0) / values.length
-}
-
 function noiseFromControl(values: number[]): NoiseBand {
-  const avg = mean(values)
+  const mid = median(values)
   const halfRange = (Math.max(...values) - Math.min(...values)) / 2
   const abs = Math.max(halfRange, 0)
-  const rel = Math.abs(avg) > 0 ? abs / Math.abs(avg) : 0
+  const rel = Math.abs(mid) > 0 ? abs / Math.abs(mid) : 0
   return { abs, rel }
 }
 
@@ -67,7 +64,7 @@ function averageSample(samples: MetricsSample[]): MetricsSample {
       delete (out as Record<string, unknown>)[key]
       continue
     }
-    ;(out as Record<string, unknown>)[key] = mean(series)
+    ;(out as Record<string, unknown>)[key] = median(series)
   }
   return out
 }

@@ -40,6 +40,15 @@ describe('classifyVisualSafety', () => {
     expect(verdict.visualDelta).toBe(true)
   })
 
+  it('does not label a pass safe at the old 2% pixel floor; default is 0.5%', () => {
+    const verdict = classifyVisualSafety({
+      controlChangedRatio: 0,
+      candidateChangedRatio: 0.02,
+    })
+    expect(verdict.safe).toBe(false)
+    expect(verdict.visualDelta).toBe(true)
+  })
+
   it('keeps a pass eligible when candidate stays within control noise', () => {
     const verdict = classifyVisualSafety({
       controlChangedRatio: 0.01,

@@ -4,7 +4,7 @@ import { PROFILE_BUDGETS, resolveProfile } from '../profiles.js'
 export const trianglesRule: Rule = {
   id: 'triangles',
   run(ctx) {
-    const count = ctx.snapshot.geometryTriangleCount
+    const count = ctx.snapshot.triangles
     if (typeof count !== 'number' || !Number.isFinite(count)) return []
     const profile = resolveProfile(ctx.profile, ctx.snapshot)
     const budget = PROFILE_BUDGETS[profile].maxTriangles
@@ -14,20 +14,22 @@ export const trianglesRule: Rule = {
     const percent =
       typeof share === 'number' && Number.isFinite(share) ? Math.round(share * 100) : undefined
     const evidence: Record<string, number | string | boolean> = {
-      geometryTriangleCount: count,
+      triangles: count,
       budget,
       profile,
     }
+    const geometryCount = ctx.snapshot.geometryTriangleCount
+    if (typeof geometryCount === 'number') evidence.geometryTriangleCount = geometryCount
     if (typeof summary === 'string') evidence.topContributor = summary
     if (typeof share === 'number') evidence.topContributorShare = share
-    const shareNote = percent !== undefined && summary ? ` (${summary} is ${percent}%)` : ''
+    const shareNote = percent !== undefined && summary ? ` (${summary} is ${percent}% of scene-graph geometry)` : ''
     return [
       {
         id: 'triangles/too-many',
         severity: count > budget * 1.5 ? 'error' : 'warn',
         evidence,
-        message: `Scene triangles ${count} exceed ${profile} budget ${budget}${shareNote}`,
-        suggestedFix: 'Chunk or simplify the heaviest InstancedMesh/Mesh (instance count × index count / 3)',
+        message: `Drawn triangles ${count} exceed ${profile} budget ${budget}${shareNote}`,
+        suggestedFix: 'Chunk or simplify the heaviest InstancedMesh/Mesh so GPU triangle count drops (drawn, not leftover unused geometry)',
       },
     ]
   },

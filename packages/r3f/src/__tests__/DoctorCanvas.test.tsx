@@ -33,4 +33,19 @@ describe('DoctorCanvas', () => {
     expect(screen.getByTestId('r3f-canvas')).toBeTruthy()
     expect(screen.getByText('hero')).toBeTruthy()
   })
+
+  it('accepts composer and onPixelRatioChange props', () => {
+    const composer = {
+      isEffectComposer: true,
+      passes: [],
+      inputBuffer: { width: 8, height: 8 },
+      outputBuffer: { width: 8, height: 8 },
+    }
+    render(
+      <DoctorCanvas profile="game" composer={composer} onPixelRatioChange={() => {}}>
+        <div>fx</div>
+      </DoctorCanvas>,
+    )
+    expect(screen.getByText('fx')).toBeTruthy()
+  })
 })
