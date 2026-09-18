@@ -8,9 +8,12 @@ import { rendererSetupRule } from './rules/renderer-setup.js'
 import { lifecycleRule } from './rules/lifecycle.js'
 import { transformsRule } from './rules/transforms.js'
 import { frameloopRule } from './rules/frameloop.js'
+import { trianglesRule } from './rules/triangles.js'
+import { cullingRule } from './rules/culling.js'
 
 export const defaultRules: Rule[] = [
   drawCallsRule,
+  trianglesRule,
   lightsShadowsRule,
   dprRule,
   materialsRule,
@@ -18,6 +21,7 @@ export const defaultRules: Rule[] = [
   rendererSetupRule,
   lifecycleRule,
   transformsRule,
+  cullingRule,
   frameloopRule,
 ]
 

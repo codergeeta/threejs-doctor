@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/codergeeta/threejs-doctor/docs/superpowers/acceptance/quality-ladder-report.schema.json",
+  "title": "QualityLadderReport",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "qualityMode",
+    "phase",
+    "tier",
+    "startTier",
+    "maxTier",
+    "score",
+    "findings",
+    "baseline",
+    "appliedPasses",
+    "appliedKnobs",
+    "failedPasses",
+    "unsupportedKnobs",
+    "floorFailed",
+    "applyFailed",
+    "incomplete"
+  ],
+  "properties": {
+    "qualityMode": { "enum": ["advise", "safe-auto", "takeover"] },
+    "phase": { "enum": ["boot", "runtime"] },
+    "tier": { "enum": ["potato", "low", "mid", "high"] },
+    "startTier": { "enum": ["potato", "low", "mid", "high"] },
+    "maxTier": { "enum": ["potato", "low", "mid", "high"] },
+    "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "findings": { "type": "array" },
+    "baseline": { "$ref": "#/$defs/metricsSample" },
+    "after": { "$ref": "#/$defs/metricsSample" },
+    "deltas": { "type": "object" },
+    "appliedPasses": { "type": "array", "items": { "type": "string" } },
+    "appliedKnobs": { "type": "array" },
+    "failedPasses": { "type": "array" },
+    "unsupportedKnobs": { "type": "array", "items": { "type": "string" } },
+    "floorFailed": { "type": "boolean" },
+    "applyFailed": { "type": "boolean" },
+    "incomplete": { "type": "boolean" },
+    "ttfiMs": { "type": "number" },
+    "adapterUnavailable": { "type": "boolean" },
+    "recommendedTier": { "enum": ["potato", "low", "mid", "high"] },
+    "profile": { "type": "string" },
+    "mode": { "type": "string" }
+  },
+  "$defs": {
+    "metricsSample": {
+      "type": "object",
+      "required": [
+        "avgFps",
+        "p95FrameTimeMs",
+        "drawCalls",
+        "triangles",
+        "textureCount",
+        "estimatedVramBytes",
+        "geometryCount",
+        "lightCount",
+        "shadowCastingLightCount"
+      ],
+      "properties": {
+        "avgFps": { "type": "number" },
+        "p95FrameTimeMs": { "type": "number" },
+        "drawCalls": { "type": "number" },
+        "triangles": { "type": "number" },
+        "textureCount": { "type": "number" },
+        "estimatedVramBytes": { "type": "number" },
+        "geometryCount": { "type": "number" },
+        "lightCount": { "type": "number" },
+        "shadowCastingLightCount": { "type": "number" },
+        "simPassCount": { "type": "number" },
+        "bytesLoaded": { "type": "number" },
+        "compileMs": { "type": "number" },
+        "drawingBufferPixels": { "type": "number" },
+        "ttfiMs": { "type": "number" }
+      }
+    }
+  }
+}

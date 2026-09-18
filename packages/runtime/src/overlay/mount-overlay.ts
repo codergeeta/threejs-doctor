@@ -1,4 +1,5 @@
 import type { MetricsSample } from '@threejs-doctor/core'
+import { formatQualityHud, type QualityHudState } from './format-quality-hud.js'
 
 export interface OverlayHandle {
   unmount(): void
@@ -9,12 +10,13 @@ export interface MountOverlayOptions {
   getScore: () => number
   getBaseline: () => MetricsSample | undefined
   getAfter?: () => MetricsSample | undefined
+  getQualityHud?: () => QualityHudState | undefined
   root?: ParentNode
 }
 
 function formatDeltas(baseline?: MetricsSample, after?: MetricsSample): string {
   if (!baseline || !after) return 'No after metrics'
-  const keys: Array<keyof MetricsSample> = [
+  const keys = [
     'avgFps',
     'p95FrameTimeMs',
     'drawCalls',
@@ -24,12 +26,16 @@ function formatDeltas(baseline?: MetricsSample, after?: MetricsSample): string {
     'geometryCount',
     'lightCount',
     'shadowCastingLightCount',
-  ]
+  ] as const
   return keys
     .map((k) => {
-      const delta = after[k] - baseline[k]
+      const next = after[k]
+      const prev = baseline[k]
+      if (typeof next !== 'number' || typeof prev !== 'number') return undefined
+      const delta = next - prev
       return `${String(k)}: ${delta >= 0 ? '+' : ''}${delta}`
     })
+    .filter((line): line is string => line !== undefined)
     .join(' · ')
 }
 
@@ -41,6 +47,12 @@ export function mountOverlay(opts: MountOverlayOptions): OverlayHandle {
   el.style.cssText =
     'position:fixed;z-index:99999;left:8px;bottom:8px;padding:8px 10px;border-radius:8px;background:rgba(0,0,0,.75);color:#fff;font:12px/1.4 ui-monospace,monospace;max-width:420px'
   const paint = () => {
+    const hud = opts.getQualityHud?.()
+    if (hud) {
+      const { line1, line2 } = formatQualityHud(hud)
+      el.textContent = line2 ? `${line1}\n${line2}` : line1
+      return
+    }
     const score = opts.getScore()
     const deltas = formatDeltas(opts.getBaseline(), opts.getAfter?.())
     el.textContent = `Doctor Score ${score} | ${deltas}`

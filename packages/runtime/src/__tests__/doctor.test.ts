@@ -7,6 +7,7 @@ function createHarness(opts?: {
   now?: () => number
   setPixelRatio?: (v: number) => void
   setFrameloop?: (mode: 'always' | 'demand') => void
+  waitFrame?: () => Promise<void>
 }) {
   const info: RendererInfoLike = {
     render: { calls: 180, triangles: 40_000 },
@@ -61,11 +62,44 @@ function createHarness(opts?: {
         shadowCastingLightCount: lights.filter((l) => l.castShadow).length,
       })),
     ...(opts?.setFrameloop ? { setFrameloop: opts.setFrameloop } : {}),
+    ...(opts?.waitFrame ? { waitFrame: opts.waitFrame } : {}),
   })
   return { doctor, renderer, lights }
 }
 
 describe('Doctor', () => {
+  it('awaits waitFrame between begin and end of each measured frame', async () => {
+    let waits = 0
+    let t = 0
+    const { doctor } = createHarness({
+      now: () => {
+        t += 16
+        return t
+      },
+      waitFrame: async () => {
+        waits += 1
+      },
+    })
+    const sample = await doctor.measure(3)
+    expect(waits).toBe(3)
+    expect(sample.avgFps).toBe(62.5)
+  })
+
+  it('samples drawingBufferPixels when the renderer exposes width and height', async () => {
+    const { doctor, renderer } = createHarness()
+    const r = renderer as { drawingBufferWidth?: number; drawingBufferHeight?: number }
+    r.drawingBufferWidth = 800
+    r.drawingBufferHeight = 600
+    const sample = await doctor.measure()
+    expect(sample.drawingBufferPixels).toBe(800 * 600)
+  })
+
+  it('omits drawingBufferPixels when the renderer has no drawing buffer', async () => {
+    const { doctor } = createHarness()
+    const sample = await doctor.measure()
+    expect(Object.prototype.hasOwnProperty.call(sample, 'drawingBufferPixels')).toBe(false)
+  })
+
   it('measure → diagnose → optimize returns deltas', async () => {
     const { doctor, renderer } = createHarness()
     const baseline = await doctor.measure()
@@ -81,11 +115,12 @@ describe('Doctor', () => {
     }
   })
 
-  it('does not apply material-downgrade in the default safe set', async () => {
+  it('does not apply material-downgrade or distance-cull in the default safe set', async () => {
     const { doctor } = createHarness()
     const report = await doctor.optimize({ apply: ['safe'] })
     expect(report.appliedPasses).toEqual([...SAFE_PASSES])
     expect(report.appliedPasses).not.toContain('material-downgrade')
+    expect(report.appliedPasses).not.toContain('distance-cull')
   })
 
   it('applies material-downgrade only when opted in', async () => {
@@ -200,5 +235,61 @@ describe('Doctor', () => {
     await doctor.optimize({ apply: ['frameloop-demand'] })
     const report = await doctor.diagnose()
     expect(report.findings.some((f) => f.id === 'frameloop/continuous-static')).toBe(true)
+  })
+
+  it('applyPassesImmediate does not call measure or write after metrics', async () => {
+    const { doctor, renderer } = createHarness()
+    const before = renderer.pixelRatio
+    const result = doctor.applyPassesImmediate(['dpr-cap'])
+    expect(result.appliedPasses).toContain('dpr-cap')
+    expect(renderer.pixelRatio).toBeLessThan(before)
+    doctor.rollbackAll()
+    expect(renderer.pixelRatio).toBe(before)
+  })
+
+  it('forceDrawingBufferPixels treats setDrawingBufferSize args as CSS size (Three.js)', () => {
+    const renderer = {
+      info: {
+        render: { calls: 1, triangles: 1 },
+        memory: { geometries: 1, textures: 1 },
+      },
+      pixelRatio: 0.5,
+      drawingBufferWidth: 2000,
+      drawingBufferHeight: 2000,
+      setPixelRatio(v: number) {
+        this.pixelRatio = v
+      },
+      setDrawingBufferSize(width: number, height: number, pixelRatio: number) {
+        this.pixelRatio = pixelRatio
+        this.drawingBufferWidth = Math.max(1, Math.floor(width * pixelRatio))
+        this.drawingBufferHeight = Math.max(1, Math.floor(height * pixelRatio))
+      },
+    }
+    const doctor = new Doctor({
+      scene: { children: [], traverse() {} } as never,
+      camera: {},
+      renderer: renderer as never,
+      profile: 'game',
+      mode: 'optimize',
+      measureFrames: 1,
+      now: (() => {
+        let t = 0
+        return () => {
+          t += 16
+          return t
+        }
+      })(),
+      getSceneStats: () => ({
+        textureCount: 0,
+        estimatedVramBytes: 0,
+        geometryCount: 0,
+        lightCount: 0,
+        shadowCastingLightCount: 0,
+      }),
+    })
+    doctor.forceDrawingBufferPixels(6e5)
+    const pixels = renderer.drawingBufferWidth * renderer.drawingBufferHeight
+    expect(pixels).toBeLessThanOrEqual(6e5)
+    expect(pixels).toBeGreaterThan(6e5 * 0.5)
   })
 })

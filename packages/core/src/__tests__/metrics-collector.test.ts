@@ -33,6 +33,7 @@ describe('MetricsCollector', () => {
     expect(sample.geometryCount).toBe(3)
     expect(sample.lightCount).toBe(2)
     expect(sample.shadowCastingLightCount).toBe(1)
+    expect(Object.prototype.hasOwnProperty.call(sample, 'drawingBufferPixels')).toBe(false)
   })
 
   it('returns zero fps and p95 when no frames were marked', () => {

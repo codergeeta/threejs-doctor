@@ -11,8 +11,8 @@ describe('CI workflow file', () => {
     expect(yml).toContain('pnpm test')
     expect(yml).toContain('pnpm typecheck')
     expect(yml).toContain('pnpm build')
-    expect(yml).toContain('threejs-doctor ci')
-    expect(yml).toContain('node ./bin/threejs-doctor.js ci')
+    expect(yml).toContain('not implemented')
+    expect(yml).not.toContain('node ./bin/threejs-doctor.js ci')
     // pnpm/action-setup@v4 errors if this is also set alongside packageManager
     expect(yml).not.toContain('version: 9')
     expect(yml).toContain('node-version: 22')

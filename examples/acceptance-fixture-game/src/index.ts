@@ -1,0 +1,21 @@
+export {
+  DOCTOR_HOST_KEY,
+  GRID_SIZE,
+  PARTICLE_COUNT,
+  SHADOW_CASTER_COUNT,
+  SPHERE_COUNT,
+  SPHERE_HEIGHT_SEGMENTS,
+  SPHERE_WIDTH_SEGMENTS,
+  TORUS_COUNT,
+  TORUS_RADIAL_SEGMENTS,
+  TORUS_TUBULAR_SEGMENTS,
+  UNIQUE_PROP_COUNT,
+  assignDoctorHost,
+  countInstancedSlots,
+  countSceneDrawUnits,
+  countSceneTriangles,
+  createGameScene,
+  geometryTriangleCount,
+  isDoctorHost,
+} from './host.js'
+export type { DoctorHostHandles, GameScene, GameSceneStats } from './host.js'

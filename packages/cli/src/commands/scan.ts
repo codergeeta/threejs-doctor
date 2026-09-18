@@ -1,26 +1,18 @@
 import type { CliArgs } from '../cli.js'
 import type { DoctorReport } from '@threejs-doctor/runtime'
 
-/** Static project scan for CI wiring. Live scene attach is the runtime API. */
-export async function runScan(args: CliArgs): Promise<DoctorReport> {
-  return {
-    profile: args.profile === 'auto' ? 'marketing' : args.profile,
-    mode: 'diagnose',
-    score: 100,
-    findings: [],
-    baseline: {
-      avgFps: 0,
-      p95FrameTimeMs: 0,
-      drawCalls: 0,
-      triangles: 0,
-      textureCount: 0,
-      estimatedVramBytes: 0,
-      geometryCount: 0,
-      lightCount: 0,
-      shadowCastingLightCount: 0,
-    },
-    appliedPasses: [],
-    failedPasses: [],
-    incomplete: false,
+export const SCAN_NOT_IMPLEMENTED =
+  'not implemented: threejs-doctor scan/ci is not a working gate. Static scan is a stub and must not be used as a score gate. Attach the runtime Doctor to a live Three.js scene until a real scanner exists.'
+
+export class ScanNotImplementedError extends Error {
+  readonly code = 'SCAN_NOT_IMPLEMENTED'
+  constructor(message = SCAN_NOT_IMPLEMENTED) {
+    super(message)
+    this.name = 'ScanNotImplementedError'
   }
+}
+
+/** Static project scan is not implemented. Live scene attach is the runtime API. */
+export async function runScan(_args: CliArgs): Promise<DoctorReport> {
+  throw new ScanNotImplementedError()
 }
