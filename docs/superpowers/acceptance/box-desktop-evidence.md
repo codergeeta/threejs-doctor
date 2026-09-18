@@ -194,6 +194,23 @@ No adapter knobs.
 `safe-auto` **did** raise fixture FPS versus this file's advise after
 (13.332 → 52.313) and versus its own baseline (17.150 → 52.313). Not §3 proof.
 
+### Fixture Pass B remeasure (after hopeless 0.35 floor)
+
+Same unpublished local fixture, same VM, `mode: 'safe-auto'`. Copied from
+`/opt/cursor/artifacts/fixture-pass-b-after-hopeless-floor.json`. Hopeless
+`pixelRatio` 0.35 only fires when avgFps stays **below 10** after the first
+floor; this run never entered that band. After `drawingBufferPixels` 256000 is
+still the **0.5** second-stage floor. After `avgFps` 53.970 ≥ 30 and
+`p95FrameTimeMs` 32 ≤ 33.4. `floorFailed: false`. Still not §3 proof.
+
+| Field | Baseline | After |
+|-------|----------|-------|
+| `avgFps` | 15.414654197924527 | 53.96977692490396 |
+| `p95FrameTimeMs` | 125.29999999981374 | 32 |
+| `drawCalls` | 66 | 66 |
+| `triangles` | 19010 | 19010 |
+| `drawingBufferPixels` | 1024000 | 256000 |
+
 ### Pre-nudge fixture Pass B (same PR, earlier session)
 
 Copied from the previous `LAST_REPORT` write-up on this PR, before the
@@ -215,10 +232,10 @@ This file does not close acceptance. Still required:
 
 - Phone-class ocean Pass A (`advise`) and Pass B (`safe-auto`) on the **real**
   device in [live-ocean-capture.md](./live-ocean-capture.md) §1, same
-  TTFI-then-30 FPS bar, real `baseline` / `after` only. The `device: 'phone'`
-  overlay run above is an **emulator** (headless Chrome + probe overlay) and
-  does **not** replace that §3 bar. Overlay Pass B after 1.125 FPS still misses
-  30.
+  TTFI-then-30 FPS bar, real `baseline` / `after` only. Chrome iPhone
+  **emulation** Pass B after 2.251 FPS (`floorFailed`) is not that bar. The
+  `device: 'phone'` overlay run is also an emulator and does **not** replace
+  §3.
 - External [Claude-of-Tanks](https://cot.kevinliu.studio/) /
   [Kinema](https://kinema-play.vercel.app/?forceWebGL=1) /
   [catapult](https://sina-ghiasi.github.io/threejs-catapult-game/) still need
