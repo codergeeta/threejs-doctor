@@ -95,6 +95,9 @@
       if (knobs.spectrumEveryNFrames !== void 0) {
         rollbacks.push(applySpectrumCadence(debug, knobs.spectrumEveryNFrames));
       }
+      if (knobs.effectQuality !== void 0) {
+        rollbacks.push(applyEffectQuality(debug, knobs.effectQuality));
+      }
     } catch (err) {
       for (let i = rollbacks.length - 1; i >= 0; i--) {
         try {
@@ -174,7 +177,9 @@
     const cascades = debug.cascades;
     if (!cascades) return () => {
     };
-    const snaps = fftSize.map((_, i) => {
+    const freezeAll = fftSize.length > 0 && fftSize.every((n) => n === 0);
+    const count = freezeAll ? cascades.length : fftSize.length;
+    const snaps = Array.from({ length: count }, (_, i) => {
       const cascade = cascades[i];
       return {
         cascade,
@@ -203,25 +208,37 @@
       });
     };
     try {
-      fftSize.forEach((n, i) => {
+      for (let i = 0; i < count; i++) {
+        const n = freezeAll ? 0 : fftSize[i];
         const cascade = cascades[i];
-        if (!isCascadeTouchSafe(cascade)) return;
+        if (!isCascadeTouchSafe(cascade)) continue;
         if (n === 0) {
           if (typeof cascade.update === "function") {
             cascade.update = () => {
             };
           }
-          return;
+          continue;
         }
         if (typeof cascade.resize === "function") {
           cascade.resize(n);
         }
-      });
+      }
     } catch (err) {
       restore();
       throw err;
     }
     return restore;
+  }
+  function applyEffectQuality(debug, value) {
+    if (!("effectQuality" in debug) && debug.effectQuality === void 0) return () => {
+    };
+    const had = Object.prototype.hasOwnProperty.call(debug, "effectQuality");
+    const prev = debug.effectQuality;
+    debug.effectQuality = value;
+    return () => {
+      if (had) debug.effectQuality = prev;
+      else delete debug.effectQuality;
+    };
   }
   function applyRtScale(debug, scale) {
     const ops = [];
@@ -527,6 +544,9 @@
     postfxOff: true
   };
   var POTATO_HOPELESS_MAX_AVG_FPS = 10;
+  var POTATO_OCEAN_FREEZE_MAX_AVG_FPS = 5;
+  var POTATO_OCEAN_FREEZE_FFT_SIZE = [0, 0, 0];
+  var POTATO_OCEAN_FREEZE_EFFECT_QUALITY = 0;
   var SPECTRUM_PAUSE_EVERY_N = 0;
   var ADAPTER_KNOBS = {
     potato: {
@@ -1802,6 +1822,7 @@ ${line2}` : line1;
     potatoFloorTightened = false;
     potatoFloorNudged = false;
     potatoFloorHopeless = false;
+    potatoOceanFrozen = false;
     registerAdapter(adapter) {
       this.adapter = adapter;
     }
@@ -2119,8 +2140,20 @@ ${line2}` : line1;
         }
         if (this.potatoFloorTightened && !this.potatoFloorHopeless && sample.p95FrameTimeMs > HYSTERESIS.dropP95Ms && sample.avgFps < POTATO_HOPELESS_MAX_AVG_FPS) {
           this.tightenPotatoFloor(POTATO_HOPELESS_CAPS);
-          this.pausePotatoSpectrum();
+          const freezeCascades = sample.avgFps < POTATO_OCEAN_FREEZE_MAX_AVG_FPS;
+          this.pausePotatoSpectrum({ freezeCascades });
           this.potatoFloorHopeless = true;
+          this.potatoOceanFrozen = freezeCascades;
+          return {
+            state: decision.next,
+            pendingApplyFailed: false,
+            holdsAtTarget: 0,
+            stop: false
+          };
+        }
+        if (this.potatoFloorTightened && this.potatoFloorHopeless && !this.potatoOceanFrozen && sample.p95FrameTimeMs > HYSTERESIS.dropP95Ms && sample.avgFps < POTATO_OCEAN_FREEZE_MAX_AVG_FPS) {
+          this.pausePotatoSpectrum({ freezeCascades: true });
+          this.potatoOceanFrozen = true;
           return {
             state: decision.next,
             pendingApplyFailed: false,
@@ -2200,7 +2233,7 @@ ${line2}` : line1;
       this.doctor.forcePostfxOff();
       this.doctor.forceShadowsOff();
     }
-    pausePotatoSpectrum() {
+    pausePotatoSpectrum(opts2 = {}) {
       if (!this.adapter || this.mode === "advise") return;
       let caps;
       try {
@@ -2212,9 +2245,20 @@ ${line2}` : line1;
       const filtered = knobsFor("potato", caps);
       if (filtered.knobs.spectrumEveryNFrames === void 0) return;
       filtered.knobs.spectrumEveryNFrames = SPECTRUM_PAUSE_EVERY_N;
-      const applied = filtered.applied.map(
-        (knob) => knob.capability === "fftSize" && knob.value === ADAPTER_KNOBS.potato.spectrumEveryNFrames ? { capability: knob.capability, value: SPECTRUM_PAUSE_EVERY_N } : knob
-      );
+      if (opts2.freezeCascades) {
+        const len = filtered.knobs.fftSize?.length ?? POTATO_OCEAN_FREEZE_FFT_SIZE.length;
+        filtered.knobs.fftSize = Array.from({ length: len }, () => 0);
+        filtered.knobs.effectQuality = POTATO_OCEAN_FREEZE_EFFECT_QUALITY;
+      }
+      const applied = filtered.applied.map((knob) => {
+        if (knob.capability === "fftSize" && knob.value === ADAPTER_KNOBS.potato.spectrumEveryNFrames) {
+          return { capability: knob.capability, value: SPECTRUM_PAUSE_EVERY_N };
+        }
+        if (opts2.freezeCascades && knob.capability === "fftSize" && Array.isArray(knob.value)) {
+          return { capability: knob.capability, value: filtered.knobs.fftSize };
+        }
+        return knob;
+      });
       this.rollbackAdapterKnobs();
       try {
         const handle = this.adapter.apply("potato", filtered.knobs);

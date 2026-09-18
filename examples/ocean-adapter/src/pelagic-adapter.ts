@@ -118,6 +118,9 @@ function applyKnobs(debug: PelagicDebugHandle, knobs: QualityKnobSet): KnobHandl
     if (knobs.spectrumEveryNFrames !== undefined) {
       rollbacks.push(applySpectrumCadence(debug, knobs.spectrumEveryNFrames))
     }
+    if (knobs.effectQuality !== undefined) {
+      rollbacks.push(applyEffectQuality(debug, knobs.effectQuality))
+    }
   } catch (err) {
     for (let i = rollbacks.length - 1; i >= 0; i--) {
       try {
@@ -206,7 +209,9 @@ function isRtTouchSafe(target: PelagicRtLike): boolean {
 function applyFft(debug: PelagicDebugHandle, fftSize: number[]): () => void {
   const cascades = debug.cascades
   if (!cascades) return () => {}
-  const snaps = fftSize.map((_, i) => {
+  const freezeAll = fftSize.length > 0 && fftSize.every((n) => n === 0)
+  const count = freezeAll ? cascades.length : fftSize.length
+  const snaps = Array.from({ length: count }, (_, i) => {
     const cascade = cascades[i]
     return {
       cascade,
@@ -237,26 +242,38 @@ function applyFft(debug: PelagicDebugHandle, fftSize: number[]): () => void {
   }
 
   try {
-    fftSize.forEach((n, i) => {
+    for (let i = 0; i < count; i++) {
+      const n = freezeAll ? 0 : fftSize[i]!
       const cascade = cascades[i]
-      if (!isCascadeTouchSafe(cascade)) return
+      if (!isCascadeTouchSafe(cascade)) continue
       if (n === 0) {
         // Keep the host object. Replacing/disposing it nulls cascade.pack (a ShaderMaterial).
         if (typeof cascade.update === 'function') {
           cascade.update = () => {}
         }
-        return
+        continue
       }
       if (typeof cascade.resize === 'function') {
         cascade.resize(n)
       }
-    })
+    }
   } catch (err) {
     restore()
     throw err
   }
 
   return restore
+}
+
+function applyEffectQuality(debug: PelagicDebugHandle, value: number): () => void {
+  if (!('effectQuality' in debug) && debug.effectQuality === undefined) return () => {}
+  const had = Object.prototype.hasOwnProperty.call(debug, 'effectQuality')
+  const prev = debug.effectQuality
+  debug.effectQuality = value
+  return () => {
+    if (had) debug.effectQuality = prev
+    else delete debug.effectQuality
+  }
 }
 
 function applyRtScale(debug: PelagicDebugHandle, scale: number): () => void {

@@ -203,6 +203,57 @@ describe('createOceanAdapter', () => {
     expect((debug.cascades![0] as HostCascade).updates).toBeGreaterThan(0)
   })
 
+  it('no-ops update on every cascade when fftSize is all zeros, without disposing', () => {
+    const debug = hostLikeDebug()
+    const extra = hostLikeCascade(128)
+    debug.cascades = [...debug.cascades!, extra]
+    const adapter = createOceanAdapter(debug)
+    const originals = [...debug.cascades]
+    let disposed = 0
+    for (const cascade of originals) {
+      const host = cascade as HostCascade
+      host.dispose = function (this: HostCascade) {
+        disposed += 1
+        this.pack = null as unknown as HostCascade['pack']
+      }
+    }
+    const handle = adapter.apply('potato', {
+      fftSize: [0, 0, 0],
+      spectrumEveryNFrames: 0,
+      effectQuality: 0,
+    })
+    expect(debug.cascades).toEqual(originals)
+    expect(disposed).toBe(0)
+    expect(() => hostSpectrumTick(debug)).not.toThrow()
+    expect((debug.cascades[0] as HostCascade).updates).toBe(0)
+    expect((debug.cascades[1] as HostCascade).updates).toBe(0)
+    expect((debug.cascades[2] as HostCascade).updates).toBe(0)
+    expect((extra as HostCascade).updates).toBe(0)
+    expect(originals.every((c) => (c as HostCascade).pack !== null)).toBe(true)
+    expect(debug.effectQuality).toBe(0)
+    handle.rollback()
+    expect(debug.effectQuality).toBe(1)
+    hostSpectrumTick(debug)
+    expect((debug.cascades[0] as HostCascade).updates).toBeGreaterThan(0)
+  })
+
+  it('forces lowest effectQuality when the knob is passed and skips when pelagic omits it', () => {
+    const debug = fakeDebug()
+    debug.effectQuality = 0.8
+    const adapter = createOceanAdapter(debug)
+    const handle = adapter.apply('potato', { effectQuality: 0 })
+    expect(debug.effectQuality).toBe(0)
+    handle.rollback()
+    expect(debug.effectQuality).toBe(0.8)
+
+    const bare: PelagicDebugHandle = {
+      cascades: [{ size: 128, dispose() {}, resize(n: number) { this.size = n } }],
+    }
+    const silent = createOceanAdapter(bare)
+    expect(() => silent.apply('potato', { effectQuality: 0, fftSize: [0] })).not.toThrow()
+    expect(bare.effectQuality).toBeUndefined()
+  })
+
   it('does not throw when cascades or RT targets are null', () => {
     const debug: PelagicDebugHandle = {
       cascades: [null, undefined, { size: 128, dispose() {}, resize(n: number) { this.size = n } }],

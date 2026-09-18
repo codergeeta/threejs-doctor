@@ -234,8 +234,9 @@ This file does not close acceptance. Still required:
   device in [live-ocean-capture.md](./live-ocean-capture.md) §1, same
   TTFI-then-30 FPS bar, real `baseline` / `after` only. Chrome iPhone
   **emulation** Pass B after 2.251 FPS (`floorFailed`) is not that bar. The
-  `device: 'phone'` overlay run is also an emulator and does **not** replace
-  §3.
+  `device: 'phone'` overlay run (after ~0.92 / p95 ~4074, `floorFailed`) is
+  also an emulator / SwiftShader and does **not** replace §3. Box SwiftShader
+  cannot prove the ocean bar.
 - External [Claude-of-Tanks](https://cot.kevinliu.studio/) /
   [Kinema](https://kinema-play.vercel.app/?forceWebGL=1) /
   [catapult](https://sina-ghiasi.github.io/threejs-catapult-game/) still need
@@ -347,4 +348,30 @@ precise triangle count.
 After 2.251 FPS / p95 582.9 still miss `avgFps ≥ 30` / `p95FrameTimeMs ≤ 33.4`.
 Draw calls moved (59→25); triangle count did not meaningfully move. Drawing
 buffer dropped 484825→20467. Floor failed on emulation, not a claimed win.
+
+## Phone-probe ocean Pass B (box SwiftShader, still not §3)
+
+Box phone-probe overlay, settled **potato**, canvas **alive** (not collapsed
+geometry). Copied fields only — do not invent `ttfiMs` / `drawCalls` /
+`triangles` / `drawingBufferPixels` for this write-up.
+
+Applied knobs still the potato table (hopeless cascade freeze had not armed
+on this capture):
+
+- `fftSize`: `[64, 0, 0]`
+- `spectrumEveryNFrames`: 8
+- `deferredHdr`: true
+- no `meshLod`, no `rtScale`
+
+| Field | After |
+|-------|-------|
+| `avgFps` | ~0.92 |
+| `p95FrameTimeMs` | ~4074 |
+| `floorFailed` | true |
+
+After **~0.92 FPS** / p95 **~4074** is still ≪ 30. This VM is SwiftShader
+WebGL. **Box SwiftShader cannot prove the spec §3 ocean bar.** A real phone
+GPU capture on the device in [live-ocean-capture.md](./live-ocean-capture.md)
+§1 is still required. Do not treat this ~0.92 as a win or as phone-class
+proof.
 

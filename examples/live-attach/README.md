@@ -131,6 +131,28 @@ construct `attachQualityLadder` yourself.
 | Kinema | https://kinema-play.vercel.app/?forceWebGL=1 | Generic caps. Use the documented WebGL compatibility query so the capture stays on WebGL. Homepage: https://kinema-play.vercel.app. Needs explicit inject or a host hook. |
 | catapult | https://sina-ghiasi.github.io/threejs-catapult-game/ | Generic caps. Canvas present; no discoverable handles on box-desktop. Needs explicit inject or a host hook. |
 
+## Arm `renderer.prototype.render` capture (tanks / catapult)
+
+Bundled hosts often close over `scene` / `camera` / `renderer`. One-liner:
+**arm the one-shot `WebGLRenderer.prototype.render` hook, wait one frame, then paste the IIFE.**
+
+If `window.THREE` (or `window.three` / object `window.__THREE__`) exists, paste
+[`examples/host-shim/capture.js`](../host-shim/capture.js) first, wait one
+rendered frame, then paste `dist/attach.iife.js`.
+
+If you already pasted the IIFE with auto-run off, the same hook is:
+
+```js
+window.__THREEJS_DOCTOR_ATTACH__ = { autoRun: false }
+// paste dist/attach.iife.js, then:
+ThreejsDoctorLiveAttach.installRendererRenderCapture()
+// wait one rendered frame, then:
+await ThreejsDoctorLiveAttach.attachQualityLadder({ mode: 'advise' })
+```
+
+If `THREE.WebGLRenderer` is not on the page, this hook is a no-op — pass
+`{ scene, camera, renderer }` explicitly from that page’s console.
+
 ## If discovery cannot find scene / camera / renderer
 
 Bundled apps (Claude-of-Tanks, many Vite/webpack games) often keep Three.js

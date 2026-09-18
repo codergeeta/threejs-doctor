@@ -15,6 +15,7 @@ export interface QualityKnobSet {
   rtScale?: number
   meshLod?: 0 | 1 | 2
   deferredHdr?: boolean
+  effectQuality?: number
 }
 
 export interface AdapterExtras {

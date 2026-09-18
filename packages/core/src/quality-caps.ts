@@ -88,6 +88,18 @@ export const POTATO_HOPELESS_CAPS = {
 /** Exclusive upper bound: hopeless floor only when avgFps is below this. */
 export const POTATO_HOPELESS_MAX_AVG_FPS = 10
 
+/**
+ * After the second-stage potato floor, if avgFps is still below this,
+ * pause spectrum and no-op every cascade update. Prefer pause over destroy.
+ */
+export const POTATO_OCEAN_FREEZE_MAX_AVG_FPS = 5
+
+/** fftSize that no-ops `cascade.update` on every cascade (pause, do not dispose). */
+export const POTATO_OCEAN_FREEZE_FFT_SIZE = [0, 0, 0] as const
+
+/** Lowest pelagic `effectQuality` when the handle exposes that knob. */
+export const POTATO_OCEAN_FREEZE_EFFECT_QUALITY = 0
+
 /** `spectrumEveryNFrames` value that pauses updateSpectrum/runPass entirely. */
 export const SPECTRUM_PAUSE_EVERY_N = 0
 

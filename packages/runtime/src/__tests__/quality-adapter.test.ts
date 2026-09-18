@@ -66,6 +66,48 @@ describe('QualityController adapter wiring', () => {
     expect(last.fftSize).toEqual([64, 0, 0])
     expect(last.meshLod).toBeUndefined()
     expect(last.rtScale).toBeUndefined()
+    expect(last.effectQuality).toBeUndefined()
+  })
+
+  it('freezes all cascades and lowest effectQuality when floorFailed avgFps stays below 5', async () => {
+    const seen: QualityKnobSet[] = []
+    const adapter: QualityAdapter = {
+      id: 'ocean-full',
+      capabilities: () => ['fftSize', 'rtScale', 'meshLod', 'deferredHdr'],
+      snapshot: () => ({}),
+      apply(_tier: QualityTier, knobs: QualityKnobSet) {
+        seen.push({ ...knobs, fftSize: knobs.fftSize ? [...knobs.fftSize] : undefined })
+        return { rollback() {} }
+      },
+    }
+    const { doctor } = createLadderDoctor({
+      now: (() => {
+        let t = 0
+        return () => {
+          t += 250
+          return t
+        }
+      })(),
+      measureFrames: 4,
+    })
+    const ladder = new QualityController(doctor, {
+      mode: 'safe-auto',
+      startTier: 'potato',
+      maxTier: 'potato',
+      windowFrames: 4,
+      waitForFirstInteractive: async () => {},
+    })
+    ladder.registerAdapter(adapter)
+    const settled = await ladder.runLadder()
+    expect(settled.floorFailed).toBe(true)
+    expect(settled.after?.avgFps).toBeLessThan(5)
+    expect(seen.length).toBeGreaterThan(1)
+    const last = seen[seen.length - 1]!
+    expect(last.spectrumEveryNFrames).toBe(0)
+    expect(last.fftSize).toEqual([0, 0, 0])
+    expect(last.effectQuality).toBe(0)
+    expect(last.meshLod).toBeUndefined()
+    expect(last.rtScale).toBeUndefined()
   })
 
   it('passes only advertised knobs and records unsupportedKnob for unknown keys on the adapter side', async () => {

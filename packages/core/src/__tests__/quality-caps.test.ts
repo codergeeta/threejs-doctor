@@ -5,6 +5,9 @@ import {
   POTATO_HOPELESS_CAPS,
   POTATO_HOPELESS_MAX_AVG_FPS,
   POTATO_NEAR_MISS_CAPS,
+  POTATO_OCEAN_FREEZE_EFFECT_QUALITY,
+  POTATO_OCEAN_FREEZE_FFT_SIZE,
+  POTATO_OCEAN_FREEZE_MAX_AVG_FPS,
 } from '../quality-caps.js'
 
 describe('ADAPTER_KNOBS', () => {
@@ -37,5 +40,12 @@ describe('potato floor caps', () => {
     expect(POTATO_HOPELESS_CAPS.pixelRatio).toBeLessThanOrEqual(0.35)
     expect(POTATO_HOPELESS_CAPS.pixelRatio).toBeLessThan(POTATO_NEAR_MISS_CAPS.pixelRatio)
     expect(POTATO_HOPELESS_MAX_AVG_FPS).toBe(10)
+  })
+
+  it('freezes ocean work when avgFps stays below 5 after the second-stage floor', () => {
+    expect(POTATO_OCEAN_FREEZE_MAX_AVG_FPS).toBe(5)
+    expect(POTATO_OCEAN_FREEZE_MAX_AVG_FPS).toBeLessThan(POTATO_HOPELESS_MAX_AVG_FPS)
+    expect(POTATO_OCEAN_FREEZE_FFT_SIZE).toEqual([0, 0, 0])
+    expect(POTATO_OCEAN_FREEZE_EFFECT_QUALITY).toBe(0)
   })
 })

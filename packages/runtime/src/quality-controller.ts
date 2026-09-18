@@ -7,6 +7,9 @@ import {
   POTATO_HOPELESS_MAX_AVG_FPS,
   POTATO_NEAR_MISS_CAPS,
   POTATO_NEAR_MISS_MIN_AVG_FPS,
+  POTATO_OCEAN_FREEZE_EFFECT_QUALITY,
+  POTATO_OCEAN_FREEZE_FFT_SIZE,
+  POTATO_OCEAN_FREEZE_MAX_AVG_FPS,
   SPECTRUM_PAUSE_EVERY_N,
   SAFE_PASSES,
   createHysteresisState,
@@ -179,6 +182,7 @@ export class QualityController {
   private potatoFloorTightened = false
   private potatoFloorNudged = false
   private potatoFloorHopeless = false
+  private potatoOceanFrozen = false
 
   constructor(
     private readonly doctor: Doctor,
@@ -547,8 +551,26 @@ export class QualityController {
         sample.avgFps < POTATO_HOPELESS_MAX_AVG_FPS
       ) {
         this.tightenPotatoFloor(POTATO_HOPELESS_CAPS)
-        this.pausePotatoSpectrum()
+        const freezeCascades = sample.avgFps < POTATO_OCEAN_FREEZE_MAX_AVG_FPS
+        this.pausePotatoSpectrum({ freezeCascades })
         this.potatoFloorHopeless = true
+        this.potatoOceanFrozen = freezeCascades
+        return {
+          state: decision.next,
+          pendingApplyFailed: false,
+          holdsAtTarget: 0,
+          stop: false,
+        }
+      }
+      if (
+        this.potatoFloorTightened &&
+        this.potatoFloorHopeless &&
+        !this.potatoOceanFrozen &&
+        sample.p95FrameTimeMs > HYSTERESIS.dropP95Ms &&
+        sample.avgFps < POTATO_OCEAN_FREEZE_MAX_AVG_FPS
+      ) {
+        this.pausePotatoSpectrum({ freezeCascades: true })
+        this.potatoOceanFrozen = true
         return {
           state: decision.next,
           pendingApplyFailed: false,
@@ -646,7 +668,7 @@ export class QualityController {
     this.doctor.forceShadowsOff()
   }
 
-  private pausePotatoSpectrum(): void {
+  private pausePotatoSpectrum(opts: { freezeCascades?: boolean } = {}): void {
     if (!this.adapter || this.mode === 'advise') return
     let caps: AdapterCapability[]
     try {
@@ -658,11 +680,23 @@ export class QualityController {
     const filtered = knobsFor('potato', caps)
     if (filtered.knobs.spectrumEveryNFrames === undefined) return
     filtered.knobs.spectrumEveryNFrames = SPECTRUM_PAUSE_EVERY_N
-    const applied = filtered.applied.map((knob) =>
-      knob.capability === 'fftSize' && knob.value === ADAPTER_KNOBS.potato.spectrumEveryNFrames
-        ? { capability: knob.capability, value: SPECTRUM_PAUSE_EVERY_N }
-        : knob,
-    )
+    if (opts.freezeCascades) {
+      const len = filtered.knobs.fftSize?.length ?? POTATO_OCEAN_FREEZE_FFT_SIZE.length
+      filtered.knobs.fftSize = Array.from({ length: len }, () => 0)
+      filtered.knobs.effectQuality = POTATO_OCEAN_FREEZE_EFFECT_QUALITY
+    }
+    const applied = filtered.applied.map((knob) => {
+      if (
+        knob.capability === 'fftSize' &&
+        knob.value === ADAPTER_KNOBS.potato.spectrumEveryNFrames
+      ) {
+        return { capability: knob.capability, value: SPECTRUM_PAUSE_EVERY_N }
+      }
+      if (opts.freezeCascades && knob.capability === 'fftSize' && Array.isArray(knob.value)) {
+        return { capability: knob.capability, value: filtered.knobs.fftSize }
+      }
+      return knob
+    })
     this.rollbackAdapterKnobs()
     try {
       const handle = this.adapter.apply('potato', filtered.knobs)
