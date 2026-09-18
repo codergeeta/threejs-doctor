@@ -1,4 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { installRendererRenderCapture } from '../capture-host.js'
 
 function fakeScene() {
@@ -102,6 +105,46 @@ describe('installRendererRenderCapture', () => {
     expect(root.__THREEJS_DOCTOR_HOST__?.scene).toBe(scene)
     expect(root.__THREEJS_DOCTOR_HOST__?.renderer).toBe(renderer)
     installed.uninstall()
+  })
+
+  it('skipDeepWalk does not search nested instances after discovery already walked', () => {
+    const THREE = makeThree()
+    const renderer = new (THREE.WebGLRenderer as unknown as new () => {
+      render: (scene: unknown, camera: unknown) => unknown
+    })()
+    const root = {
+      __THREE__: 'r152',
+      app: { gfx: { renderer } },
+    }
+    const skipped = installRendererRenderCapture(root, { skipDeepWalk: true })
+    expect(skipped.installed).toBe(false)
+    const installed = installRendererRenderCapture(root)
+    expect(installed.installed).toBe(true)
+    installed.uninstall()
+  })
+
+  it('capture.js IIFE hooks a nested renderer when __THREE__ is a string', () => {
+    const src = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../../../host-shim/capture.js'), 'utf8')
+    const THREE = makeThree()
+    const renderer = new (THREE.WebGLRenderer as unknown as new () => {
+      render: (scene: unknown, camera: unknown) => unknown
+    })()
+    const root: {
+      __THREE__: string
+      app: { gfx: { renderer: typeof renderer } }
+      __THREEJS_DOCTOR_HOST__?: { scene: unknown; renderer: unknown }
+    } = {
+      __THREE__: 'r152',
+      app: { gfx: { renderer } },
+    }
+    const body = src.replace(/\}\)\(typeof window !== 'undefined' \? window : globalThis\)\s*$/, '})(root)')
+    const run = new Function('root', body)
+    run(root)
+    const scene = fakeScene()
+    const camera = fakeCamera()
+    renderer.render(scene, camera)
+    expect(root.__THREEJS_DOCTOR_HOST__?.scene).toBe(scene)
+    expect(root.__THREEJS_DOCTOR_HOST__?.renderer).toBe(renderer)
   })
 
   it('finds WebGLRenderer under window.__THREE__ namespace', () => {

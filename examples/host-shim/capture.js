@@ -1,4 +1,4 @@
-/* @threejs-doctor/host-shim unpublished. Hook WebGLRenderer render once. Deep-walk if THREE is missing. Do not invent metrics. */
+/* @threejs-doctor/host-shim unpublished. Hook WebGLRenderer render once. Deep-walk if THREE is missing. Keep enqueue in sync with live-attach findRendererDeep. Do not invent metrics. */
 (function (root) {
   var MAX_VISITS = 50000
   var MAX_DEPTH = 16
@@ -17,12 +17,15 @@
     return v && typeof v === 'object'
   }
 
-  function isRenderer(v) {
-    if (!isObj(v)) return false
-    if (v.isWebGLRenderer === true) return true
+  function isNamedRenderer(v) {
     try {
-      if (v.constructor && v.constructor.name === 'WebGLRenderer') return true
-    } catch (e) {}
+      return !!(v && v.constructor && v.constructor.name === 'WebGLRenderer' && typeof v.render === 'function')
+    } catch (e) {
+      return false
+    }
+  }
+
+  function isDuckRenderer(v) {
     return typeof v.setPixelRatio === 'function' && isObj(v.info)
   }
 
@@ -67,22 +70,24 @@
     return
   }
 
-  var seen = typeof WeakSet === 'function' ? new WeakSet() : null
-  var visited = seen ? null : []
-  function mark(v) {
-    if (seen) {
-      if (seen.has(v)) return true
-      seen.add(v)
-      return false
-    }
-    for (var i = 0; i < visited.length; i++) if (visited[i] === v) return true
-    visited.push(v)
+  var seen = typeof WeakSet === 'function' ? new WeakSet() : []
+  function already(v) {
+    if (seen.has) return seen.has(v)
+    for (var i = 0; i < seen.length; i++) if (seen[i] === v) return true
     return false
+  }
+  function mark(v) {
+    if (seen.add) seen.add(v)
+    else seen.push(v)
   }
 
   var queue = []
+  var head = 0
+  var visits = 0
   function enqueue(v, depth) {
-    if (!isObj(v) || depth > MAX_DEPTH) return
+    if (!isObj(v) || depth > MAX_DEPTH || already(v)) return
+    if (visits + (queue.length - head) >= MAX_VISITS) return
+    mark(v)
     queue.push({ v: v, d: depth })
   }
 
@@ -98,20 +103,23 @@
     }
   } catch (e) {}
 
-  var visits = 0
+  var named = null
+  var duck = null
   var found = null
-  while (queue.length && visits < MAX_VISITS && !found) {
-    var next = queue.shift()
+  while (head < queue.length && visits < MAX_VISITS && !found) {
+    var next = queue[head++]
     var value = next.v
     var depth = next.d
-    if (!isObj(value) || mark(value)) continue
+    if (!isObj(value)) continue
     visits++
     if (crossOriginIframe(value)) continue
     try {
-      if (isRenderer(value)) {
+      if (value.isWebGLRenderer === true) {
         found = value
         break
       }
+      if (!named && isNamedRenderer(value)) named = value
+      else if (!duck && isDuckRenderer(value)) duck = value
     } catch (e) {
       continue
     }
@@ -125,7 +133,9 @@
             enqueue(value.contentDocument, depth + 1)
           }
         } catch (e) {}
-      } else if (tag !== 'CANVAS' && typeof value.getContext !== 'function' && value !== root && value !== root.document) {
+        continue
+      }
+      if (tag !== 'CANVAS' && typeof value.getContext !== 'function' && value !== root && value !== root.document) {
         continue
       }
     }
@@ -159,6 +169,7 @@
     }
   }
 
+  found = found || named || duck
   if (!found) {
     console.warn('[threejs-doctor host-shim] THREE.WebGLRenderer not found on this page')
     return

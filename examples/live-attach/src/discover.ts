@@ -122,11 +122,19 @@ function constructorNameOf(value: object): string | undefined {
   }
 }
 
+function isNamedWebGLRenderer(value: Record<string, unknown>): boolean {
+  return constructorNameOf(value) === 'WebGLRenderer' && typeof value.render === 'function'
+}
+
+function isDuckRenderer(value: Record<string, unknown>): boolean {
+  return typeof value.setPixelRatio === 'function' && isRecord(value.info)
+}
+
 function isRenderer(value: unknown): boolean {
   if (!isRecord(value)) return false
   if (value.isWebGLRenderer === true) return true
-  if (constructorNameOf(value) === 'WebGLRenderer') return true
-  return typeof value.setPixelRatio === 'function' && isRecord(value.info)
+  if (isNamedWebGLRenderer(value)) return true
+  return isDuckRenderer(value)
 }
 
 function isScene(value: unknown): boolean {
@@ -401,11 +409,12 @@ function shouldExpandDeep(value: Record<string, unknown>, isSeed: boolean): bool
 export function findRendererDeep(root: unknown): unknown {
   const seen = new Set<unknown>()
   const queue: Array<{ value: unknown; depth: number; seed: boolean }> = []
+  let head = 0
   let visits = 0
   const enqueue = (value: unknown, depth: number, seed: boolean) => {
     if (value == null || typeof value !== 'object') return
     if (seen.has(value) || depth > DEEP_RENDERER_MAX_DEPTH) return
-    if (visits + queue.length >= DEEP_RENDERER_MAX_VISITS) return
+    if (visits + (queue.length - head) >= DEEP_RENDERER_MAX_VISITS) return
     seen.add(value)
     queue.push({ value, depth, seed })
   }
@@ -414,8 +423,11 @@ export function findRendererDeep(root: unknown): unknown {
   enqueue(getDocument(root), 0, true)
   for (const canvas of listCanvases(root)) enqueue(canvas, 0, true)
 
-  while (queue.length > 0 && visits < DEEP_RENDERER_MAX_VISITS) {
-    const next = queue.shift()
+  let named: unknown
+  let duck: unknown
+  while (head < queue.length && visits < DEEP_RENDERER_MAX_VISITS) {
+    const next = queue[head]
+    head += 1
     if (!next) break
     const { value, depth, seed } = next
     if (!isRecord(value)) continue
@@ -424,7 +436,9 @@ export function findRendererDeep(root: unknown): unknown {
     if (isInaccessibleWindow(value) || isCrossOriginIFrame(value)) continue
 
     try {
-      if (isRenderer(value)) return value
+      if (value.isWebGLRenderer === true) return value
+      if (named == null && isNamedWebGLRenderer(value)) named = value
+      else if (duck == null && isDuckRenderer(value)) duck = value
     } catch {
       continue
     }
@@ -463,7 +477,7 @@ export function findRendererDeep(root: unknown): unknown {
       }
     }
   }
-  return undefined
+  return named ?? duck
 }
 
 /** Probe an existing WebGL context. Live game canvases already have one; getContext returns it. */

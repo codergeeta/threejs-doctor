@@ -83,7 +83,10 @@ export async function attachQualityLadder(
   let rendererHandle = attempt.renderer
 
   if (scene == null || rendererHandle == null) {
-    const protoCapture = installRendererRenderCapture(root)
+    const protoCapture = installRendererRenderCapture(root, {
+      skipDeepWalk: true,
+      ...(rendererHandle != null ? { instance: rendererHandle } : {}),
+    })
     if (protoCapture.installed) {
       const captureWait =
         options.waitFrame ?? (options.now === undefined ? waitAnimationTick : undefined)

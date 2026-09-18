@@ -2516,11 +2516,17 @@ ${line2}` : line1;
       return void 0;
     }
   }
+  function isNamedWebGLRenderer(value) {
+    return constructorNameOf(value) === "WebGLRenderer" && typeof value.render === "function";
+  }
+  function isDuckRenderer(value) {
+    return typeof value.setPixelRatio === "function" && isRecord(value.info);
+  }
   function isRenderer(value) {
     if (!isRecord(value)) return false;
     if (value.isWebGLRenderer === true) return true;
-    if (constructorNameOf(value) === "WebGLRenderer") return true;
-    return typeof value.setPixelRatio === "function" && isRecord(value.info);
+    if (isNamedWebGLRenderer(value)) return true;
+    return isDuckRenderer(value);
   }
   function isScene(value) {
     if (!isRecord(value)) return false;
@@ -2743,26 +2749,32 @@ ${line2}` : line1;
   function findRendererDeep(root) {
     const seen = /* @__PURE__ */ new Set();
     const queue = [];
+    let head = 0;
     let visits = 0;
     const enqueue = (value, depth, seed) => {
       if (value == null || typeof value !== "object") return;
       if (seen.has(value) || depth > DEEP_RENDERER_MAX_DEPTH) return;
-      if (visits + queue.length >= DEEP_RENDERER_MAX_VISITS) return;
+      if (visits + (queue.length - head) >= DEEP_RENDERER_MAX_VISITS) return;
       seen.add(value);
       queue.push({ value, depth, seed });
     };
     enqueue(root, 0, true);
     enqueue(getDocument(root), 0, true);
     for (const canvas of listCanvases(root)) enqueue(canvas, 0, true);
-    while (queue.length > 0 && visits < DEEP_RENDERER_MAX_VISITS) {
-      const next = queue.shift();
+    let named;
+    let duck;
+    while (head < queue.length && visits < DEEP_RENDERER_MAX_VISITS) {
+      const next = queue[head];
+      head += 1;
       if (!next) break;
       const { value, depth, seed } = next;
       if (!isRecord(value)) continue;
       visits += 1;
       if (isInaccessibleWindow(value) || isCrossOriginIFrame(value)) continue;
       try {
-        if (isRenderer(value)) return value;
+        if (value.isWebGLRenderer === true) return value;
+        if (named == null && isNamedWebGLRenderer(value)) named = value;
+        else if (duck == null && isDuckRenderer(value)) duck = value;
       } catch {
         continue;
       }
@@ -2798,7 +2810,7 @@ ${line2}` : line1;
         }
       }
     }
-    return void 0;
+    return named ?? duck;
   }
   function peekWebGLContext(canvas) {
     if (!isRecord(canvas) || typeof canvas.getContext !== "function") return void 0;
@@ -3344,10 +3356,10 @@ ${line2}` : line1;
       }
     };
   }
-  function installRendererRenderCapture(root = globalThis) {
+  function installRendererRenderCapture(root = globalThis, options = {}) {
     const ctor = findThreeWebGLRendererCtor(root);
     if (ctor) return hookRenderMethod(root, ctor.prototype);
-    const instance = findRendererDeep(root);
+    const instance = isRecord2(options.instance) ? options.instance : options.skipDeepWalk ? void 0 : findRendererDeep(root);
     if (!isRecord2(instance)) return idleCapture;
     const fromInstance = instance.constructor;
     if (isRendererCtor(fromInstance)) return hookRenderMethod(root, fromInstance.prototype);
@@ -3394,7 +3406,10 @@ ${line2}` : line1;
     let camera = attempt.camera;
     let rendererHandle = attempt.renderer;
     if (scene == null || rendererHandle == null) {
-      const protoCapture = installRendererRenderCapture(root);
+      const protoCapture = installRendererRenderCapture(root, {
+        skipDeepWalk: true,
+        ...rendererHandle != null ? { instance: rendererHandle } : {}
+      });
       if (protoCapture.installed) {
         const captureWait = options.waitFrame ?? (options.now === void 0 ? waitAnimationTick : void 0);
         const maxAttempts = captureWait ? 32 : 1;

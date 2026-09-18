@@ -134,11 +134,25 @@ function hookRenderMethod(
  * the original method. For bundled games (tanks / catapult) paste this before the
  * live-attach IIFE when THREE is missing and `__THREE__` is not the library.
  */
-export function installRendererRenderCapture(root: unknown = globalThis): RendererRenderCapture {
+export interface InstallRendererRenderCaptureOptions {
+  /** Already-found renderer; skip a second graph walk. */
+  instance?: unknown
+  /** Discovery already ran `findRendererDeep`; only look up a constructor on the root. */
+  skipDeepWalk?: boolean
+}
+
+export function installRendererRenderCapture(
+  root: unknown = globalThis,
+  options: InstallRendererRenderCaptureOptions = {},
+): RendererRenderCapture {
   const ctor = findThreeWebGLRendererCtor(root)
   if (ctor) return hookRenderMethod(root, ctor.prototype)
 
-  const instance = findRendererDeep(root)
+  const instance = isRecord(options.instance)
+    ? options.instance
+    : options.skipDeepWalk
+      ? undefined
+      : findRendererDeep(root)
   if (!isRecord(instance)) return idleCapture
 
   const fromInstance = instance.constructor
