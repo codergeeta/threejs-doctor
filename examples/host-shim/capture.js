@@ -1,6 +1,6 @@
 /* @threejs-doctor/host-shim unpublished. Hook THREE.WebGLRenderer.prototype.render once. Do not invent metrics. */
 (function (root) {
-  var T = root.THREE || root.three
+  var T = root.THREE || root.three || root.__THREE__
   var Ctor = (T && T.WebGLRenderer) || root.WebGLRenderer
   if (!Ctor || !Ctor.prototype || typeof Ctor.prototype.render !== 'function') {
     console.warn('[threejs-doctor host-shim] THREE.WebGLRenderer not found on this page')

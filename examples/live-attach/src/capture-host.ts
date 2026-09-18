@@ -48,7 +48,7 @@ export function findThreeWebGLRendererCtor(root: unknown): {
 } | undefined {
   const direct = readKey(root, 'WebGLRenderer')
   if (isRendererCtor(direct)) return direct
-  for (const key of ['THREE', 'three'] as const) {
+  for (const key of ['THREE', 'three', '__THREE__'] as const) {
     const ns = readKey(root, key)
     const ctor = readKey(ns, 'WebGLRenderer')
     if (isRendererCtor(ctor)) return ctor

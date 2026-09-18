@@ -80,4 +80,22 @@ describe('installRendererRenderCapture', () => {
     expect(result.installed).toBe(false)
     expect(result.getCaptured()).toBeUndefined()
   })
+
+  it('finds WebGLRenderer under window.__THREE__ namespace', () => {
+    const THREE = makeThree()
+    const root: {
+      __THREE__: typeof THREE
+      __THREEJS_DOCTOR_HOST__?: { scene: unknown }
+    } = { __THREE__: THREE }
+    const installed = installRendererRenderCapture(root)
+    expect(installed.installed).toBe(true)
+    const scene = fakeScene()
+    const camera = fakeCamera()
+    const renderer = new (THREE.WebGLRenderer as unknown as new () => {
+      render: (scene: unknown, camera: unknown) => unknown
+    })()
+    renderer.render(scene, camera)
+    expect(root.__THREEJS_DOCTOR_HOST__?.scene).toBe(scene)
+    installed.uninstall()
+  })
 })

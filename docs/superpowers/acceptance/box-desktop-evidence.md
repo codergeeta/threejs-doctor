@@ -213,15 +213,87 @@ That ~28 FPS / floorFailed true run is why the second-stage floor was nudged.
 
 This file does not close acceptance. Still required:
 
-- Phone-class ocean Pass A (`advise`) and Pass B (`safe-auto`) on the device in
-  [live-ocean-capture.md](./live-ocean-capture.md) §1, same TTFI-then-30 FPS bar,
-  real `baseline` / `after` only. The local acceptance-fixture run above does
-  **not** replace that §3 bar.
+- Phone-class ocean Pass A (`advise`) and Pass B (`safe-auto`) on the **real**
+  device in [live-ocean-capture.md](./live-ocean-capture.md) §1, same
+  TTFI-then-30 FPS bar, real `baseline` / `after` only. The `device: 'phone'`
+  overlay run above is an **emulator** (headless Chrome + probe overlay) and
+  does **not** replace that §3 bar. Overlay Pass B after 1.125 FPS still misses
+  30.
 - External [Claude-of-Tanks](https://cot.kevinliu.studio/) /
   [Kinema](https://kinema-play.vercel.app/?forceWebGL=1) /
   [catapult](https://sina-ghiasi.github.io/threejs-catapult-game/) still need
-  explicit `attachQualityLadder({ scene, camera, renderer })` or a
-  `window.__THREEJS_DOCTOR_HOST__` hook; they are not fully injectable on box
-  today.
+  explicit `attachQualityLadder({ scene, camera, renderer })` when `THREE` is
+  not on the page. The host-shim / IIFE prototype hook is a no-op on tanks and
+  catapult today (`THREE.WebGLRenderer` not found).
 
 Save those JSON files off-repo. Never invent after metrics.
+
+## Phone-class overlay on this VM (emulator, not a real phone)
+
+Chrome headless SwiftShader, puppeteer viewport **360×800** `deviceScaleFactor: 3` `isMobile`/`hasTouch`, plus
+`window.__THREEJS_DOCTOR_ATTACH__ = { device: 'phone' }` so `startTier` is
+**potato** even though live `navigator.deviceMemory` on this VM is 16.
+**Not** the device in [live-ocean-capture.md](./live-ocean-capture.md) §1.
+**Not** spec §3 bar proof. UA is HeadlessChrome on Linux.
+
+JSON off-repo: `/opt/cursor/artifacts/ocean-phone-overlay-pass-a.json`,
+`ocean-phone-overlay-pass-b.json`. `windowFrames` / `measureFrames` were **12**
+(labeled; not the default 90). `WEBGL_debug_renderer_info` was **not** requested
+(`debugRendererInfoRequested: false`). `ttfiMs` omitted (paste-after-load).
+
+Potato knobs on Pass B: `fftSize` `[64, 0, 0]`, `spectrumEveryNFrames` **8**,
+`deferredHdr` true. Still no `meshLod` / `rtScale`.
+
+### Overlay Pass A — `advise` + `device: 'phone'`
+
+Read-only. `appliedPasses` / `appliedKnobs` empty. Overlay stays advise.
+
+| Field | Measured |
+|-------|----------|
+| score | 100 |
+| startTier | `potato` |
+| maxTier | `mid` |
+| tier | `potato` |
+| floorFailed | false |
+| baseline `avgFps` | 0.749728223518975 |
+| baseline `p95FrameTimeMs` | 4271.5 |
+| after `avgFps` | 0.749728223518975 |
+| after `p95FrameTimeMs` | 4271.5 |
+| `drawCalls` | 63 |
+| `triangles` | 662202 |
+| `drawingBufferPixels` | 524880 |
+
+Advise did not move FPS. Score 100 is hygiene. startTier **potato** (overlay), unlike the desktop-viewport ocean run above (`startTier` low).
+
+### Overlay Pass B — `safe-auto` + `device: 'phone'`
+
+`floorFailed: true`. After `avgFps` 1.125 still ≪ 30. Cadence 8 + generic caps
+on this 360×800 viewport did **not** clear the floor.
+
+| Field | Baseline | After |
+|-------|----------|-------|
+| `avgFps` | 1.1249121162409186 | 1.1249121162409186 |
+| `p95FrameTimeMs` | 1638.9000000000233 | 1638.9000000000233 |
+| `drawCalls` | 29 | 29 |
+| `triangles` | 662134 | 662134 |
+| `drawingBufferPixels` | 288000 | 288000 |
+
+Baseline already reflects potato boot caps (startTier potato). Same sample in
+`after` on this short-window run. Draw calls 63→29 vs this file's overlay
+advise; triangles barely moved (662202→662134). Not comparable 1:1 to the
+earlier desktop-viewport Pass B v4 (after 0.773 / 912502 triangles / cadence 4)
+because viewport and window length differ. Both remain ≪ 30.
+
+### Host-shim on tanks / catapult (this VM, not FPS)
+
+Copied from `/opt/cursor/artifacts/host-shim-probe.json`. No ladder report, no
+FPS. `THREE.WebGLRenderer` is **not** on `window` (`window.THREE` missing;
+`window.__THREE__` is a **string**, not the library). `examples/host-shim/capture.js`
+logged `THREE.WebGLRenderer not found` on both:
+
+- https://cot.kevinliu.studio/ — 119 canvases, hook did not capture
+- https://sina-ghiasi.github.io/threejs-catapult-game/ — 1 canvas, hook did not capture
+
+The prototype hook is shipped and unit-tested with fakes. These two live hosts
+still need explicit `attachQualityLadder({ scene, camera, renderer })` until
+they expose `THREE` (or `__THREE__.WebGLRenderer`).

@@ -3042,7 +3042,7 @@ ${line2}` : line1;
   function findThreeWebGLRendererCtor(root) {
     const direct = readKey2(root, "WebGLRenderer");
     if (isRendererCtor(direct)) return direct;
-    for (const key of ["THREE", "three"]) {
+    for (const key of ["THREE", "three", "__THREE__"]) {
       const ns = readKey2(root, key);
       const ctor = readKey2(ns, "WebGLRenderer");
       if (isRendererCtor(ctor)) return ctor;

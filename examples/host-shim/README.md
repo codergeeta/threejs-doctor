@@ -14,7 +14,7 @@ and `THREE.WebGLRenderer` is on the page.
 
 ## Paste before the live-attach IIFE
 
-If `window.THREE` exists (or `window.three`):
+If `window.THREE` (or `window.three` / object `window.__THREE__`) exists:
 
 1. Paste [`capture.js`](./capture.js) into DevTools. Wait one rendered frame.
 2. Confirm `window.__THREEJS_DOCTOR_HOST__` has `scene`, `camera`, `renderer`.
