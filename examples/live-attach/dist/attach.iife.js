@@ -2039,15 +2039,17 @@ ${line2}` : line1;
       if (!rec) {
         rec = { bytes: instancedBufferBytes(obj) ?? 0, disposed: false, leaked: false };
         this.known.set(obj, rec);
-        const add = typeof obj.addEventListener === "function" ? obj.addEventListener : void 0;
-        if (add) {
-          add("dispose", () => {
-            rec.disposed = true;
-            rec.leaked = false;
-          });
-          add("removed", () => {
-            if (!rec.disposed) rec.leaked = true;
-          });
+        if (typeof obj.addEventListener === "function") {
+          try {
+            obj.addEventListener("dispose", () => {
+              rec.disposed = true;
+              rec.leaked = false;
+            });
+            obj.addEventListener("removed", () => {
+              if (!rec.disposed) rec.leaked = true;
+            });
+          } catch {
+          }
         }
       } else {
         rec.bytes = instancedBufferBytes(obj) ?? rec.bytes;

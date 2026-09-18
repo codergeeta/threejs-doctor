@@ -2,8 +2,16 @@ import { test, expect } from '@playwright/test'
 import type { RealHostE2eReport } from '../src/main.ts'
 
 async function report(page: import('@playwright/test').Page): Promise<RealHostE2eReport> {
+  const errors: string[] = []
+  page.on('pageerror', (err) => errors.push(err.message))
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') errors.push(msg.text())
+  })
   await page.goto('/')
-  await expect(page).toHaveTitle(/ready/, { timeout: 30_000 })
+  await expect(page).toHaveTitle(/e2e ready/, { timeout: 30_000 })
+  if (errors.length > 0) {
+    throw new Error(errors.join('\n'))
+  }
   const data = await page.evaluate(() => window.__R2)
   expect(data).toBeTruthy()
   return data as RealHostE2eReport

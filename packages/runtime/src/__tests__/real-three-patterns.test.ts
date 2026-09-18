@@ -7,6 +7,7 @@ import {
   Scene,
 } from 'three'
 import { collectHostSceneStats, readHostWorldRadius } from '../scene-stats.js'
+import { InstanceLeakTracker } from '../instance-leak-tracker.js'
 import { distanceCullPass } from '../passes/distance-cull.js'
 import type { PassContext } from '../passes/types.js'
 
@@ -67,5 +68,22 @@ describe('real three.js InstancedMesh bounds', () => {
     }
     distanceCullPass.apply(ctx)
     expect(mesh.visible).toBe(true)
+  })
+
+  it('tracks removed-without-dispose on a real InstancedMesh without breaking addEventListener this', () => {
+    const geometry = new BoxGeometry(1, 1, 1)
+    const mesh = new InstancedMesh(geometry, new MeshBasicMaterial(), 4)
+    const scene = new Scene()
+    scene.add(mesh)
+    const tracker = new InstanceLeakTracker()
+    const renderer = { info: { render: { calls: 1, triangles: 48 }, memory: { geometries: 1, textures: 0 } } }
+    expect(() => collectHostSceneStats(scene, renderer, undefined, { leakTracker: tracker })).not.toThrow()
+    expect(tracker.snapshot().count).toBe(0)
+    scene.remove(mesh)
+    collectHostSceneStats(scene, renderer, undefined, { leakTracker: tracker })
+    expect(tracker.snapshot().count).toBe(1)
+    mesh.dispose()
+    collectHostSceneStats(scene, renderer, undefined, { leakTracker: tracker })
+    expect(tracker.snapshot().count).toBe(0)
   })
 })

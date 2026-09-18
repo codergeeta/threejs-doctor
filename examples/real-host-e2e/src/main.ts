@@ -39,6 +39,7 @@ declare global {
   }
 }
 
+try {
 const canvas = document.createElement('canvas')
 canvas.width = 320
 canvas.height = 180
@@ -148,3 +149,8 @@ window.__R2 = {
 }
 
 document.title = 'threejs-doctor real-host e2e ready'
+} catch (err) {
+  console.error(err)
+  document.title = `threejs-doctor real-host e2e error: ${err instanceof Error ? err.message : String(err)}`
+  throw err
+}

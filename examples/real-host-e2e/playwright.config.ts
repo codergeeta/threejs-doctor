@@ -10,7 +10,11 @@ export default defineConfig({
     baseURL: 'http://127.0.0.1:4177',
     headless: true,
     launchOptions: {
-      args: ['--use-gl=angle', '--use-angle=swiftshader', '--ignore-gpu-blocklist'],
+      args: [
+        '--ignore-gpu-blocklist',
+        '--enable-unsafe-swiftshader',
+        '--use-gl=swiftshader',
+      ],
     },
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
