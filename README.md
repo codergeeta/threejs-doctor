@@ -71,7 +71,7 @@ const doctor = new Doctor({
   scene,
   camera,
   renderer,
-  composer, // EffectComposer or pmndrs postprocessing; also discovered from scene.userData
+  composer, // pass explicitly — auto-discovery is shallow (scene / renderer / scene.userData)
   onPixelRatioChange: (ratio) => composer.setPixelRatio?.(ratio),
   profile: 'game', // games: set explicitly; 'auto' pins the first resolution
   mode: 'diagnose',
@@ -85,11 +85,11 @@ const after = await doctor.optimize({ apply: ['safe'] })
 doctor.mountOverlay()
 ```
 
-`measure()` does not invent GPU times. `gpuFrameTimeMs` is set only when `EXT_disjoint_timer_query_webgl2` returns a **queued** query result (`QUERY_RESULT_AVAILABLE` on a later frame, discarded on `GPU_DISJOINT_EXT`). Timer methods are called on the **WebGL2RenderingContext**; the EXT object only supplies constants. Prefer `renderer.extensions.get('EXT_disjoint_timer_query_webgl2')`. Draw-call and drawn-triangle totals are the **median** across sampled frames (`renderer.info.autoReset = false` so EffectComposer passes accumulate). CPU time prefers wrapping the host `renderer.render` / `composer.render` rather than the rAF vsync interval. Lights, textures, and render-target VRAM come from the scene graph when dimensions are known (otherwise those fields are omitted).
+`measure()` does not invent GPU times. `gpuFrameTimeMs` is set only when `EXT_disjoint_timer_query_webgl2` returns a **queued** query result (`QUERY_RESULT_AVAILABLE` on a later frame, discarded on `GPU_DISJOINT_EXT`). Timer methods are called on the **WebGL2RenderingContext**; the EXT object only supplies constants. Prefer `renderer.extensions.get('EXT_disjoint_timer_query_webgl2')`. Pending queries are tagged per `measure()` and discarded at start/end so compareAb cannot mix A into B. Each frame harvests **every** available result. Without `waitFrame`, Doctor yields a macrotask (rAF / `setTimeout(0)`) when a GPU sampler exists so `QUERY_RESULT_AVAILABLE` can flip; otherwise it sets `gpuTimingSkipped` and does not leave pending queries. Draw-call and drawn-triangle totals are the **median** across sampled frames (`renderer.info.autoReset = false` so EffectComposer passes accumulate). CPU time prefers wrapping the host `renderer.render` / `composer.render` rather than the rAF vsync interval, and **sums** top-level `render()` work in one frame (HUD + minimap). Lights, textures, and render-target VRAM come from the scene graph when dimensions are known (otherwise those fields are omitted).
 
-Pass `composer` (or let Doctor discover an EffectComposer-like object, including pmndrs `inputBuffer`/`outputBuffer`) so `dpr-cap` can call `setPixelRatio`/`setSize` or `onPixelRatioChange`. Triangle **cost** is `renderer.info.triangles` (drawn, including extra shadow/composer passes when measured). Scene-graph `geometryTriangleCount` is attribution only — after chunking, drawn cost can drop even if unused geometry remains.
+Pass `composer` **explicitly** when you have an EffectComposer (three.js `renderTarget1`/`writeBuffer` or pmndrs `inputBuffer`/`outputBuffer`). Auto-discovery is **shallow** (the composer object, `scene.userData`, renderer own properties). `dpr-cap` can then call `setPixelRatio`/`setSize` or `onPixelRatioChange`. Triangle **cost** is `renderer.info.triangles` (drawn, including extra shadow/composer passes when measured). Scene-graph `geometryTriangleCount` is attribution only — after chunking, drawn cost can drop even if unused geometry remains.
 
-Hidden tabs and throttled rAF mark the sample `invalid` (and the report `incomplete`). For A/B, use `doctor.compareAb({ rounds, poses, applyB })` or `compareAbSamples` — **medians**, with an A-vs-A control; never claim a win inside the noise band. Pixel-diff before calling a pass visually safe is **opt-in** and **not** implied by `apply: ['safe']`: `optimize({ apply: ['safe'], visualGate: { capture } })`. Default `maxChangedRatio` is **0.5%** of pixels (tighter than 2% / ~18k at 720p). Reproduce the control capture before treating a pass as visually safe. Fixed-clock unit tests are not proof of safe passes; see [`docs/superpowers/acceptance/real-host-followups.md`](docs/superpowers/acceptance/real-host-followups.md).
+Hidden tabs and throttled rAF mark the sample `invalid` (and the report `incomplete`). For A/B, use `doctor.compareAb({ rounds, poses, applyB, control })` or `compareAbSamples` — **medians**, with a noise band of `max(half-range, 1.4826 × MAD)`. Pass optional `control` A-vs-A rounds (or run A vs A) rather than treating two close A samples as proof. Never claim a win inside the noise band. Pixel-diff before calling a pass visually safe is **opt-in** and **not** implied by `apply: ['safe']`: `optimize({ apply: ['safe'], visualGate: { capture, fixedViewpoint: true } })`. **Capture must use a fixed viewpoint.** Default `maxChangedRatio` is **0.5%** of pixels. A candidate delta is confirmed with a **second** capture; on a reproduced difference vs control, applied passes are **rolled back** (`visualDelta: true` — do not treat as visually safe). Fixed-clock unit tests are not proof of safe passes; see [`docs/superpowers/acceptance/real-host-followups.md`](docs/superpowers/acceptance/real-host-followups.md).
 
 Live ocean attach notes for the unpublished Quality Ladder adapter (this repo does not vendor the demo) are in [`examples/ocean-adapter/README.md`](examples/ocean-adapter/README.md). Pasteable DevTools IIFE: [`examples/live-attach`](examples/live-attach/README.md). Local unpublished hosts (no pelagic) for live-attach discovery: [`examples/acceptance-fixture`](examples/acceptance-fixture/README.md) and the heavier [`examples/acceptance-fixture-game`](examples/acceptance-fixture-game/README.md). How a real game exposes `{ scene, camera, renderer }`: [`docs/superpowers/acceptance/host-integration.md`](docs/superpowers/acceptance/host-integration.md).
 
@@ -105,7 +105,7 @@ import { DoctorCanvas, useDoctor } from '@threejs-doctor/r3f'
 </DoctorCanvas>
 ```
 
-`useDoctor()` is available under `DoctorCanvas` (or `DoctorProvider`) and exposes `doctor`, `report`, `runDiagnose()`, and `runOptimize()`.
+`useDoctor()` is available under `DoctorCanvas` (or `DoctorProvider`) and exposes `doctor`, `report`, `runDiagnose()`, and `runOptimize()`. `DoctorCanvas` always passes a `waitFrame` (rAF / `setTimeout(0)`) so GPU timer queries can complete on the default path. Pass `composer` explicitly; discovery is shallow.
 
 ## Packages
 

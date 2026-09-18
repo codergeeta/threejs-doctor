@@ -37,10 +37,16 @@ export function claimAbDelta(
   return delta > 0 ? 'win' : 'loss'
 }
 
+function medianAbsDeviation(values: number[]): number {
+  const mid = median(values)
+  return median(values.map((value) => Math.abs(value - mid)))
+}
+
 function noiseFromControl(values: number[]): NoiseBand {
   const mid = median(values)
   const halfRange = (Math.max(...values) - Math.min(...values)) / 2
-  const abs = Math.max(halfRange, 0)
+  const mad = medianAbsDeviation(values)
+  const abs = Math.max(halfRange, mad * 1.4826, 0)
   const rel = Math.abs(mid) > 0 ? abs / Math.abs(mid) : 0
   return { abs, rel }
 }
@@ -72,6 +78,8 @@ function averageSample(samples: MetricsSample[]): MetricsSample {
 export interface AbCompareInput {
   a: MetricsSample[]
   b: MetricsSample[]
+  /** Optional A-vs-A (or other) control rounds used for the noise band instead of `a`. */
+  control?: MetricsSample[]
 }
 
 export interface AbCompareResult {
@@ -100,9 +108,10 @@ export function compareAbSamples(input: AbCompareInput): AbCompareResult {
     const bSeries = numericSeries(input.b, key)
     const bVal = after[key]
     const aVal = before[key]
-    if (typeof aVal !== 'number' || typeof bVal !== 'number' || !aSeries || !bSeries) continue
+    const bandSeries = input.control ? numericSeries(input.control, key) : aSeries
+    if (typeof aVal !== 'number' || typeof bVal !== 'number' || !aSeries || !bSeries || !bandSeries) continue
     deltas[key] = bVal - aVal
-    const band = noiseFromControl(aSeries)
+    const band = noiseFromControl(bandSeries)
     noiseBand[key] = band
     const direction: AbDirection = HIGHER_BETTER.includes(key) ? 'higher-better' : 'lower-better'
     if (!LOWER_BETTER.includes(key) && !HIGHER_BETTER.includes(key)) continue

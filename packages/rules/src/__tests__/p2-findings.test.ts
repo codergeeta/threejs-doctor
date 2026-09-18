@@ -126,6 +126,10 @@ describe('P2 finding rules', () => {
       snapshot: snap({ zeroIntensityLightCount: 2 }),
     }).find((f) => f.id === 'lights/zero-intensity')
     expect(hit).toBeDefined()
+    expect(hit?.suggestedFix).not.toMatch(/visible\s*=\s*false/i)
+    expect(hit?.suggestedFix).not.toMatch(/intensity\s*=\s*0/i)
+    expect(hit?.suggestedFix).toMatch(/fixed[\s-]*size|pool/i)
+    expect(hit?.suggestedFix).toMatch(/compile/i)
     expect(runRules({ device, profile: 'product', snapshot: snap() }).some((f) => f.id === 'lights/zero-intensity')).toBe(
       false,
     )

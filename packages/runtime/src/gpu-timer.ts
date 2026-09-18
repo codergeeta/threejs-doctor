@@ -6,6 +6,10 @@
  * / deleteQuery live on WebGL2RenderingContext. Never invent GPU times: return a
  * number only after QUERY_RESULT_AVAILABLE on a later frame, and discard the
  * sample when GPU_DISJOINT_EXT is set.
+ *
+ * Pending queries are tagged with a measure id. `beginMeasure` / `endMeasure`
+ * delete leftovers so one measure() cannot report the previous measure's times.
+ * Each harvest collects every available result, not only the oldest.
  */
 import type { DoctorRendererLike } from './passes/types.js'
 
@@ -28,6 +32,23 @@ interface Webgl2TimerContext {
 interface DisjointTimerExt {
   TIME_ELAPSED_EXT?: number
   GPU_DISJOINT_EXT?: number
+}
+
+interface PendingQuery {
+  query: unknown
+  measureId: number
+}
+
+export interface GpuFrameSampler {
+  begin(): void
+  /** End the active query (if any) and collect every available result for this measure. */
+  end(): number[]
+  /** Collect every available result without ending a new query. */
+  harvest(): number[]
+  /** Drop pending/active queries from a previous measure. */
+  beginMeasure(): void
+  /** Drop leftovers so they cannot enter the next measure. */
+  endMeasure(): void
 }
 
 function readDisjointExt(renderer: DoctorRendererLike, gl: Webgl2TimerContext | null | undefined): unknown {
@@ -55,10 +76,18 @@ function readDisjointExt(renderer: DoctorRendererLike, gl: Webgl2TimerContext | 
   return undefined
 }
 
-export function createGpuFrameSampler(renderer: DoctorRendererLike): {
-  begin(): void
-  end(): number | undefined
-} | undefined {
+/** Yield a macrotask so QUERY_RESULT_AVAILABLE can flip (rAF, else setTimeout(0)). */
+export function waitGpuMacrotask(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => resolve())
+      return
+    }
+    setTimeout(resolve, 0)
+  })
+}
+
+export function createGpuFrameSampler(renderer: DoctorRendererLike): GpuFrameSampler | undefined {
   const gl = renderer.getContext?.() as Webgl2TimerContext | null | undefined
   if (!gl) return undefined
   if (
@@ -79,8 +108,9 @@ export function createGpuFrameSampler(renderer: DoctorRendererLike): {
   const availablePname =
     typeof gl.QUERY_RESULT_AVAILABLE === 'number' ? gl.QUERY_RESULT_AVAILABLE : QUERY_RESULT_AVAILABLE
   const resultPname = typeof gl.QUERY_RESULT === 'number' ? gl.QUERY_RESULT : QUERY_RESULT
-  const pending: unknown[] = []
-  let active: unknown
+  const pending: PendingQuery[] = []
+  let active: PendingQuery | undefined
+  let measureId = 0
 
   const deleteQuery = (query: unknown) => {
     try {
@@ -90,15 +120,36 @@ export function createGpuFrameSampler(renderer: DoctorRendererLike): {
     }
   }
 
-  const harvest = (): number | undefined => {
+  const discardAll = () => {
+    if (active !== undefined) {
+      try {
+        gl.endQuery!(target)
+      } catch {
+        // best-effort
+      }
+      deleteQuery(active.query)
+      active = undefined
+    }
     while (pending.length > 0) {
-      const query = pending[0]
+      deleteQuery(pending.shift()!.query)
+    }
+  }
+
+  const harvest = (): number[] => {
+    const times: number[] = []
+    while (pending.length > 0) {
+      const item = pending[0]!
+      if (item.measureId !== measureId) {
+        pending.shift()
+        deleteQuery(item.query)
+        continue
+      }
       let available: unknown
       try {
-        available = gl.getQueryParameter!(query, availablePname)
+        available = gl.getQueryParameter!(item.query, availablePname)
       } catch {
         pending.shift()
-        deleteQuery(query)
+        deleteQuery(item.query)
         continue
       }
       if (available !== true && available !== 1) break
@@ -114,49 +165,64 @@ export function createGpuFrameSampler(renderer: DoctorRendererLike): {
       }
       let ns: unknown
       try {
-        ns = gl.getQueryParameter!(query, resultPname)
+        ns = gl.getQueryParameter!(item.query, resultPname)
       } catch {
         ns = undefined
       }
-      deleteQuery(query)
+      deleteQuery(item.query)
       if (disjoint) {
-        while (pending.length > 0) {
-          deleteQuery(pending.shift())
-        }
-        return undefined
+        discardAll()
+        return []
       }
-      if (typeof ns === 'number' && Number.isFinite(ns)) return ns / 1e6
+      if (typeof ns === 'number' && Number.isFinite(ns)) times.push(ns / 1e6)
     }
-    return undefined
+    return times
+  }
+
+  const closeActive = () => {
+    if (active === undefined) return
+    try {
+      gl.endQuery!(target)
+      pending.push(active)
+    } catch {
+      deleteQuery(active.query)
+    }
+    active = undefined
   }
 
   return {
     begin() {
       try {
-        if (active !== undefined) {
-          gl.endQuery!(target)
-          pending.push(active)
-          active = undefined
-        }
+        closeActive()
         const query = gl.createQuery!()
         if (!query) return
         gl.beginQuery!(target, query)
-        active = query
+        active = { query, measureId }
       } catch {
         active = undefined
       }
     },
     end() {
       try {
-        if (active !== undefined) {
-          gl.endQuery!(target)
-          pending.push(active)
-          active = undefined
-        }
+        closeActive()
         return harvest()
       } catch {
-        return undefined
+        return []
       }
+    },
+    harvest() {
+      try {
+        return harvest()
+      } catch {
+        return []
+      }
+    },
+    beginMeasure() {
+      measureId += 1
+      discardAll()
+    },
+    endMeasure() {
+      discardAll()
     },
   }
 }

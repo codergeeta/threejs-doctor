@@ -75,6 +75,12 @@ export interface MetricsSample {
   drawingBufferPixels?: number
   /** GPU elapsed ms from EXT_disjoint_timer_query_webgl2 when a result is actually available. */
   gpuFrameTimeMs?: number | undefined
+  /**
+   * Sampler existed but this measure produced no GPU times (tight loop without a
+   * macrotask, leftovers discarded, or QUERY_RESULT never became available).
+   * Never invent `gpuFrameTimeMs` when this is set.
+   */
+  gpuTimingSkipped?: boolean | undefined
   /** Live run was hidden or rAF-throttled; do not treat this sample as a score win. */
   invalid?: boolean | undefined
   invalidReason?: string | undefined

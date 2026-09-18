@@ -47,7 +47,7 @@ import { mountOverlay as mountOverlayImpl, type OverlayHandle } from './overlay/
 import type { QualityHudState } from './overlay/format-quality-hud.js'
 import { readRendererAntialias, readRendererPixelRatio } from './renderer-read.js'
 import { collectHostSceneStats, applyHostInsights, type CollectHostSceneOptions } from './scene-stats.js'
-import { createGpuFrameSampler } from './gpu-timer.js'
+import { createGpuFrameSampler, waitGpuMacrotask } from './gpu-timer.js'
 import { findComposer, notifyPixelRatioChange } from './composer.js'
 import { InstanceLeakTracker } from './instance-leak-tracker.js'
 
@@ -65,6 +65,8 @@ export interface DoctorReport {
   invalid?: boolean
   invalidReason?: string
   visualDelta?: boolean
+  /** GPU sampler existed but this run produced no GPU times (see MetricsSample.gpuTimingSkipped). */
+  gpuTimingSkipped?: boolean
 }
 
 export interface DoctorOptions {
@@ -113,9 +115,15 @@ export interface CameraPose {
 }
 
 export interface VisualGate {
+  /**
+   * Capture RGBA (or similar) pixels. Must use a **fixed viewpoint** (same camera
+   * pose / hook). A moving camera makes control vs after differ and is not a pass delta.
+   */
   capture: () => ArrayLike<number> | Promise<ArrayLike<number>>
   maxChangedRatio?: number
   channelThreshold?: number
+  /** Host confirms capture uses a fixed camera pose. Documented for callers; not inferred. */
+  fixedViewpoint?: boolean
 }
 
 const PASS_REGISTRY: Record<PassId, OptimizePass> = {
@@ -438,21 +446,25 @@ export class Doctor {
     const hadAutoReset = Object.prototype.hasOwnProperty.call(info, 'autoReset')
     const prevAutoReset = info.autoReset
     const gpu = this.gpuFrameSampler()
+    const liveClock = this.opts.now === undefined
     info.autoReset = false
     const callSamples: number[] = []
     const triangleSamples: number[] = []
     const gpuTimes: number[] = []
     let workMs: number | undefined
     const restores: Array<() => void> = []
+    const hooked = new Set<object>()
     const hook = (obj: { render?: (...args: never[]) => unknown } | undefined) => {
       if (!obj || typeof obj.render !== 'function') return
+      if (hooked.has(obj)) return
+      hooked.add(obj)
       const original = obj.render
       obj.render = function wrappedRender(this: unknown, ...args: never[]) {
         const t0 = now()
         try {
           return original.apply(this, args)
         } finally {
-          workMs = now() - t0
+          workMs = (workMs ?? 0) + (now() - t0)
         }
       }
       restores.push(() => {
@@ -465,6 +477,7 @@ export class Doctor {
     if (composer && typeof composer === 'object') {
       hook(composer as { render?: (...args: never[]) => unknown })
     }
+    gpu?.beginMeasure()
     try {
       for (let i = 0; i < frames; i++) {
         info.reset?.()
@@ -474,14 +487,24 @@ export class Doctor {
         gpu?.begin()
         if (waitFrame) await waitFrame()
         else if (renderFrame) await renderFrame()
-        const gpuMs = gpu?.end()
-        if (gpuMs !== undefined) gpuTimes.push(gpuMs)
+        gpuTimes.push(...(gpu?.end() ?? []))
         const end = workMs !== undefined ? start + workMs : now()
         collector.endFrame(end)
         callSamples.push(info.render.calls)
         triangleSamples.push(info.render.triangles)
+        // Without waitFrame, a tight await renderFrame() loop never returns to the
+        // event loop so QUERY_RESULT_AVAILABLE never flips. Yield a macrotask when
+        // a GPU sampler exists so results can complete, or leftovers are discarded.
+        if (gpu && !waitFrame && liveClock) await waitGpuMacrotask()
+      }
+      if (gpu && liveClock) {
+        for (let i = 0; i < 4; i++) {
+          await waitGpuMacrotask()
+          gpuTimes.push(...gpu.harvest())
+        }
       }
     } finally {
+      gpu?.endMeasure()
       for (let i = restores.length - 1; i >= 0; i--) restores[i]!()
       if (hadAutoReset) info.autoReset = prevAutoReset
       else delete (info as { autoReset?: boolean }).autoReset
@@ -491,8 +514,9 @@ export class Doctor {
     if (triangleSamples.length > 0) sample.triangles = median(triangleSamples)
     if (gpuTimes.length > 0) {
       sample.gpuFrameTimeMs = median(gpuTimes)
+    } else if (gpu) {
+      sample.gpuTimingSkipped = true
     }
-    const liveClock = this.opts.now === undefined
     const validityInput: { visibilityState?: string; frameTimesMs: number[] } = {
       frameTimesMs: [...collector.frameTimes()],
     }
@@ -533,6 +557,7 @@ export class Doctor {
       incomplete: false,
     }
     markReportValidity(report, baseline)
+    if (baseline.gpuTimingSkipped) report.gpuTimingSkipped = true
     return report
   }
 
@@ -686,6 +711,8 @@ export class Doctor {
     applyB?: () => void | Promise<void>
     restoreA?: () => void | Promise<void>
     frames?: number
+    /** Optional A-vs-A (or other) control samples for the noise band. */
+    control?: MetricsSample[]
   } = {}): Promise<AbCompareResult> {
     const rounds = opts.rounds ?? 2
     const pose = opts.poses?.[0]
@@ -699,7 +726,9 @@ export class Doctor {
       b.push(await this.measure(opts.frames))
       await opts.restoreA?.()
     }
-    return compareAbSamples({ a, b })
+    const input: { a: MetricsSample[]; b: MetricsSample[]; control?: MetricsSample[] } = { a, b }
+    if (opts.control) input.control = opts.control
+    return compareAbSamples(input)
   }
 
   async optimize(
@@ -749,6 +778,7 @@ export class Doctor {
       report.deltas = diffMetrics(diagnosed.baseline, after)
     }
     markReportValidity(report, after ?? diagnosed.baseline)
+    if ((after ?? diagnosed.baseline).gpuTimingSkipped) report.gpuTimingSkipped = true
     if (options.visualGate && baselinePixels) {
       const candidate = await options.visualGate.capture()
       const candidateChangedRatio = pixelChangedRatio(
@@ -764,8 +794,21 @@ export class Doctor {
       if (options.visualGate.maxChangedRatio !== undefined) {
         verdictOpts.maxChangedRatio = options.visualGate.maxChangedRatio
       }
-      const verdict = classifyVisualSafety(verdictOpts)
-      if (verdict.visualDelta) report.visualDelta = true
+      const firstVerdict = classifyVisualSafety(verdictOpts)
+      if (firstVerdict.visualDelta) {
+        const confirm = await options.visualGate.capture()
+        const confirmRatio = pixelChangedRatio(
+          baselinePixels,
+          confirm,
+          options.visualGate.channelThreshold,
+        )
+        const confirmOpts = { ...verdictOpts, candidateChangedRatio: confirmRatio }
+        const confirmed = classifyVisualSafety(confirmOpts)
+        if (confirmed.visualDelta) {
+          this.rollbackAll()
+          report.visualDelta = true
+        }
+      }
     }
     this.lastReport = report
     this.overlay?.refresh()

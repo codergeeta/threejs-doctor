@@ -124,8 +124,9 @@ describe('P3: pixel-diff visual gate is opt-in', () => {
         maxChangedRatio: 0.05,
       },
     })
-    expect(captures).toBeGreaterThanOrEqual(3)
+    expect(captures).toBeGreaterThanOrEqual(4)
     expect(report.visualDelta).toBe(true)
+    expect(report.appliedPasses.length).toBeGreaterThan(0)
     expect(
       classifyVisualSafety({
         controlChangedRatio: pixelChangedRatio(baseline, baseline),
@@ -133,6 +134,100 @@ describe('P3: pixel-diff visual gate is opt-in', () => {
         maxChangedRatio: 0.05,
       }).safe,
     ).toBe(false)
+  })
+
+  it('rolls back applied passes after a reproduced visual difference', async () => {
+    const baseline = new Uint8ClampedArray([0, 0, 0, 255, 0, 0, 0, 255])
+    const afterPix = new Uint8ClampedArray([255, 0, 0, 255, 255, 0, 0, 255])
+    let captures = 0
+    const renderer = {
+      pixelRatio: 3,
+      getPixelRatio() {
+        return this.pixelRatio
+      },
+      setPixelRatio(v: number) {
+        this.pixelRatio = v
+      },
+      info: { render: { calls: 20, triangles: 4_000 }, memory: { geometries: 2, textures: 1 } },
+      render() {},
+    }
+    const doctor = new Doctor({
+      scene: { children: [], traverse() {} } as never,
+      camera: {},
+      renderer: renderer as never,
+      profile: 'marketing',
+      measureFrames: 1,
+      now: clock(),
+      device: {
+        tier: 'low',
+        maxTextureSize: 4096,
+        webgl: true,
+        webgpu: false,
+        devicePixelRatio: 3,
+        hardwareConcurrency: 4,
+      },
+    })
+    const report = await doctor.optimize({
+      apply: ['dpr-cap'],
+      visualGate: {
+        capture() {
+          captures += 1
+          return captures <= 2 ? baseline : afterPix
+        },
+        maxChangedRatio: 0.05,
+      },
+    })
+    expect(captures).toBeGreaterThanOrEqual(4)
+    expect(report.visualDelta).toBe(true)
+    expect(renderer.pixelRatio).toBe(3)
+  })
+
+  it('does not treat a one-off capture as visualDelta without a confirming second capture', async () => {
+    const baseline = new Uint8ClampedArray([0, 0, 0, 255, 0, 0, 0, 255])
+    const afterPix = new Uint8ClampedArray([255, 0, 0, 255, 255, 0, 0, 255])
+    let captures = 0
+    const renderer = {
+      pixelRatio: 3,
+      getPixelRatio() {
+        return this.pixelRatio
+      },
+      setPixelRatio(v: number) {
+        this.pixelRatio = v
+      },
+      info: { render: { calls: 20, triangles: 4_000 }, memory: { geometries: 2, textures: 1 } },
+      render() {},
+    }
+    const doctor = new Doctor({
+      scene: { children: [], traverse() {} } as never,
+      camera: {},
+      renderer: renderer as never,
+      profile: 'marketing',
+      measureFrames: 1,
+      now: clock(),
+      device: {
+        tier: 'low',
+        maxTextureSize: 4096,
+        webgl: true,
+        webgpu: false,
+        devicePixelRatio: 3,
+        hardwareConcurrency: 4,
+      },
+    })
+    const report = await doctor.optimize({
+      apply: ['dpr-cap'],
+      visualGate: {
+        capture() {
+          captures += 1
+          if (captures <= 2) return baseline
+          if (captures === 3) return afterPix
+          return baseline
+        },
+        maxChangedRatio: 0.05,
+      },
+    })
+    expect(captures).toBeGreaterThanOrEqual(4)
+    expect(report.visualDelta).toBeUndefined()
+    expect(renderer.pixelRatio).toBeLessThan(3)
   })
 })
 
