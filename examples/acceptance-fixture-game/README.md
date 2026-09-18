@@ -24,7 +24,9 @@ There is **no** `window.pelagic`. Live-attach discovers the host object via
 [`docs/superpowers/acceptance/host-integration.md`](../../docs/superpowers/acceptance/host-integration.md).
 
 Do not invent `avgFps` / `ttfiMs` / `after` metrics from this fixture. Capture
-JSON stays off-repo.
+JSON stays off-repo. For trustworthy before/after (fixed poses, noise band,
+invalid hidden/throttled) see
+[`docs/superpowers/acceptance/real-host-followups.md`](../../docs/superpowers/acceptance/real-host-followups.md).
 
 ## Open locally
 

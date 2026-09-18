@@ -5,6 +5,10 @@ import {
   probeDevice,
   readWebglQualitySignals,
   snapshotScene,
+  classifyMeasureValidity,
+  compareAbSamples,
+  pixelChangedRatio,
+  classifyVisualSafety,
   type MetricsSample,
   type Mode,
   type PassId,
@@ -13,6 +17,7 @@ import {
   type SceneSnapshot,
   type SceneStatsLike,
   type QualityTier,
+  type AbCompareResult,
 } from '@threejs-doctor/core'
 import {
   computeDoctorScore,
@@ -54,6 +59,9 @@ export interface DoctorReport {
   appliedPasses: PassId[]
   failedPasses: Array<{ id: PassId; error: string }>
   incomplete: boolean
+  invalid?: boolean
+  invalidReason?: string
+  visualDelta?: boolean
 }
 
 export interface DoctorOptions {
@@ -80,6 +88,18 @@ export interface DoctorOptions {
    * Used when `waitFrame` is omitted. If omitted, Doctor calls `renderer.render(scene, camera)` when present.
    */
   renderFrame?: () => void | Promise<void>
+}
+
+export interface CameraPose {
+  x: number
+  y: number
+  z: number
+}
+
+export interface VisualGate {
+  capture: () => ArrayLike<number> | Promise<ArrayLike<number>>
+  maxChangedRatio?: number
+  channelThreshold?: number
 }
 
 const PASS_REGISTRY: Record<PassId, OptimizePass> = {
@@ -154,7 +174,32 @@ function snapshotFrom(
     lightCount: sample.lightCount,
     shadowCastingLightCount: sample.shadowCastingLightCount,
   }
+  if (sample.gpuFrameTimeMs !== undefined) merged.gpuFrameTimeMs = sample.gpuFrameTimeMs
   return applyHostInsights(merged, collected.insights)
+}
+
+function applyCameraPose(camera: unknown, pose: CameraPose): void {
+  if (!camera || typeof camera !== 'object') return
+  const pos = (camera as { position?: { x: number; y: number; z: number } }).position
+  if (!pos || typeof pos !== 'object') return
+  pos.x = pose.x
+  pos.y = pose.y
+  pos.z = pose.z
+}
+
+function readVisibilityState(): string | undefined {
+  if (typeof document === 'undefined') return undefined
+  return document.visibilityState
+}
+
+function markReportValidity(
+  report: DoctorReport,
+  sample: MetricsSample | undefined,
+): void {
+  if (!sample?.invalid) return
+  report.invalid = true
+  report.incomplete = true
+  if (sample.invalidReason) report.invalidReason = sample.invalidReason
 }
 
 function cameraPositionOf(camera: unknown): PassContext['cameraPosition'] {
@@ -358,6 +403,17 @@ export class Doctor {
     if (gpuTimes.length > 0) {
       sample.gpuFrameTimeMs = gpuTimes.reduce((a, b) => a + b, 0) / gpuTimes.length
     }
+    const liveClock = this.opts.now === undefined
+    const validityInput: { visibilityState?: string; frameTimesMs: number[] } = {
+      frameTimesMs: [...collector.frameTimes()],
+    }
+    const visibility = liveClock ? readVisibilityState() : 'visible'
+    if (visibility !== undefined) validityInput.visibilityState = visibility
+    const validity = classifyMeasureValidity(validityInput)
+    if (validity.invalid) {
+      sample.invalid = true
+      if (validity.reason) sample.invalidReason = validity.reason
+    }
     const width = this.opts.renderer.drawingBufferWidth
     const height = this.opts.renderer.drawingBufferHeight
     const measured =
@@ -376,8 +432,8 @@ export class Doctor {
     const snap = this.currentSnapshot(baseline)
     const profile = this.concreteProfile(snap)
     const findings = runRules(this.ruleContext(snap, device, profile))
-    const score = computeDoctorScore(findings, snap, profile)
-    return {
+    const score = computeDoctorScore(findings, snap, profile, this.previousSnapshot)
+    const report: DoctorReport = {
       profile,
       mode: this.opts.mode ?? 'diagnose',
       score,
@@ -387,6 +443,8 @@ export class Doctor {
       failedPasses: [],
       incomplete: false,
     }
+    markReportValidity(report, baseline)
+    return report
   }
 
   async diagnose(): Promise<DoctorReport> {
@@ -525,8 +583,43 @@ export class Doctor {
     }
   }
 
-  async optimize(options: { apply?: Array<'safe' | 'aggressive' | PassId> } = {}): Promise<DoctorReport> {
+  async compareAb(opts: {
+    rounds?: number
+    poses?: CameraPose[]
+    applyB?: () => void | Promise<void>
+    restoreA?: () => void | Promise<void>
+    frames?: number
+  } = {}): Promise<AbCompareResult> {
+    const rounds = opts.rounds ?? 2
+    const pose = opts.poses?.[0]
+    const a: MetricsSample[] = []
+    const b: MetricsSample[] = []
+    for (let i = 0; i < rounds; i++) {
+      if (pose) applyCameraPose(this.opts.camera, pose)
+      a.push(await this.measure(opts.frames))
+      await opts.applyB?.()
+      if (pose) applyCameraPose(this.opts.camera, pose)
+      b.push(await this.measure(opts.frames))
+      await opts.restoreA?.()
+    }
+    return compareAbSamples({ a, b })
+  }
+
+  async optimize(
+    options: {
+      apply?: Array<'safe' | 'aggressive' | PassId>
+      visualGate?: VisualGate
+    } = {},
+  ): Promise<DoctorReport> {
     const diagnosed = await this.buildDiagnoseReport()
+    let controlChangedRatio = 0
+    let baselinePixels: ArrayLike<number> | undefined
+    if (options.visualGate) {
+      const first = await options.visualGate.capture()
+      const second = await options.visualGate.capture()
+      baselinePixels = first
+      controlChangedRatio = pixelChangedRatio(first, second, options.visualGate.channelThreshold)
+    }
     const passIds = resolvePassIds(options.apply ?? ['safe'])
     const { appliedPasses, failedPasses } = this.applyPassesImmediate(passIds)
     const device = this.device()
@@ -543,7 +636,7 @@ export class Doctor {
     const sampleForRules = after ?? diagnosed.baseline
     const snap = this.currentSnapshot(sampleForRules)
     const findings = runRules(this.ruleContext(snap, device, diagnosed.profile))
-    const score = computeDoctorScore(findings, snap, diagnosed.profile)
+    const score = computeDoctorScore(findings, snap, diagnosed.profile, this.previousSnapshot)
     const report: DoctorReport = {
       profile: diagnosed.profile,
       mode: 'optimize',
@@ -557,6 +650,25 @@ export class Doctor {
     if (after) {
       report.after = after
       report.deltas = diffMetrics(diagnosed.baseline, after)
+    }
+    markReportValidity(report, after ?? diagnosed.baseline)
+    if (options.visualGate && baselinePixels) {
+      const candidate = await options.visualGate.capture()
+      const candidateChangedRatio = pixelChangedRatio(
+        baselinePixels,
+        candidate,
+        options.visualGate.channelThreshold,
+      )
+      const verdictOpts: {
+        controlChangedRatio: number
+        candidateChangedRatio: number
+        maxChangedRatio?: number
+      } = { controlChangedRatio, candidateChangedRatio }
+      if (options.visualGate.maxChangedRatio !== undefined) {
+        verdictOpts.maxChangedRatio = options.visualGate.maxChangedRatio
+      }
+      const verdict = classifyVisualSafety(verdictOpts)
+      if (verdict.visualDelta) report.visualDelta = true
     }
     this.lastReport = report
     this.overlay?.refresh()

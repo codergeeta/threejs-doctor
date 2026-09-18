@@ -56,4 +56,8 @@ export class MetricsCollector {
     }
     return sample
   }
+
+  frameTimes(): readonly number[] {
+    return this.frameTimesMs
+  }
 }

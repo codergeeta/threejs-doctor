@@ -58,6 +58,9 @@ export interface MetricsSample {
   drawingBufferPixels?: number
   /** GPU elapsed ms from EXT_disjoint_timer_query_webgl2 when a result is actually available. */
   gpuFrameTimeMs?: number | undefined
+  /** Live run was hidden or rAF-throttled; do not treat this sample as a score win. */
+  invalid?: boolean | undefined
+  invalidReason?: string | undefined
 }
 
 export interface SceneSnapshot {
@@ -102,6 +105,8 @@ export interface SceneSnapshot {
   composerHeight?: number | undefined
   drawingBufferWidth?: number | undefined
   drawingBufferHeight?: number | undefined
+  /** Copied from a measured sample only when EXT_disjoint_timer_query_webgl2 returned a result. */
+  gpuFrameTimeMs?: number | undefined
 }
 
 export interface RendererInfoLike {

@@ -50,4 +50,34 @@ describe('computeDoctorScore', () => {
       computeDoctorScore([], { ...healthy, estimatedVramBytes: 129_000_000 }, 'product'),
     ).toBe(90)
   })
+
+  it('penalizes over-budget scene triangles so a material drop improves score', () => {
+    const heavy = computeDoctorScore([], { ...healthy, geometryTriangleCount: 400_000, triangles: 400_000 }, 'game')
+    const light = computeDoctorScore([], { ...healthy, geometryTriangleCount: 84_000, triangles: 84_000 }, 'game')
+    expect(heavy).toBeLessThan(100)
+    expect(light).toBeGreaterThan(heavy)
+  })
+
+  it('boosts score when measured GPU time drops and both values were actually sampled', () => {
+    const before = { ...healthy, geometryTriangleCount: 100_000, gpuFrameTimeMs: 12 }
+    const after = { ...healthy, geometryTriangleCount: 21_000, gpuFrameTimeMs: 10.5 }
+    const sameFindings: Finding[] = [
+      {
+        id: 'draw-calls/too-many',
+        severity: 'warn',
+        evidence: { drawCalls: 180 },
+        message: 'too many',
+        suggestedFix: 'instance',
+      },
+    ]
+    const beforeScore = computeDoctorScore(sameFindings, before, 'game')
+    const afterScore = computeDoctorScore(sameFindings, after, 'game', before)
+    expect(afterScore).toBeGreaterThan(beforeScore)
+  })
+
+  it('does not invent a GPU bonus when gpuFrameTimeMs is omitted', () => {
+    const before = { ...healthy, geometryTriangleCount: 100_000 }
+    const after = { ...healthy, geometryTriangleCount: 100_000 }
+    expect(computeDoctorScore([], after, 'game', before)).toBe(100)
+  })
 })

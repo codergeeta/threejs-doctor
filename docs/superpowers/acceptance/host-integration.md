@@ -45,3 +45,15 @@ adapter. **Do not fake `pelagic` on other games.**
 
 Phone-class bar: [live-ocean-capture.md](./live-ocean-capture.md). Box-desktop
 notes (not §3): [box-desktop-evidence.md](./box-desktop-evidence.md).
+Before/after honesty (noise band, invalid hidden/throttled, opt-in pixel-diff):
+[real-host-followups.md](./real-host-followups.md) **P3**.
+
+## Do not treat mocks as proof
+
+Headless bench fixtures and tests that inject `now()` (fixed 16ms clocks) are
+**CI smoke**. They do not prove a pass is visually safe or that FPS improved.
+Compare runs need a **fixed camera pose**; moving scenes were ~50% noisy in the
+arcade-racer report, ~2% at a locked pose. Never claim a win inside the noise
+band (`compareAbSamples` / `Doctor.compareAb`). A live run with
+`document.visibilityState === 'hidden'` or throttled rAF is `invalid` /
+`incomplete` — not a score.

@@ -21,9 +21,22 @@ No new destructive safe passes. Fields are omitted when they cannot be counted.
 - **Intensity 0.** `lights/zero-intensity` for lights with `intensity <= 0` that are still `visible !== false`. Suggest remove/disable rather than intensity 0.
 - **InstancedMesh leaks.** `lifecycle/instance-buffer-growth` when `instanceMatrix`/`instanceColor` byte length (or `count × 16 × 4`) grows between measures even if geometry/texture counts stay flat.
 
-## P3 — trustworthy before/after
+## P3 — trustworthy before/after (done, scaffolding)
 
-Stable A/B (fixed poses, interleaved, noise band); pixel-diff before calling a pass "safe"; invalidate when hidden/throttled; score by measured cost; test real scenes, not only fixed-clock mocks.
+Prefer **invalid/incomplete** over a pretty false win. Fixed-clock mocks are not proof that a pass is visually safe on a real scene.
+
+- **Stable A/B.** `compareAbSamples({ a, b })` averages interleaved rounds and builds a noise band from **A-round spread** (half-range). `claimAbDelta` never returns `win` inside that band. `Doctor.compareAb({ rounds, poses, applyB, restoreA })` pins a camera pose and interleaves A/B measures. Moving scenes without fixed poses are high-noise (~50% in the arcade-racer write-up); fixed poses were ~2%. The 2% floor is **not invented as a GPU number** — it is the documented host observation, and the harness uses the measured A variance.
+- **Pixel-diff gate.** Opt-in: `optimize({ apply: ['safe'], visualGate: { capture, maxChangedRatio } })`. Control = capture twice before applying; if the candidate buffer changes more than `max(control, maxChangedRatio)` pixels, `visualDelta: true` (do not treat the pass as visually safe). Default runtime does **not** call `readPixels`. Unit tests use mocked RGBA buffers.
+- **Hidden / throttled.** Live `measure()` (no synthetic `now`) sets `invalid` + `incomplete` when `document.visibilityState === 'hidden'`. Frame gaps ≥250ms (≥2 gaps, or any ≥1000ms) set `invalidReason: 'throttled-raf'`. Synthetic clocks used in unit tests are not treated as hidden tabs.
+- **Score by measured cost.** `computeDoctorScore` applies a sliding penalty for `geometryTriangleCount` (else `triangles`) vs the profile budget, and a bonus when a **previous** snapshot shows a ≥20% triangle drop or a ≥10% drop in **measured** `gpuFrameTimeMs`. GPU time is never invented.
+- **Real-scene testing.** Acceptance is [`real-host-followups.md`](./real-host-followups.md) plus unpublished fixtures ([`examples/acceptance-fixture`](../../../examples/acceptance-fixture), [`examples/acceptance-fixture-game`](../../../examples/acceptance-fixture-game)). See [host-integration.md](./host-integration.md). Headless bench fixtures / fixed `now()` clocks are CI smoke, not evidence that a pass is safe.
+
+### Residual limits
+
+- No default GPU readback; visual gate is opt-in and test-harness sized.
+- Noise band is A-round half-range, not a confidence interval.
+- Score still starts from findings; cost weighting is a directional correction, not a full profiler.
+- Hidden-tab detection is skipped when the host injects `now()` (unit tests).
 
 ## distance-cull (opt-in)
 

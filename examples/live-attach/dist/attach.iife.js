@@ -513,6 +513,9 @@
       }
       return sample;
     }
+    frameTimes() {
+      return this.frameTimesMs;
+    }
   };
 
   // ../../packages/core/src/quality-caps.ts
@@ -782,6 +785,129 @@
     return { startTier: "high", maxTier: "high", mobile: false, noFloatRt: false };
   }
 
+  // ../../packages/core/src/ab-compare.ts
+  var LOWER_BETTER = [
+    "p95FrameTimeMs",
+    "drawCalls",
+    "triangles",
+    "textureCount",
+    "estimatedVramBytes",
+    "geometryCount",
+    "lightCount",
+    "shadowCastingLightCount",
+    "gpuFrameTimeMs",
+    "drawingBufferPixels"
+  ];
+  var HIGHER_BETTER = ["avgFps"];
+  function claimAbDelta(before, after, band, direction) {
+    const threshold = Math.max(band.abs, Math.abs(before) * band.rel);
+    const delta = after - before;
+    if (Math.abs(delta) <= threshold) return "inside-noise";
+    if (direction === "lower-better") return delta < 0 ? "win" : "loss";
+    return delta > 0 ? "win" : "loss";
+  }
+  function mean(values) {
+    return values.reduce((a, b) => a + b, 0) / values.length;
+  }
+  function noiseFromControl(values) {
+    const avg = mean(values);
+    const halfRange = (Math.max(...values) - Math.min(...values)) / 2;
+    const abs = Math.max(halfRange, 0);
+    const rel = Math.abs(avg) > 0 ? abs / Math.abs(avg) : 0;
+    return { abs, rel };
+  }
+  function numericSeries(samples, key) {
+    const values = [];
+    for (const sample of samples) {
+      const value = sample[key];
+      if (typeof value !== "number" || !Number.isFinite(value)) return void 0;
+      values.push(value);
+    }
+    return values.length > 0 ? values : void 0;
+  }
+  function averageSample(samples) {
+    const keys = Object.keys(samples[0]);
+    const out = { ...samples[0] };
+    for (const key of keys) {
+      const series = numericSeries(samples, key);
+      if (!series) {
+        delete out[key];
+        continue;
+      }
+      ;
+      out[key] = mean(series);
+    }
+    return out;
+  }
+  function compareAbSamples(input) {
+    const before = averageSample(input.a);
+    const after = averageSample(input.b);
+    const deltas = {};
+    const noiseBand = {};
+    const claimed = {};
+    const keys = /* @__PURE__ */ new Set([
+      ...Object.keys(before),
+      ...Object.keys(after)
+    ]);
+    for (const key of keys) {
+      const aSeries = numericSeries(input.a, key);
+      const bSeries = numericSeries(input.b, key);
+      const bVal = after[key];
+      const aVal = before[key];
+      if (typeof aVal !== "number" || typeof bVal !== "number" || !aSeries || !bSeries) continue;
+      deltas[key] = bVal - aVal;
+      const band = noiseFromControl(aSeries);
+      noiseBand[key] = band;
+      const direction = HIGHER_BETTER.includes(key) ? "higher-better" : "lower-better";
+      if (!LOWER_BETTER.includes(key) && !HIGHER_BETTER.includes(key)) continue;
+      claimed[key] = claimAbDelta(aVal, bVal, band, direction);
+    }
+    const result = { before, after, deltas, noiseBand, claimed };
+    const invalidSample = input.a.find((s) => s.invalid) ?? input.b.find((s) => s.invalid);
+    if (invalidSample) {
+      result.invalid = true;
+      if (invalidSample.invalidReason) result.invalidReason = invalidSample.invalidReason;
+    }
+    return result;
+  }
+
+  // ../../packages/core/src/pixel-diff.ts
+  function pixelChangedRatio(a, b, channelThreshold = 8) {
+    const len = Math.min(a.length, b.length);
+    if (len < 4) return a.length === b.length ? 0 : 1;
+    const pixels = Math.floor(len / 4);
+    let changed = 0;
+    for (let i = 0; i < pixels; i++) {
+      const o = i * 4;
+      const dr = Math.abs(Number(a[o]) - Number(b[o]));
+      const dg = Math.abs(Number(a[o + 1]) - Number(b[o + 1]));
+      const db = Math.abs(Number(a[o + 2]) - Number(b[o + 2]));
+      const da = Math.abs(Number(a[o + 3]) - Number(b[o + 3]));
+      if (Math.max(dr, dg, db, da) > channelThreshold) changed += 1;
+    }
+    if (a.length !== b.length) return 1;
+    return changed / pixels;
+  }
+  function classifyVisualSafety(opts2) {
+    const maxChangedRatio = opts2.maxChangedRatio ?? 0.02;
+    const floor = Math.max(maxChangedRatio, opts2.controlChangedRatio);
+    const visualDelta = opts2.candidateChangedRatio > floor;
+    return { safe: !visualDelta, visualDelta };
+  }
+
+  // ../../packages/core/src/measure-validity.ts
+  function classifyMeasureValidity(input) {
+    if (input.visibilityState === "hidden") {
+      return { invalid: true, reason: "hidden" };
+    }
+    const throttleMs = input.throttleMs ?? 250;
+    const throttled = input.frameTimesMs.filter((ms) => ms >= throttleMs);
+    if (throttled.some((ms) => ms >= 1e3) || throttled.length >= 2) {
+      return { invalid: true, reason: "throttled-raf" };
+    }
+    return { invalid: false };
+  }
+
   // ../../packages/rules/src/profiles.ts
   var PROFILE_BUDGETS = {
     marketing: {
@@ -843,7 +969,7 @@
 
   // ../../packages/rules/src/score.ts
   var SEVERITY_PENALTY = { info: 2, warn: 8, error: 18 };
-  function computeDoctorScore(findings, snapshot, profile) {
+  function computeDoctorScore(findings, snapshot, profile, previous) {
     let score = 100;
     for (const f of findings) score -= SEVERITY_PENALTY[f.severity];
     const budgets = PROFILE_BUDGETS[profile];
@@ -852,6 +978,22 @@
     }
     if (typeof snapshot.estimatedVramBytes === "number" && snapshot.estimatedVramBytes > budgets.maxEstimatedVramBytes) {
       score -= 10;
+    }
+    const triCost = snapshot.geometryTriangleCount ?? snapshot.triangles;
+    if (typeof triCost === "number" && triCost > budgets.maxTriangles) {
+      score -= Math.min(15, Math.floor((triCost / budgets.maxTriangles - 1) * 10));
+    }
+    if (previous) {
+      const prevTri = previous.geometryTriangleCount ?? previous.triangles;
+      const nextTri = snapshot.geometryTriangleCount ?? snapshot.triangles;
+      if (typeof prevTri === "number" && typeof nextTri === "number" && prevTri > 0 && nextTri < prevTri * 0.8) {
+        score += Math.min(10, Math.round((1 - nextTri / prevTri) * 12));
+      }
+      const prevGpu = previous.gpuFrameTimeMs;
+      const nextGpu = snapshot.gpuFrameTimeMs;
+      if (typeof prevGpu === "number" && typeof nextGpu === "number" && prevGpu > 0 && nextGpu < prevGpu * 0.9) {
+        score += Math.min(8, Math.round((1 - nextGpu / prevGpu) * 20));
+      }
     }
     return Math.max(0, Math.min(100, Math.round(score)));
   }
@@ -2268,7 +2410,26 @@ ${line2}` : line1;
       lightCount: sample.lightCount,
       shadowCastingLightCount: sample.shadowCastingLightCount
     };
+    if (sample.gpuFrameTimeMs !== void 0) merged.gpuFrameTimeMs = sample.gpuFrameTimeMs;
     return applyHostInsights(merged, collected.insights);
+  }
+  function applyCameraPose(camera, pose) {
+    if (!camera || typeof camera !== "object") return;
+    const pos = camera.position;
+    if (!pos || typeof pos !== "object") return;
+    pos.x = pose.x;
+    pos.y = pose.y;
+    pos.z = pose.z;
+  }
+  function readVisibilityState() {
+    if (typeof document === "undefined") return void 0;
+    return document.visibilityState;
+  }
+  function markReportValidity(report, sample) {
+    if (!sample?.invalid) return;
+    report.invalid = true;
+    report.incomplete = true;
+    if (sample.invalidReason) report.invalidReason = sample.invalidReason;
   }
   function cameraPositionOf(camera) {
     if (!camera || typeof camera !== "object") return void 0;
@@ -2445,6 +2606,17 @@ ${line2}` : line1;
       if (gpuTimes.length > 0) {
         sample.gpuFrameTimeMs = gpuTimes.reduce((a, b) => a + b, 0) / gpuTimes.length;
       }
+      const liveClock = this.opts.now === void 0;
+      const validityInput = {
+        frameTimesMs: [...collector.frameTimes()]
+      };
+      const visibility = liveClock ? readVisibilityState() : "visible";
+      if (visibility !== void 0) validityInput.visibilityState = visibility;
+      const validity = classifyMeasureValidity(validityInput);
+      if (validity.invalid) {
+        sample.invalid = true;
+        if (validity.reason) sample.invalidReason = validity.reason;
+      }
       const width = this.opts.renderer.drawingBufferWidth;
       const height = this.opts.renderer.drawingBufferHeight;
       const measured = typeof width === "number" && typeof height === "number" ? { ...sample, drawingBufferPixels: width * height } : sample;
@@ -2459,8 +2631,8 @@ ${line2}` : line1;
       const snap = this.currentSnapshot(baseline);
       const profile = this.concreteProfile(snap);
       const findings = runRules(this.ruleContext(snap, device, profile));
-      const score = computeDoctorScore(findings, snap, profile);
-      return {
+      const score = computeDoctorScore(findings, snap, profile, this.previousSnapshot);
+      const report = {
         profile,
         mode: this.opts.mode ?? "diagnose",
         score,
@@ -2470,6 +2642,8 @@ ${line2}` : line1;
         failedPasses: [],
         incomplete: false
       };
+      markReportValidity(report, baseline);
+      return report;
     }
     async diagnose() {
       const report = await this.buildDiagnoseReport();
@@ -2585,8 +2759,31 @@ ${line2}` : line1;
       } catch {
       }
     }
+    async compareAb(opts2 = {}) {
+      const rounds = opts2.rounds ?? 2;
+      const pose = opts2.poses?.[0];
+      const a = [];
+      const b = [];
+      for (let i = 0; i < rounds; i++) {
+        if (pose) applyCameraPose(this.opts.camera, pose);
+        a.push(await this.measure(opts2.frames));
+        await opts2.applyB?.();
+        if (pose) applyCameraPose(this.opts.camera, pose);
+        b.push(await this.measure(opts2.frames));
+        await opts2.restoreA?.();
+      }
+      return compareAbSamples({ a, b });
+    }
     async optimize(options = {}) {
       const diagnosed = await this.buildDiagnoseReport();
+      let controlChangedRatio = 0;
+      let baselinePixels;
+      if (options.visualGate) {
+        const first = await options.visualGate.capture();
+        const second = await options.visualGate.capture();
+        baselinePixels = first;
+        controlChangedRatio = pixelChangedRatio(first, second, options.visualGate.channelThreshold);
+      }
       const passIds = resolvePassIds(options.apply ?? ["safe"]);
       const { appliedPasses, failedPasses } = this.applyPassesImmediate(passIds);
       const device = this.device();
@@ -2601,7 +2798,7 @@ ${line2}` : line1;
       const sampleForRules = after ?? diagnosed.baseline;
       const snap = this.currentSnapshot(sampleForRules);
       const findings = runRules(this.ruleContext(snap, device, diagnosed.profile));
-      const score = computeDoctorScore(findings, snap, diagnosed.profile);
+      const score = computeDoctorScore(findings, snap, diagnosed.profile, this.previousSnapshot);
       const report = {
         profile: diagnosed.profile,
         mode: "optimize",
@@ -2615,6 +2812,21 @@ ${line2}` : line1;
       if (after) {
         report.after = after;
         report.deltas = diffMetrics(diagnosed.baseline, after);
+      }
+      markReportValidity(report, after ?? diagnosed.baseline);
+      if (options.visualGate && baselinePixels) {
+        const candidate = await options.visualGate.capture();
+        const candidateChangedRatio = pixelChangedRatio(
+          baselinePixels,
+          candidate,
+          options.visualGate.channelThreshold
+        );
+        const verdictOpts = { controlChangedRatio, candidateChangedRatio };
+        if (options.visualGate.maxChangedRatio !== void 0) {
+          verdictOpts.maxChangedRatio = options.visualGate.maxChangedRatio;
+        }
+        const verdict = classifyVisualSafety(verdictOpts);
+        if (verdict.visualDelta) report.visualDelta = true;
       }
       this.lastReport = report;
       this.overlay?.refresh();

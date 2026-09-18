@@ -23,7 +23,10 @@ A heavier unpublished mini-game with the same hook:
 [`examples/acceptance-fixture-game`](../acceptance-fixture-game/README.md).
 
 Do not invent `avgFps` / `ttfiMs` / `after` metrics from this fixture. Capture
-JSON stays off-repo.
+JSON stays off-repo. This page is a **host hook** for live-attach, not a
+substitute for a locked-pose A/B on a real game. See
+[`docs/superpowers/acceptance/real-host-followups.md`](../../docs/superpowers/acceptance/real-host-followups.md)
+(P3: noise band, invalid hidden/throttled, opt-in pixel-diff).
 
 ## Open locally
 
