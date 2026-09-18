@@ -40,7 +40,7 @@ import { materialDowngradePass } from './passes/material-downgrade.js'
 import { mountOverlay as mountOverlayImpl, type OverlayHandle } from './overlay/mount-overlay.js'
 import type { QualityHudState } from './overlay/format-quality-hud.js'
 import { readRendererAntialias, readRendererPixelRatio } from './renderer-read.js'
-import { collectHostSceneStats } from './scene-stats.js'
+import { collectHostSceneStats, applyHostInsights } from './scene-stats.js'
 import { createGpuFrameSampler } from './gpu-timer.js'
 
 export interface DoctorReport {
@@ -114,6 +114,7 @@ function snapshotFrom(
   renderer: DoctorRendererLike,
   scene: DoctorSceneLike,
   continuousFrameloop: boolean,
+  camera?: unknown,
 ): SceneSnapshot {
   let objectCount = 0
   let meshCount = 0
@@ -130,7 +131,7 @@ function snapshotFrom(
       if (mat.uuid) materials.push({ uuid: mat.uuid })
     }
   })
-  const collected = collectHostSceneStats(scene, renderer)
+  const collected = collectHostSceneStats(scene, renderer, camera)
   const walked = snapshotScene({
     objectCount,
     meshCount,
@@ -145,7 +146,7 @@ function snapshotFrom(
     rendererPixelRatio: readRendererPixelRatio(renderer),
     antialias: readRendererAntialias(renderer),
   })
-  return {
+  const merged: SceneSnapshot = {
     ...walked,
     geometryCount: sample.geometryCount,
     textureCount: sample.textureCount,
@@ -153,6 +154,7 @@ function snapshotFrom(
     lightCount: sample.lightCount,
     shadowCastingLightCount: sample.shadowCastingLightCount,
   }
+  return applyHostInsights(merged, collected.insights)
 }
 
 function cameraPositionOf(camera: unknown): PassContext['cameraPosition'] {
@@ -283,6 +285,7 @@ export class Doctor {
       this.opts.renderer,
       this.opts.scene,
       this.frameloop === 'always',
+      this.opts.camera,
     )
   }
 

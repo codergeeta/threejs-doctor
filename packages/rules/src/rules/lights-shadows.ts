@@ -29,6 +29,36 @@ export const lightsShadowsRule: Rule = {
         autoFix: 'shadow-budget' as const,
       })
     }
+    const shadowTris = ctx.snapshot.shadowTriangleCount
+    if (typeof shadowTris === 'number' && shadowTris > budgets.maxShadowTriangles) {
+      findings.push({
+        id: 'shadows/expensive-pass',
+        severity: shadowTris > budgets.maxShadowTriangles * 1.5 ? ('error' as const) : ('warn' as const),
+        evidence: { shadowTriangleCount: shadowTris, budget: budgets.maxShadowTriangles },
+        message: `Shadow-pass triangles ${shadowTris} exceed budget ${budgets.maxShadowTriangles}`,
+        suggestedFix: 'Disable castShadow on heavy InstancedMeshes or tighten the shadow camera',
+      })
+    }
+    const outside = ctx.snapshot.shadowCastersOutsideFrustum
+    if (typeof outside === 'number' && outside > 0) {
+      findings.push({
+        id: 'shadows/casters-outside-frustum',
+        severity: 'info' as const,
+        evidence: { shadowCastersOutsideFrustum: outside },
+        message: `${outside} shadow caster(s) sit outside every detectable shadow camera`,
+        suggestedFix: 'Disable castShadow on objects that never intersect the shadow camera',
+      })
+    }
+    const zero = ctx.snapshot.zeroIntensityLightCount
+    if (typeof zero === 'number' && zero > 0) {
+      findings.push({
+        id: 'lights/zero-intensity',
+        severity: 'warn' as const,
+        evidence: { zeroIntensityLightCount: zero },
+        message: `${zero} visible light(s) have intensity 0 but still participate in lighting`,
+        suggestedFix: 'Remove or disable lights instead of leaving intensity at 0',
+      })
+    }
     return findings
   },
 }

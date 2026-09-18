@@ -8,13 +8,47 @@ export interface ProfileBudgets {
   maxDpr: number
   maxLights: number
   maxEstimatedVramBytes: number
+  maxTriangles: number
+  maxShadowTriangles: number
 }
 
 export const PROFILE_BUDGETS: Record<ConcreteProfile, ProfileBudgets> = {
-  marketing: { maxDrawCalls: 80, maxShadowCasters: 1, maxDpr: 1.5, maxLights: 3, maxEstimatedVramBytes: 64_000_000 },
-  product: { maxDrawCalls: 100, maxShadowCasters: 2, maxDpr: 2, maxLights: 4, maxEstimatedVramBytes: 128_000_000 },
-  game: { maxDrawCalls: 150, maxShadowCasters: 3, maxDpr: 2, maxLights: 6, maxEstimatedVramBytes: 256_000_000 },
-  cad: { maxDrawCalls: 120, maxShadowCasters: 2, maxDpr: 2, maxLights: 4, maxEstimatedVramBytes: 256_000_000 },
+  marketing: {
+    maxDrawCalls: 80,
+    maxShadowCasters: 1,
+    maxDpr: 1.5,
+    maxLights: 3,
+    maxEstimatedVramBytes: 64_000_000,
+    maxTriangles: 80_000,
+    maxShadowTriangles: 50_000,
+  },
+  product: {
+    maxDrawCalls: 100,
+    maxShadowCasters: 2,
+    maxDpr: 2,
+    maxLights: 4,
+    maxEstimatedVramBytes: 128_000_000,
+    maxTriangles: 150_000,
+    maxShadowTriangles: 100_000,
+  },
+  game: {
+    maxDrawCalls: 150,
+    maxShadowCasters: 3,
+    maxDpr: 2,
+    maxLights: 6,
+    maxEstimatedVramBytes: 256_000_000,
+    maxTriangles: 300_000,
+    maxShadowTriangles: 200_000,
+  },
+  cad: {
+    maxDrawCalls: 120,
+    maxShadowCasters: 2,
+    maxDpr: 2,
+    maxLights: 4,
+    maxEstimatedVramBytes: 256_000_000,
+    maxTriangles: 500_000,
+    maxShadowTriangles: 300_000,
+  },
 }
 
 /**

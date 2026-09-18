@@ -79,9 +79,10 @@ describe('resolveProfile', () => {
 })
 
 describe('defaultRules and runRules', () => {
-  it('registers all nine v1 rules in order', () => {
+  it('registers v1 rules plus P2 triangles and culling', () => {
     expect(defaultRules.map((rule) => rule.id)).toEqual([
       'draw-calls',
+      'triangles',
       'lights-shadows',
       'dpr',
       'materials',
@@ -89,6 +90,7 @@ describe('defaultRules and runRules', () => {
       'renderer-setup',
       'lifecycle',
       'transforms',
+      'culling',
       'frameloop',
     ])
   })

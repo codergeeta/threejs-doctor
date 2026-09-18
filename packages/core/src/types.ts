@@ -78,6 +78,30 @@ export interface SceneSnapshot {
   rendererPixelRatio?: number | undefined
   /** MSAA flag from GL context attributes when known. */
   antialias?: boolean | undefined
+  /**
+   * Scene-graph triangle lower bound: indexed/non-indexed geometry × InstancedMesh.count.
+   * Omitted when no mesh geometry could be counted.
+   */
+  geometryTriangleCount?: number | undefined
+  /** Top contributor as `name:triangles` (first of top-N). Omitted when none counted. */
+  triangleContributorSummary?: string | undefined
+  topContributorShare?: number | undefined
+  frustumCulledDisabledCount?: number | undefined
+  /**
+   * Meshes whose world bounding-sphere radius is greater than `camera.far`.
+   * Omitted when camera.far or a bounding sphere cannot be read.
+   */
+  oversizedBoundCount?: number | undefined
+  shadowTriangleCount?: number | undefined
+  /** Casters fully outside every detectable shadow camera. Omitted when no shadow camera is testable. */
+  shadowCastersOutsideFrustum?: number | undefined
+  zeroIntensityLightCount?: number | undefined
+  instancedBufferBytes?: number | undefined
+  composerPixelRatio?: number | undefined
+  composerWidth?: number | undefined
+  composerHeight?: number | undefined
+  drawingBufferWidth?: number | undefined
+  drawingBufferHeight?: number | undefined
 }
 
 export interface RendererInfoLike {

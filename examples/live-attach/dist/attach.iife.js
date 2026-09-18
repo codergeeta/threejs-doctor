@@ -784,10 +784,42 @@
 
   // ../../packages/rules/src/profiles.ts
   var PROFILE_BUDGETS = {
-    marketing: { maxDrawCalls: 80, maxShadowCasters: 1, maxDpr: 1.5, maxLights: 3, maxEstimatedVramBytes: 64e6 },
-    product: { maxDrawCalls: 100, maxShadowCasters: 2, maxDpr: 2, maxLights: 4, maxEstimatedVramBytes: 128e6 },
-    game: { maxDrawCalls: 150, maxShadowCasters: 3, maxDpr: 2, maxLights: 6, maxEstimatedVramBytes: 256e6 },
-    cad: { maxDrawCalls: 120, maxShadowCasters: 2, maxDpr: 2, maxLights: 4, maxEstimatedVramBytes: 256e6 }
+    marketing: {
+      maxDrawCalls: 80,
+      maxShadowCasters: 1,
+      maxDpr: 1.5,
+      maxLights: 3,
+      maxEstimatedVramBytes: 64e6,
+      maxTriangles: 8e4,
+      maxShadowTriangles: 5e4
+    },
+    product: {
+      maxDrawCalls: 100,
+      maxShadowCasters: 2,
+      maxDpr: 2,
+      maxLights: 4,
+      maxEstimatedVramBytes: 128e6,
+      maxTriangles: 15e4,
+      maxShadowTriangles: 1e5
+    },
+    game: {
+      maxDrawCalls: 150,
+      maxShadowCasters: 3,
+      maxDpr: 2,
+      maxLights: 6,
+      maxEstimatedVramBytes: 256e6,
+      maxTriangles: 3e5,
+      maxShadowTriangles: 2e5
+    },
+    cad: {
+      maxDrawCalls: 120,
+      maxShadowCasters: 2,
+      maxDpr: 2,
+      maxLights: 4,
+      maxEstimatedVramBytes: 256e6,
+      maxTriangles: 5e5,
+      maxShadowTriangles: 3e5
+    }
   };
   function resolveProfile(profile, snapshot) {
     if (profile !== "auto") return profile;
@@ -873,6 +905,36 @@
           autoFix: "shadow-budget"
         });
       }
+      const shadowTris = ctx.snapshot.shadowTriangleCount;
+      if (typeof shadowTris === "number" && shadowTris > budgets.maxShadowTriangles) {
+        findings.push({
+          id: "shadows/expensive-pass",
+          severity: shadowTris > budgets.maxShadowTriangles * 1.5 ? "error" : "warn",
+          evidence: { shadowTriangleCount: shadowTris, budget: budgets.maxShadowTriangles },
+          message: `Shadow-pass triangles ${shadowTris} exceed budget ${budgets.maxShadowTriangles}`,
+          suggestedFix: "Disable castShadow on heavy InstancedMeshes or tighten the shadow camera"
+        });
+      }
+      const outside = ctx.snapshot.shadowCastersOutsideFrustum;
+      if (typeof outside === "number" && outside > 0) {
+        findings.push({
+          id: "shadows/casters-outside-frustum",
+          severity: "info",
+          evidence: { shadowCastersOutsideFrustum: outside },
+          message: `${outside} shadow caster(s) sit outside every detectable shadow camera`,
+          suggestedFix: "Disable castShadow on objects that never intersect the shadow camera"
+        });
+      }
+      const zero = ctx.snapshot.zeroIntensityLightCount;
+      if (typeof zero === "number" && zero > 0) {
+        findings.push({
+          id: "lights/zero-intensity",
+          severity: "warn",
+          evidence: { zeroIntensityLightCount: zero },
+          message: `${zero} visible light(s) have intensity 0 but still participate in lighting`,
+          suggestedFix: "Remove or disable lights instead of leaving intensity at 0"
+        });
+      }
       return findings;
     }
   };
@@ -954,23 +1016,64 @@
   };
 
   // ../../packages/rules/src/rules/renderer-setup.ts
+  function composerResolutionMismatch(snapshot) {
+    const detected = snapshot.composerWidth !== void 0 || snapshot.composerHeight !== void 0 || snapshot.composerPixelRatio !== void 0;
+    if (!detected) return false;
+    const cpr = snapshot.composerPixelRatio;
+    const rpr = snapshot.rendererPixelRatio;
+    if (typeof cpr === "number" && typeof rpr === "number" && Math.abs(cpr - rpr) > 0.05) {
+      return true;
+    }
+    const cw = snapshot.composerWidth;
+    const ch = snapshot.composerHeight;
+    const dw = snapshot.drawingBufferWidth;
+    const dh = snapshot.drawingBufferHeight;
+    if (typeof cw === "number" && typeof ch === "number" && typeof dw === "number" && typeof dh === "number" && dw > 0 && dh > 0) {
+      const ratio = cw * ch / (dw * dh);
+      if (ratio < 0.9 || ratio > 1.1) return true;
+    }
+    return false;
+  }
   var rendererSetupRule = {
     id: "renderer-setup",
     run(ctx) {
+      const findings = [];
       const profile = resolveProfile(ctx.profile, ctx.snapshot);
-      if (!ctx.snapshot.antialias) return [];
-      if (ctx.device.tier !== "low") return [];
-      if (profile !== "marketing" && profile !== "product") return [];
-      return [
-        {
+      if (ctx.snapshot.antialias && ctx.device.tier === "low" && (profile === "marketing" || profile === "product")) {
+        findings.push({
           id: "renderer/antialias-postfx-risk",
           severity: "warn",
           evidence: { antialias: true, tier: ctx.device.tier, profile },
           message: "Antialias on low-tier marketing/product scenes risks costly post stacks",
           suggestedFix: "Disable MSAA on low tier or reduce postfx via postfx-budget",
           autoFix: "postfx-budget"
+        });
+      }
+      if (composerResolutionMismatch(ctx.snapshot)) {
+        const evidence = {};
+        if (typeof ctx.snapshot.composerWidth === "number") evidence.composerWidth = ctx.snapshot.composerWidth;
+        if (typeof ctx.snapshot.composerHeight === "number") evidence.composerHeight = ctx.snapshot.composerHeight;
+        if (typeof ctx.snapshot.composerPixelRatio === "number") {
+          evidence.composerPixelRatio = ctx.snapshot.composerPixelRatio;
         }
-      ];
+        if (typeof ctx.snapshot.drawingBufferWidth === "number") {
+          evidence.drawingBufferWidth = ctx.snapshot.drawingBufferWidth;
+        }
+        if (typeof ctx.snapshot.drawingBufferHeight === "number") {
+          evidence.drawingBufferHeight = ctx.snapshot.drawingBufferHeight;
+        }
+        if (typeof ctx.snapshot.rendererPixelRatio === "number") {
+          evidence.rendererPixelRatio = ctx.snapshot.rendererPixelRatio;
+        }
+        findings.push({
+          id: "renderer/composer-resolution-mismatch",
+          severity: "warn",
+          evidence,
+          message: "EffectComposer internal size/pixel ratio is stale vs the renderer drawing buffer",
+          suggestedFix: "Call composer.setSize / setPixelRatio whenever the renderer resizes or DPR changes"
+        });
+      }
+      return findings;
     }
   };
 
@@ -979,18 +1082,30 @@
     id: "lifecycle",
     run(ctx) {
       if (!ctx.previousSnapshot) return [];
+      const findings = [];
       const geoGrowth = ctx.snapshot.geometryCount - ctx.previousSnapshot.geometryCount;
       const texGrowth = ctx.snapshot.textureCount - ctx.previousSnapshot.textureCount;
-      if (geoGrowth <= 0 && texGrowth <= 0) return [];
-      return [
-        {
+      if (geoGrowth > 0 || texGrowth > 0) {
+        findings.push({
           id: "lifecycle/resource-growth",
           severity: "warn",
           evidence: { geoGrowth, texGrowth },
           message: "Geometry/texture counts climbed between measures (possible leak)",
           suggestedFix: "Ensure dispose() on removed geometries, materials, and textures"
-        }
-      ];
+        });
+      }
+      const prevBytes = ctx.previousSnapshot.instancedBufferBytes;
+      const bytes = ctx.snapshot.instancedBufferBytes;
+      if (typeof prevBytes === "number" && typeof bytes === "number" && bytes > prevBytes) {
+        findings.push({
+          id: "lifecycle/instance-buffer-growth",
+          severity: "warn",
+          evidence: { prevBytes, bytes },
+          message: "InstancedMesh instance buffers grew between measures (possible leak)",
+          suggestedFix: "Call InstancedMesh.dispose() (instanceMatrix / instanceColor) when replacing or restarting instances"
+        });
+      }
+      return findings;
     }
   };
 
@@ -1033,9 +1148,71 @@
     }
   };
 
+  // ../../packages/rules/src/rules/triangles.ts
+  var trianglesRule = {
+    id: "triangles",
+    run(ctx) {
+      const count = ctx.snapshot.geometryTriangleCount;
+      if (typeof count !== "number" || !Number.isFinite(count)) return [];
+      const profile = resolveProfile(ctx.profile, ctx.snapshot);
+      const budget = PROFILE_BUDGETS[profile].maxTriangles;
+      if (count <= budget) return [];
+      const share = ctx.snapshot.topContributorShare;
+      const summary = ctx.snapshot.triangleContributorSummary;
+      const percent = typeof share === "number" && Number.isFinite(share) ? Math.round(share * 100) : void 0;
+      const evidence = {
+        geometryTriangleCount: count,
+        budget,
+        profile
+      };
+      if (typeof summary === "string") evidence.topContributor = summary;
+      if (typeof share === "number") evidence.topContributorShare = share;
+      const shareNote = percent !== void 0 && summary ? ` (${summary} is ${percent}%)` : "";
+      return [
+        {
+          id: "triangles/too-many",
+          severity: count > budget * 1.5 ? "error" : "warn",
+          evidence,
+          message: `Scene triangles ${count} exceed ${profile} budget ${budget}${shareNote}`,
+          suggestedFix: "Chunk or simplify the heaviest InstancedMesh/Mesh (instance count \xD7 index count / 3)"
+        }
+      ];
+    }
+  };
+
+  // ../../packages/rules/src/rules/culling.ts
+  var cullingRule = {
+    id: "culling",
+    run(ctx) {
+      const findings = [];
+      const disabled = ctx.snapshot.frustumCulledDisabledCount;
+      if (typeof disabled === "number" && disabled > 0) {
+        findings.push({
+          id: "culling/frustum-disabled",
+          severity: "warn",
+          evidence: { frustumCulledDisabledCount: disabled },
+          message: `${disabled} mesh(es) have frustumCulled === false and always draw`,
+          suggestedFix: "Enable frustumCulled when safe, or chunk large world meshes so they can cull"
+        });
+      }
+      const oversized = ctx.snapshot.oversizedBoundCount;
+      if (typeof oversized === "number" && oversized > 0) {
+        findings.push({
+          id: "culling/oversized-bounds",
+          severity: "warn",
+          evidence: { oversizedBoundCount: oversized },
+          message: `${oversized} mesh(es) have world bounds larger than the camera far plane (never frustum-rejected)`,
+          suggestedFix: "Split oversized geometry into chunks with tighter bounds; keep frustumCulled enabled"
+        });
+      }
+      return findings;
+    }
+  };
+
   // ../../packages/rules/src/rule.ts
   var defaultRules = [
     drawCallsRule,
+    trianglesRule,
     lightsShadowsRule,
     dprRule,
     materialsRule,
@@ -1043,6 +1220,7 @@
     rendererSetupRule,
     lifecycleRule,
     transformsRule,
+    cullingRule,
     frameloopRule
   ];
   function runRules(ctx, rules = defaultRules) {
@@ -1619,28 +1797,291 @@ ${line2}` : line1;
     const shadow = rec.shadow;
     if (shadow) rememberRenderTarget(seen, shadow.map, `${prefix}:shadow`);
   }
-  function collectHostSceneStats(scene, renderer) {
+  function geometryTriangles(geo) {
+    if (!geo || typeof geo !== "object") return void 0;
+    const rec = geo;
+    if (typeof rec.index?.count === "number" && Number.isFinite(rec.index.count) && rec.index.count >= 3) {
+      return Math.floor(rec.index.count / 3);
+    }
+    const pos = rec.attributes?.position?.count;
+    if (typeof pos === "number" && Number.isFinite(pos) && pos >= 3) {
+      return Math.floor(pos / 3);
+    }
+    return void 0;
+  }
+  function meshTriangles(obj) {
+    const base = geometryTriangles(obj.geometry);
+    if (base === void 0) return void 0;
+    if (obj.isInstancedMesh === true) {
+      const count = typeof obj.count === "number" && Number.isFinite(obj.count) && obj.count > 0 ? obj.count : 1;
+      return base * count;
+    }
+    return base;
+  }
+  function meshLabel(obj, fallback) {
+    if (typeof obj.name === "string" && obj.name.length > 0) return obj.name;
+    if (typeof obj.uuid === "string" && obj.uuid.length > 0) return obj.uuid;
+    return fallback;
+  }
+  function instancedBufferBytes(obj) {
+    if (obj.isInstancedMesh !== true) return void 0;
+    let bytes = 0;
+    let known = false;
+    const matrix = obj.instanceMatrix;
+    if (typeof matrix?.array?.byteLength === "number") {
+      bytes += matrix.array.byteLength;
+      known = true;
+    } else if (typeof obj.count === "number" && obj.count >= 0) {
+      bytes += obj.count * 16 * 4;
+      known = true;
+    }
+    const color = obj.instanceColor;
+    if (typeof color?.array?.byteLength === "number") {
+      bytes += color.array.byteLength;
+      known = true;
+    }
+    return known ? bytes : void 0;
+  }
+  function worldScale(elements) {
+    const sx = Math.hypot(Number(elements[0]), Number(elements[1]), Number(elements[2]));
+    const sy = Math.hypot(Number(elements[4]), Number(elements[5]), Number(elements[6]));
+    const sz = Math.hypot(Number(elements[8]), Number(elements[9]), Number(elements[10]));
+    return Math.max(sx, sy, sz, 0);
+  }
+  function worldRadius(obj) {
+    const geo = obj.geometry;
+    const radius = geo?.boundingSphere?.radius;
+    if (typeof radius !== "number" || !Number.isFinite(radius) || radius <= 0) return void 0;
+    const elements = obj.matrixWorld?.elements;
+    const scale = elements && elements.length >= 12 ? worldScale(elements) : 1;
+    return radius * (scale > 0 ? scale : 1);
+  }
+  function worldCenter(obj) {
+    const elements = obj.matrixWorld?.elements;
+    if (!elements || elements.length < 16) return void 0;
+    const local = obj.geometry?.boundingSphere?.center;
+    if (local && typeof local.x === "number" && typeof local.y === "number" && typeof local.z === "number") {
+      return transformPoint2(elements, local.x, local.y, local.z);
+    }
+    return [Number(elements[12]), Number(elements[13]), Number(elements[14])];
+  }
+  function transformPoint2(m, x, y, z) {
+    const w = Number(m[3]) * x + Number(m[7]) * y + Number(m[11]) * z + Number(m[15]) || 1;
+    return [
+      (Number(m[0]) * x + Number(m[4]) * y + Number(m[8]) * z + Number(m[12])) / w,
+      (Number(m[1]) * x + Number(m[5]) * y + Number(m[9]) * z + Number(m[13])) / w,
+      (Number(m[2]) * x + Number(m[6]) * y + Number(m[10]) * z + Number(m[14])) / w
+    ];
+  }
+  function invert4(m) {
+    if (m.length < 16) return void 0;
+    const a00 = Number(m[0]);
+    const a01 = Number(m[1]);
+    const a02 = Number(m[2]);
+    const a03 = Number(m[3]);
+    const a10 = Number(m[4]);
+    const a11 = Number(m[5]);
+    const a12 = Number(m[6]);
+    const a13 = Number(m[7]);
+    const a20 = Number(m[8]);
+    const a21 = Number(m[9]);
+    const a22 = Number(m[10]);
+    const a23 = Number(m[11]);
+    const a30 = Number(m[12]);
+    const a31 = Number(m[13]);
+    const a32 = Number(m[14]);
+    const a33 = Number(m[15]);
+    const b00 = a00 * a11 - a01 * a10;
+    const b01 = a00 * a12 - a02 * a10;
+    const b02 = a00 * a13 - a03 * a10;
+    const b03 = a01 * a12 - a02 * a11;
+    const b04 = a01 * a13 - a03 * a11;
+    const b05 = a02 * a13 - a03 * a12;
+    const b06 = a20 * a31 - a21 * a30;
+    const b07 = a20 * a32 - a22 * a30;
+    const b08 = a20 * a33 - a23 * a30;
+    const b09 = a21 * a32 - a22 * a31;
+    const b10 = a21 * a33 - a23 * a31;
+    const b11 = a22 * a33 - a23 * a32;
+    const det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
+    if (!Number.isFinite(det) || Math.abs(det) < 1e-8) return void 0;
+    const invDet = 1 / det;
+    return [
+      (a11 * b11 - a12 * b10 + a13 * b09) * invDet,
+      (a02 * b10 - a01 * b11 - a03 * b09) * invDet,
+      (a31 * b05 - a32 * b04 + a33 * b03) * invDet,
+      (a22 * b04 - a21 * b05 - a23 * b03) * invDet,
+      (a12 * b08 - a10 * b11 - a13 * b07) * invDet,
+      (a00 * b11 - a02 * b08 + a03 * b07) * invDet,
+      (a32 * b02 - a30 * b05 - a33 * b01) * invDet,
+      (a20 * b05 - a22 * b02 + a23 * b01) * invDet,
+      (a10 * b10 - a11 * b08 + a13 * b06) * invDet,
+      (a01 * b08 - a00 * b10 - a03 * b06) * invDet,
+      (a30 * b04 - a31 * b02 + a33 * b00) * invDet,
+      (a21 * b02 - a20 * b04 - a23 * b00) * invDet,
+      (a11 * b07 - a10 * b09 - a12 * b06) * invDet,
+      (a00 * b09 - a01 * b07 + a02 * b06) * invDet,
+      (a31 * b01 - a30 * b03 - a32 * b00) * invDet,
+      (a20 * b03 - a21 * b01 + a22 * b00) * invDet
+    ];
+  }
+  function readShadowCamera(light) {
+    const shadow = light.shadow;
+    const cam = shadow?.camera;
+    if (!cam) return void 0;
+    const near = cam.near;
+    const far = cam.far;
+    if (typeof near !== "number" || typeof far !== "number") return void 0;
+    const elements = cam.matrixWorld?.elements;
+    if (!elements) return void 0;
+    const invWorld = invert4(elements);
+    if (!invWorld) return void 0;
+    if (cam.isOrthographicCamera === true || typeof cam.left === "number" && typeof cam.right === "number" && typeof cam.top === "number" && typeof cam.bottom === "number") {
+      if (typeof cam.left !== "number" || typeof cam.right !== "number" || typeof cam.top !== "number" || typeof cam.bottom !== "number") {
+        return void 0;
+      }
+      return {
+        kind: "ortho",
+        invWorld,
+        left: cam.left,
+        right: cam.right,
+        top: cam.top,
+        bottom: cam.bottom,
+        near,
+        far
+      };
+    }
+    if (typeof cam.fov === "number" && typeof cam.aspect === "number") {
+      return { kind: "perspective", invWorld, near, far, fov: cam.fov, aspect: cam.aspect };
+    }
+    return void 0;
+  }
+  function sphereOutsideShadowCamera(cx, cy, cz, radius, cam) {
+    const [x, y, z] = transformPoint2(cam.invWorld, cx, cy, cz);
+    if (cam.kind === "ortho") {
+      const left = cam.left;
+      const right = cam.right;
+      const top = cam.top;
+      const bottom = cam.bottom;
+      const zMin = Math.min(-cam.near, -cam.far);
+      const zMax = Math.max(-cam.near, -cam.far);
+      if (x + radius < left || x - radius > right) return true;
+      if (y + radius < bottom || y - radius > top) return true;
+      if (z + radius < zMin || z - radius > zMax) return true;
+      return false;
+    }
+    const dist = -z;
+    if (dist + radius < cam.near || dist - radius > cam.far) return true;
+    const vFov = (cam.fov ?? 75) * Math.PI / 180;
+    const hy = Math.tan(vFov / 2) * Math.max(dist, cam.near);
+    const hx = hy * (cam.aspect ?? 1);
+    if (Math.abs(x) - radius > hx || Math.abs(y) - radius > hy) return true;
+    return false;
+  }
+  function isComposerLike(value) {
+    if (!value || typeof value !== "object") return false;
+    const rec = value;
+    if (rec.isEffectComposer === true) return true;
+    const hasPasses = Array.isArray(rec.passes);
+    const hasTarget = rec.renderTarget1 !== void 0 || rec.writeBuffer !== void 0;
+    return hasPasses && hasTarget;
+  }
+  function rememberComposer(target, value) {
+    if (target.current || !isComposerLike(value)) return;
+    target.current = value;
+  }
+  function readComposerSize(composer) {
+    const rt = composer.renderTarget1 ?? composer.writeBuffer;
+    const size = rt ? finiteSize(rt.width, rt.height) : void 0;
+    const pr = composer.pixelRatio ?? composer._pixelRatio;
+    const out = {};
+    if (size) {
+      out.width = size.width;
+      out.height = size.height;
+    }
+    if (typeof pr === "number" && Number.isFinite(pr) && pr > 0) out.pixelRatio = pr;
+    return out;
+  }
+  function assignDefined(target, key, value) {
+    if (value !== void 0) target[key] = value;
+  }
+  function collectHostSceneStats(scene, renderer, camera) {
     const lights = [];
     const seen = /* @__PURE__ */ new Map();
+    const insights = {};
+    const contributors = [];
+    const shadowCameras = [];
+    const casters = [];
+    const composerRef = {};
+    let frustumCulledDisabledCount = 0;
+    let oversizedBoundCount = 0;
+    let oversizedMeasured = false;
+    let zeroIntensityLightCount = 0;
+    let instancedBytes = 0;
+    let instancedKnown = false;
+    let shadowTriangles = 0;
+    let shadowTriKnown = false;
+    const camFar = camera && typeof camera === "object" && typeof camera.far === "number" ? camera.far : void 0;
     const traversable = scene;
     if (typeof traversable.traverse === "function") {
       let index = 0;
       traversable.traverse((obj) => {
         index += 1;
+        rememberComposer(composerRef, obj);
         if (obj.isLight === true) {
           lights.push({ castShadow: obj.castShadow === true });
+          if (obj.visible !== false && typeof obj.intensity === "number" && obj.intensity <= 0) {
+            zeroIntensityLightCount += 1;
+          }
+          if (obj.castShadow === true) {
+            const shadowCam = readShadowCamera(obj);
+            if (shadowCam) shadowCameras.push(shadowCam);
+          }
         }
         const mats = Array.isArray(obj.material) ? obj.material : obj.material ? [obj.material] : [];
         mats.forEach((mat, i) => collectMaterialTextures(mat, seen, `m${index}-${i}`));
         scanObjectForRenderTargets(obj, seen, `obj${index}`);
+        if (obj.isMesh === true) {
+          if (obj.frustumCulled === false) frustumCulledDisabledCount += 1;
+          const tris = meshTriangles(obj);
+          if (tris !== void 0) {
+            contributors.push({
+              id: meshLabel(obj, `mesh${index}`),
+              triangles: tris,
+              castShadow: obj.castShadow === true
+            });
+            if (obj.castShadow === true) {
+              shadowTriangles += tris;
+              shadowTriKnown = true;
+            }
+          }
+          const radius = worldRadius(obj);
+          if (typeof camFar === "number" && camFar > 0 && radius !== void 0) {
+            oversizedMeasured = true;
+            if (radius > camFar) oversizedBoundCount += 1;
+          }
+          if (obj.castShadow === true) {
+            const center = worldCenter(obj);
+            if (center && radius !== void 0) casters.push({ center, radius });
+          }
+          const bytes = instancedBufferBytes(obj);
+          if (bytes !== void 0) {
+            instancedBytes += bytes;
+            instancedKnown = true;
+          }
+        }
       });
     }
     if (renderer && typeof renderer === "object") {
       const rec = renderer;
+      rememberComposer(composerRef, rec);
       for (const [key, value] of Object.entries(rec)) {
         rememberRenderTarget(seen, value, `renderer:${key}`);
+        rememberComposer(composerRef, value);
       }
       scanObjectForRenderTargets(rec.shadowMap, seen, "renderer:shadowMap");
+      if (typeof rec.drawingBufferWidth === "number") insights.drawingBufferWidth = rec.drawingBufferWidth;
+      if (typeof rec.drawingBufferHeight === "number") insights.drawingBufferHeight = rec.drawingBufferHeight;
     }
     const sized = [...seen.values()].filter((t) => t.width > 0 && t.height > 0);
     const stats = {
@@ -1663,7 +2104,65 @@ ${line2}` : line1;
       const memTex = renderer?.info?.memory?.textures;
       if (typeof memTex === "number") stats.textureCount = memTex;
     }
-    return { stats, lights, textures: sized };
+    if (contributors.length > 0) {
+      const total = contributors.reduce((sum, c) => sum + c.triangles, 0);
+      insights.geometryTriangleCount = total;
+      contributors.sort((a, b) => b.triangles - a.triangles);
+      const top = contributors[0];
+      if (top && total > 0) {
+        insights.triangleContributorSummary = `${top.id}:${top.triangles}`;
+        insights.topContributorShare = top.triangles / total;
+      }
+    }
+    insights.frustumCulledDisabledCount = frustumCulledDisabledCount;
+    if (oversizedMeasured) insights.oversizedBoundCount = oversizedBoundCount;
+    if (shadowTriKnown) insights.shadowTriangleCount = shadowTriangles;
+    if (shadowCameras.length > 0) {
+      let outside = 0;
+      for (const caster of casters) {
+        const missesAll = shadowCameras.every(
+          (cam) => sphereOutsideShadowCamera(caster.center[0], caster.center[1], caster.center[2], caster.radius, cam)
+        );
+        if (missesAll) outside += 1;
+      }
+      insights.shadowCastersOutsideFrustum = outside;
+    }
+    insights.zeroIntensityLightCount = zeroIntensityLightCount;
+    if (instancedKnown) insights.instancedBufferBytes = instancedBytes;
+    if (composerRef.current) {
+      const size = readComposerSize(composerRef.current);
+      assignDefined(insights, "composerWidth", size.width);
+      assignDefined(insights, "composerHeight", size.height);
+      assignDefined(insights, "composerPixelRatio", size.pixelRatio);
+    }
+    return { stats, lights, textures: sized, insights };
+  }
+  var INSIGHT_KEYS = [
+    "geometryTriangleCount",
+    "triangleContributorSummary",
+    "topContributorShare",
+    "frustumCulledDisabledCount",
+    "oversizedBoundCount",
+    "shadowTriangleCount",
+    "shadowCastersOutsideFrustum",
+    "zeroIntensityLightCount",
+    "instancedBufferBytes",
+    "composerPixelRatio",
+    "composerWidth",
+    "composerHeight",
+    "drawingBufferWidth",
+    "drawingBufferHeight"
+  ];
+  function applyHostInsights(snapshot, insights) {
+    const next = { ...snapshot };
+    for (const key of INSIGHT_KEYS) {
+      const value = insights[key];
+      if (value !== void 0) {
+        ;
+        next[key] = value;
+      }
+    }
+    return next;
   }
 
   // ../../packages/runtime/src/gpu-timer.ts
@@ -1730,7 +2229,7 @@ ${line2}` : line1;
     });
     return deltas;
   }
-  function snapshotFrom(sample, renderer, scene, continuousFrameloop) {
+  function snapshotFrom(sample, renderer, scene, continuousFrameloop, camera) {
     let objectCount = 0;
     let meshCount = 0;
     let matrixAutoUpdateCount = 0;
@@ -1746,7 +2245,7 @@ ${line2}` : line1;
         if (mat.uuid) materials.push({ uuid: mat.uuid });
       }
     });
-    const collected = collectHostSceneStats(scene, renderer);
+    const collected = collectHostSceneStats(scene, renderer, camera);
     const walked = snapshotScene({
       objectCount,
       meshCount,
@@ -1761,7 +2260,7 @@ ${line2}` : line1;
       rendererPixelRatio: readRendererPixelRatio(renderer),
       antialias: readRendererAntialias(renderer)
     });
-    return {
+    const merged = {
       ...walked,
       geometryCount: sample.geometryCount,
       textureCount: sample.textureCount,
@@ -1769,6 +2268,7 @@ ${line2}` : line1;
       lightCount: sample.lightCount,
       shadowCastingLightCount: sample.shadowCastingLightCount
     };
+    return applyHostInsights(merged, collected.insights);
   }
   function cameraPositionOf(camera) {
     if (!camera || typeof camera !== "object") return void 0;
@@ -1880,7 +2380,8 @@ ${line2}` : line1;
         sample,
         this.opts.renderer,
         this.opts.scene,
-        this.frameloop === "always"
+        this.frameloop === "always",
+        this.opts.camera
       );
     }
     ruleContext(snapshot, device, profile) {
