@@ -748,6 +748,35 @@ describe('QualityController.runLadder', () => {
     expect(settled.findings.some((f) => f.id === 'quality/floor-failed')).toBe(false)
   })
 
+  it('clears floorFailed when potato holds ≥30 FPS even if p95 is under climbP95Ms', async () => {
+    let afterBoot = false
+    const { doctor } = createLadderDoctor({
+      now: (() => {
+        let t = 0
+        return () => {
+          t += afterBoot ? 16 : 50
+          return t
+        }
+      })(),
+      measureFrames: 4,
+    })
+    const ladder = new QualityController(doctor, {
+      mode: 'safe-auto',
+      startTier: 'potato',
+      maxTier: 'high',
+      windowFrames: 4,
+      waitForFirstInteractive: async () => {},
+    })
+    await ladder.boot()
+    afterBoot = true
+    const settled = await ladder.runLadder()
+    expect(settled.after?.avgFps).toBeGreaterThanOrEqual(30)
+    expect(settled.after?.p95FrameTimeMs).toBeLessThanOrEqual(HYSTERESIS.dropP95Ms)
+    expect(settled.after?.p95FrameTimeMs).toBeLessThanOrEqual(HYSTERESIS.climbP95Ms)
+    expect(settled.floorFailed).toBe(false)
+    expect(settled.findings.some((f) => f.id === 'quality/floor-failed')).toBe(false)
+  })
+
   it('applies second-stage potato floor once: lower drawingBufferPixels, postfx/shadows off, floor-failed finding', async () => {
     let postfx = true
     const { doctor, renderer, lights } = createLadderDoctor({

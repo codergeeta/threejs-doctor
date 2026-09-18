@@ -155,6 +155,9 @@ Vite on this VM binds `localhost` (IPv6 `::1`), not `127.0.0.1`.
 ### Acceptance bar progress (this session)
 
 - **Fixture ×2 measurable wins** on box-desktop generic caps (numbers below).
+  Game fixture Pass B this session: after avgFps **55.7828188917765** /
+  p95 **31.899999999906868**, `floorFailed: false`, drawCalls **69** /
+  triangles **20930** (above the light fixture 66 / 19010).
 - **Ocean injectable** on this box (`window.pelagic.debug`) but **not** §3:
   SwiftShader ocean / phone-probe / emulation still ≪ 30.
 - **Remaining gate = real phone ocean only** (Pass A + Pass B on the device in
@@ -183,10 +186,10 @@ Read-only. `appliedPasses` empty. Overlay stays advise.
 | incomplete | false |
 | floorFailed | false |
 | applyFailed | false |
-| baseline `avgFps` | 14.408529849670762 |
-| baseline `p95FrameTimeMs` | 136.09999999997672 |
-| after `avgFps` | 14.37814521926658 |
-| after `p95FrameTimeMs` | 133.20000000001164 |
+| baseline `avgFps` | 13.713031951364739 |
+| baseline `p95FrameTimeMs` | 141.9000000001397 |
+| after `avgFps` | 14.270537682147662 |
+| after `p95FrameTimeMs` | 138.30000000004657 |
 | `drawCalls` | 66 |
 | `triangles` | 19010 |
 | `shadowCastingLightCount` | 2 |
@@ -194,14 +197,14 @@ Read-only. `appliedPasses` empty. Overlay stays advise.
 | `appliedPasses` | (none) |
 | `appliedKnobs` | (none) |
 
-Advise did not improve FPS (14.408529849670762 → 14.37814521926658). Score 100
+Advise did not improve FPS (13.713031951364739 → 14.270537682147662). Score 100
 is hygiene, not a win.
 
 ### Fixture Pass B — `safe-auto` (this session, cold reload)
 
 `window.__THREEJS_DOCTOR_ATTACH__ = { mode: 'safe-auto' }` then IIFE.
 Generic caps only. Settled tier **potato**. `floorFailed: false`.
-After `avgFps` 60.01200240048196 ≥ 30 and `p95FrameTimeMs` 24.800000000046566
+After `avgFps` 60.00400026668818 ≥ 30 and `p95FrameTimeMs` 16.899999999906868
 ≤ 33.4. After `drawingBufferPixels` 256000 is the **0.5** second-stage floor
 (1280×800×0.5²). Not §3 proof.
 
@@ -211,22 +214,28 @@ No adapter knobs.
 
 | Field | Baseline | After |
 |-------|----------|-------|
-| `avgFps` | 19.45651468966903 | 60.01200240048196 |
-| `p95FrameTimeMs` | 99.20000000001164 | 24.800000000046566 |
+| `avgFps` | 20.781379883626283 | 60.00400026668818 |
+| `p95FrameTimeMs` | 99.80000000004657 | 16.899999999906868 |
 | `drawCalls` | 66 | 66 |
 | `triangles` | 19010 | 19010 |
 | `shadowCastingLightCount` | 1 | 0 |
 | `drawingBufferPixels` | 1024000 | 256000 |
 
 `safe-auto` raised this fixture versus this session's advise after
-(14.37814521926658 → 60.01200240048196) and versus its own baseline
-(19.45651468966903 → 60.01200240048196).
+(14.270537682147662 → 60.00400026668818) and versus its own baseline
+(20.781379883626283 → 60.00400026668818).
 
 ### Prior fixture runs (same PR, earlier sessions)
 
 Kept for history. Not this session.
 
-Pass A (prior): after `avgFps` 13.332148253488395 / p95 140.80000000004657.
+Pass A (prior this-branch remeasure): after `avgFps` 14.37814521926658 / p95
+133.20000000001164.
+
+Pass B (prior this-branch remeasure): after `avgFps` 60.01200240048196 / p95
+24.800000000046566, `floorFailed` false, `drawingBufferPixels` 256000.
+
+Pass A (older): after `avgFps` 13.332148253488395 / p95 140.80000000004657.
 
 Pass B after potato-floor work: after `avgFps` 52.313415484770275 / p95
 29.199999999953434, `floorFailed` false, `drawingBufferPixels` 256000.
@@ -245,9 +254,11 @@ session was 7.318917776024768 / p95 187.5999999998603.
 [`examples/acceptance-fixture-game`](../../../examples/acceptance-fixture-game/README.md)
 `pnpm --filter @threejs-doctor/acceptance-fixture-game dev` → http://localhost:5175/
 
-Heavier than the first fixture: 12×12 boxes, extra spheres/toruses, 4096
-particles, four shadow-casting lights. Same host hook. **Not** an external
-game. **Not** phone-class. **Not** §3.
+Heavier than the first fixture via InstancedMesh density (12×12 boxes, instanced
+spheres/toruses), a 64-beacon ring, 4096 particles, two shadow-casting lights.
+Draw calls **69** / triangles **20930** stay above the light fixture **66** /
+**19010**. Same host hook. **Not** an external game. **Not** phone-class.
+**Not** §3.
 
 Capture JSON off-repo:
 `/opt/cursor/artifacts/fixture-game-pass-a-advise.json`,
@@ -255,38 +266,36 @@ Capture JSON off-repo:
 
 ### Game fixture Pass A — `advise`
 
-Read-only. `appliedPasses` / `appliedKnobs` empty. Findings present:
-`draw-calls/too-many` (158 vs game budget 150) and `shadows/too-many-casters`
-(4 vs budget 3). Score 74 is hygiene.
+Read-only. `appliedPasses` / `appliedKnobs` empty. Score 100 is hygiene.
 
 | Field | Measured |
 |-------|----------|
-| score | 74 |
+| score | 100 |
 | startTier | `low` |
 | tier | `low` |
 | recommendedTier | `potato` |
 | incomplete | false |
 | floorFailed | false |
 | applyFailed | false |
-| baseline `avgFps` | 6.27615062761514 |
-| baseline `p95FrameTimeMs` | 329.0999999999767 |
-| after `avgFps` | 6.472864314379904 |
-| after `p95FrameTimeMs` | 310.19999999995343 |
-| `drawCalls` | 158 |
-| `triangles` | 52418 |
-| `shadowCastingLightCount` | 4 |
+| baseline `avgFps` | 13.188552336572126 |
+| baseline `p95FrameTimeMs` | 193.60000000009313 |
+| after `avgFps` | 13.393056444292512 |
+| after `p95FrameTimeMs` | 152.69999999995343 |
+| `drawCalls` | 69 |
+| `triangles` | 20930 |
+| `shadowCastingLightCount` | 2 |
 | `drawingBufferPixels` | 1024000 |
 | `appliedPasses` | (none) |
 | `appliedKnobs` | (none) |
 
-Advise did not improve FPS (6.27615062761514 → 6.472864314379904).
+Advise did not improve FPS (13.188552336572126 → 13.393056444292512).
 
 ### Game fixture Pass B — `safe-auto` (cold reload)
 
-Generic caps only. Settled tier **potato**. `floorFailed: true` because after
-`p95FrameTimeMs` 60.29999999993015 > 33.4 (the latch uses p95, not avgFps
-alone). After `avgFps` 32.05128205128338 ≥ 30. After `drawingBufferPixels`
-256000 is the 0.5 floor. Draw calls stayed 158; shadow casters 1→0.
+Generic caps only. Settled tier **potato**. `floorFailed: false` because after
+`avgFps` 55.7828188917765 ≥ 30 and `p95FrameTimeMs` 31.899999999906868 ≤ 33.4
+(three at-target holds). After `drawingBufferPixels` 256000 is the 0.5 floor.
+Draw calls stayed 69; triangles 20930; shadow casters 1→0.
 
 Applied passes: `dpr-cap`, `pixel-budget`, `shadow-budget`, `postfx-budget`,
 `tone-map-lite`, `anisotropy-cap`, `frameloop-demand`, `distance-cull`.
@@ -294,17 +303,30 @@ No adapter knobs.
 
 | Field | Baseline | After |
 |-------|----------|-------|
-| `avgFps` | 12.88272426675789 | 32.05128205128338 |
-| `p95FrameTimeMs` | 148.80000000004657 | 60.29999999993015 |
-| `drawCalls` | 158 | 158 |
-| `triangles` | 52418 | 52418 |
+| `avgFps` | 17.594275995544223 | 55.7828188917765 |
+| `p95FrameTimeMs` | 176.30000000004657 | 31.899999999906868 |
+| `drawCalls` | 69 | 69 |
+| `triangles` | 20930 | 20930 |
 | `shadowCastingLightCount` | 1 | 0 |
 | `drawingBufferPixels` | 1024000 | 256000 |
 
 `safe-auto` raised this heavier fixture versus its advise after
-(6.472864314379904 → 32.05128205128338) and versus its own baseline
-(12.88272426675789 → 32.05128205128338). avgFps cleared 30; p95 did not.
-`floorFailed` true. Still not §3 proof.
+(13.393056444292512 → 55.7828188917765) and versus its own baseline
+(17.594275995544223 → 55.7828188917765). avgFps and p95 both cleared.
+`floorFailed` false. Still not §3 proof.
+
+### Prior game-fixture runs (same PR, earlier sessions)
+
+Kept for history. Not this session. Do not treat these as the current scene.
+
+Uninstanced 12×12 / 158 drawCalls Pass B: after `avgFps` **32.05128205128338**
+(≥30) / `p95FrameTimeMs` **60.29999999993015** (>33.4), `floorFailed: true`,
+`drawCalls` 158 / `triangles` 52418 / `drawingBufferPixels` 256000. Measurable
+win versus that session's advise after 6.472864314379904. Not a full p95 clear.
+
+That session's Pass A: after `avgFps` 6.472864314379904 / p95 310.19999999995343
+/ `drawCalls` 158 / `triangles` 52418 / `shadowCastingLightCount` 4 / score 74
+(`draw-calls/too-many`, `shadows/too-many-casters`).
 
 ## Remaining gates
 
@@ -492,9 +514,11 @@ WebGPU / freeze). They stay blocked pending host hooks. Unit tests are not a
 live capture.
 
 In-repo fixtures **were** remeasured this revision (see above). First fixture
-Pass B after `avgFps` **60.01200240048196** / p95 **24.800000000046566**,
-`floorFailed: false`. Game fixture Pass B after `avgFps` **32.05128205128338**
-/ p95 **60.29999999993015**, `floorFailed: true`. Cheap-path host object
-(`window.__THREEJS_DOCTOR_HOST__`) found both.
+Pass B after `avgFps` **60.00400026668818** / p95 **16.899999999906868**,
+`floorFailed: false`. Game fixture Pass B after `avgFps` **55.7828188917765**
+/ p95 **31.899999999906868**, `floorFailed: false`, `drawCalls` 69 /
+`triangles` 20930. Cheap-path host object (`window.__THREEJS_DOCTOR_HOST__`)
+found both. Prior uninstanced game Pass B (32.051 / p95 60.3 / `floorFailed`
+true / 158 drawCalls) stays as history above.
 
 

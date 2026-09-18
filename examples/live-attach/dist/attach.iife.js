@@ -2092,6 +2092,29 @@ ${line2}` : line1;
         return { state: nextState, pendingApplyFailed: false, holdsAtTarget, stop };
       }
       if (decision.action === "drop" || decision.action === "climb") {
+        if (decision.action === "climb" && last.floorFailed && meetsFpsTarget(sample)) {
+          const nextHolds = (opts2.holdsAtTarget ?? 0) + 1;
+          const published = {
+            ...last,
+            tier: state.tier,
+            baseline,
+            incomplete: reportIncomplete
+          };
+          if (!reportIncomplete) {
+            published.after = sample;
+            published.deltas = diffMetrics2(baseline, sample);
+          } else {
+            delete published.after;
+            delete published.deltas;
+          }
+          this.publish(published);
+          return {
+            state,
+            pendingApplyFailed: false,
+            holdsAtTarget: nextHolds,
+            stop: allowStop && nextHolds >= 3
+          };
+        }
         const rungFailed = this.applyRung(decision.next.tier);
         if (this.last) {
           const published = {
@@ -2185,9 +2208,9 @@ ${line2}` : line1;
           stop: allowStop
         };
       }
-      const atTarget = sample.p95FrameTimeMs <= HYSTERESIS.dropP95Ms;
+      const atTarget = meetsFpsTarget(sample);
       const waitingToClimb = sample.p95FrameTimeMs <= HYSTERESIS.climbP95Ms && decision.reason !== "ceiling";
-      holdsAtTarget = atTarget && !waitingToClimb ? holdsAtTarget + 1 : 0;
+      holdsAtTarget = atTarget && (!waitingToClimb || last.floorFailed) ? holdsAtTarget + 1 : 0;
       return {
         state: decision.next,
         pendingApplyFailed: false,

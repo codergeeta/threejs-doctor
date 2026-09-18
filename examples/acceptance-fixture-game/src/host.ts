@@ -22,16 +22,16 @@ import {
 
 export const DOCTOR_HOST_KEY = '__THREEJS_DOCTOR_HOST__' as const
 
-export const GRID_SIZE = 16
+export const GRID_SIZE = 12
 export const PARTICLE_COUNT = 4096
 export const SHADOW_CASTER_COUNT = 2
-export const SPHERE_COUNT = 8
-export const TORUS_COUNT = 12
+export const SPHERE_COUNT = 2
+export const TORUS_COUNT = 6
 export const UNIQUE_PROP_COUNT = 64
-export const SPHERE_WIDTH_SEGMENTS = 40
-export const SPHERE_HEIGHT_SEGMENTS = 40
-export const TORUS_RADIAL_SEGMENTS = 16
-export const TORUS_TUBULAR_SEGMENTS = 32
+export const SPHERE_WIDTH_SEGMENTS = 64
+export const SPHERE_HEIGHT_SEGMENTS = 64
+export const TORUS_RADIAL_SEGMENTS = 12
+export const TORUS_TUBULAR_SEGMENTS = 16
 
 export interface DoctorHostHandles {
   scene: unknown
@@ -152,7 +152,7 @@ export function createGameScene(): GameScene {
   scene.background = new Color(0x0b1020)
 
   const camera = new PerspectiveCamera(55, 1, 0.1, 400)
-  camera.position.set(20, 22, 26)
+  camera.position.set(18, 20, 24)
   camera.lookAt(0, 1, 0)
 
   const dummy = new Object3D()
@@ -196,7 +196,7 @@ export function createGameScene(): GameScene {
   const sphereColors = [0xf72585, 0x7209b7, 0x4361ee, 0x4cc9f0, 0xffd166, 0x06d6a0, 0xef476f, 0x118ab2]
   for (let i = 0; i < SPHERE_COUNT; i += 1) {
     const angle = (i / SPHERE_COUNT) * Math.PI * 2
-    dummy.position.set(Math.cos(angle) * 8, 2.4, Math.sin(angle) * 8)
+    dummy.position.set(Math.cos(angle) * 8, 2.2, Math.sin(angle) * 8)
     dummy.rotation.set(0, 0, 0)
     dummy.scale.set(1, 1, 1)
     stampInstance(spheres, i, dummy)
@@ -252,8 +252,7 @@ export function createGameScene(): GameScene {
     new PointsMaterial({
       color: 0x80ffea,
       size: 0.08,
-      transparent: true,
-      opacity: 0.75,
+      transparent: false,
       depthWrite: false,
     }),
   )
