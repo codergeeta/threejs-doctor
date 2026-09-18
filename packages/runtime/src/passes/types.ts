@@ -1,20 +1,21 @@
-import type { DeviceCapabilities, PassId, Profile, QualityTier } from '@threejs-doctor/core'
+import type { DeviceCapabilities, PassId, Profile, QualityTier, RendererInfoLike } from '@threejs-doctor/core'
 
 export interface DoctorRendererLike {
-  info: {
-    render: { calls: number; triangles: number }
-    memory: { geometries: number; textures: number }
-  }
+  info: RendererInfoLike
   /** Optional duck-typed field. Real THREE.WebGLRenderer has getPixelRatio(), not this. */
   pixelRatio?: number | undefined
   antialias?: boolean | undefined
   setPixelRatio(value: number): void
   getPixelRatio?: () => number | undefined
+  render?: (scene: unknown, camera: unknown) => void
   getContext?: () => {
     getContextAttributes?: () => { antialias?: boolean } | null
     drawingBufferWidth?: number
     drawingBufferHeight?: number
     getExtension?: (name: string) => unknown
+    getParameter?: (pname: number) => unknown
+    MAX_TEXTURE_SIZE?: number
+    MAX_RENDERBUFFER_SIZE?: number
   } | null
   getExtension?: (name: string) => unknown
   toneMapping?: number

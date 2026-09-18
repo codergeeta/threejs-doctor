@@ -42,11 +42,39 @@ describe('resolveProfile', () => {
   })
 
   it('maps auto to cad, game, product, or marketing from snapshot heuristics', () => {
-    expect(resolveProfile('auto', snap({ meshCount: 201, drawCalls: 10 }))).toBe('cad')
-    expect(resolveProfile('auto', snap({ meshCount: 10, drawCalls: 151 }))).toBe('cad')
+    expect(
+      resolveProfile(
+        'auto',
+        snap({ meshCount: 201, drawCalls: 10, lightCount: 1, continuousFrameloop: false }),
+      ),
+    ).toBe('cad')
+    expect(
+      resolveProfile(
+        'auto',
+        snap({ meshCount: 10, drawCalls: 151, lightCount: 1, continuousFrameloop: false }),
+      ),
+    ).toBe('cad')
     expect(resolveProfile('auto', snap({ meshCount: 51, drawCalls: 10, lightCount: 4, textureCount: 10 }))).toBe('game')
     expect(resolveProfile('auto', snap({ meshCount: 20, drawCalls: 10, lightCount: 1, textureCount: 6 }))).toBe('product')
     expect(resolveProfile('auto', snap({ meshCount: 30, drawCalls: 10, lightCount: 1, textureCount: 10 }))).toBe('marketing')
+  })
+
+  it('prefers game over cad for a continuous high-mesh interactive scene', () => {
+    expect(
+      resolveProfile(
+        'auto',
+        snap({ meshCount: 220, drawCalls: 90, lightCount: 2, continuousFrameloop: true }),
+      ),
+    ).toBe('game')
+  })
+
+  it('prefers game for on-demand scenes with high draw activity (arcade racer)', () => {
+    expect(
+      resolveProfile(
+        'auto',
+        snap({ meshCount: 80, drawCalls: 133, lightCount: 2, textureCount: 12, continuousFrameloop: false }),
+      ),
+    ).toBe('game')
   })
 })
 

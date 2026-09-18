@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { probeDevice } from '../device-probe.js'
+import { probeDevice, readWebglQualitySignals } from '../device-probe.js'
 
 describe('probeDevice', () => {
   it('classifies low tier when dpr is high and cores are few', () => {
@@ -45,6 +45,31 @@ describe('probeDevice', () => {
     expect(caps.coarsePointer).toBe(true)
     expect(caps.colorBufferFloat).toBe(true)
     expect(caps.floatLinear).toBe(false)
+  })
+})
+
+describe('readWebglQualitySignals', () => {
+  it('reads MAX_TEXTURE_SIZE from the GL context when getParameter exists', () => {
+    const signals = readWebglQualitySignals({
+      MAX_TEXTURE_SIZE: 0x0d33,
+      getExtension() {
+        return null
+      },
+      getParameter(pname: number) {
+        if (pname === 0x0d33) return 16384
+        return 0
+      },
+    })
+    expect(signals.maxTextureSize).toBe(16384)
+  })
+
+  it('omits maxTextureSize when the context does not report it', () => {
+    const signals = readWebglQualitySignals({
+      getExtension() {
+        return null
+      },
+    })
+    expect(signals.maxTextureSize).toBeUndefined()
   })
 })
 

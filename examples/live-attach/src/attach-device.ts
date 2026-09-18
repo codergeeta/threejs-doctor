@@ -23,11 +23,19 @@ const BLOCKED_GL_EXTENSIONS = new Set([
   'UNMASKED_VENDOR_WEBGL',
 ])
 
-function collectLiveProbe(renderer?: {
+type ProbeRenderer = {
   getExtension?: (name: string) => unknown
   getPixelRatio?: () => number | undefined
   pixelRatio?: number | undefined
-}): Partial<DeviceProbeInput> {
+  getContext?: () => {
+    getExtension?: (name: string) => unknown
+    getParameter?: (pname: number) => unknown
+    MAX_TEXTURE_SIZE?: number
+    MAX_RENDERBUFFER_SIZE?: number
+  } | null
+}
+
+function collectLiveProbe(renderer?: ProbeRenderer): Partial<DeviceProbeInput> {
   const partial: Partial<DeviceProbeInput> = { webgl: true }
   const hostDpr = (globalThis as { devicePixelRatio?: unknown }).devicePixelRatio
   if (typeof hostDpr === 'number') partial.devicePixelRatio = hostDpr
@@ -63,6 +71,29 @@ function collectLiveProbe(renderer?: {
     if (signals.colorBufferFloat !== undefined) partial.colorBufferFloat = signals.colorBufferFloat
     if (signals.floatLinear !== undefined) partial.floatLinear = signals.floatLinear
   }
+  const gl = typeof renderer?.getContext === 'function' ? renderer.getContext() : undefined
+  if (gl) {
+    const gpuSource: Parameters<typeof readWebglQualitySignals>[0] = {
+      getExtension(name: string) {
+        if (BLOCKED_GL_EXTENSIONS.has(name)) return null
+        return gl.getExtension?.(name)
+      },
+    }
+    if (typeof gl.getParameter === 'function') {
+      gpuSource.getParameter = gl.getParameter.bind(gl)
+    }
+    if (typeof gl.MAX_TEXTURE_SIZE === 'number') {
+      gpuSource.MAX_TEXTURE_SIZE = gl.MAX_TEXTURE_SIZE
+    }
+    if (typeof gl.MAX_RENDERBUFFER_SIZE === 'number') {
+      gpuSource.MAX_RENDERBUFFER_SIZE = gl.MAX_RENDERBUFFER_SIZE
+    }
+    const gpuLimits = readWebglQualitySignals(gpuSource)
+    if (gpuLimits.maxTextureSize !== undefined) partial.maxTextureSize = gpuLimits.maxTextureSize
+    if (gpuLimits.maxRenderbufferSize !== undefined) {
+      partial.maxRenderbufferSize = gpuLimits.maxRenderbufferSize
+    }
+  }
   return partial
 }
 
@@ -72,11 +103,7 @@ function collectLiveProbe(renderer?: {
  */
 export function resolveAttachDevice(
   option: AttachDeviceOption | undefined,
-  renderer?: {
-    getExtension?: (name: string) => unknown
-    getPixelRatio?: () => number | undefined
-    pixelRatio?: number | undefined
-  },
+  renderer?: ProbeRenderer,
 ): DeviceCapabilities | undefined {
   if (option === undefined) return undefined
   const overlay: Partial<DeviceProbeInput> = option === 'phone' ? { ...PHONE_CLASS_PROBE } : { ...option }

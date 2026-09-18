@@ -2,7 +2,7 @@ import type { MetricsSample, RendererInfoLike } from './types.js'
 
 export interface SceneStatsLike {
   textureCount: number
-  estimatedVramBytes: number
+  estimatedVramBytes?: number | undefined
   geometryCount: number
   lightCount: number
   shadowCastingLightCount: number
@@ -41,16 +41,19 @@ export class MetricsCollector {
       times.length === 0 ? 0 : times.reduce((a, b) => a + b, 0) / times.length
     const info = this.opts.getRendererInfo()
     const scene = this.opts.getSceneStats()
-    return {
+    const sample: MetricsSample = {
       avgFps: avgFrame <= 0 ? 0 : 1000 / avgFrame,
       p95FrameTimeMs: percentile(times, 95),
       drawCalls: info.render.calls,
       triangles: info.render.triangles,
       textureCount: scene.textureCount,
-      estimatedVramBytes: scene.estimatedVramBytes,
       geometryCount: scene.geometryCount,
       lightCount: scene.lightCount,
       shadowCastingLightCount: scene.shadowCastingLightCount,
     }
+    if (scene.estimatedVramBytes !== undefined) {
+      sample.estimatedVramBytes = scene.estimatedVramBytes
+    }
+    return sample
   }
 }

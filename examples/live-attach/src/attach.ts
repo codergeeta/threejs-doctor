@@ -151,7 +151,7 @@ export async function attachQualityLadder(
     camera: cameraForDoctor,
     renderer,
     profile: options.profile ?? 'game',
-    getSceneStats: () => collectSceneStats(found.scene, renderer),
+    getSceneStats: () => collectSceneStats(found.scene, found.renderer),
   }
   if (options.now) doctorOpts.now = options.now
   if (options.measureFrames !== undefined) doctorOpts.measureFrames = options.measureFrames

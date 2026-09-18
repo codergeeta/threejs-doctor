@@ -40,6 +40,8 @@ import { materialDowngradePass } from './passes/material-downgrade.js'
 import { mountOverlay as mountOverlayImpl, type OverlayHandle } from './overlay/mount-overlay.js'
 import type { QualityHudState } from './overlay/format-quality-hud.js'
 import { readRendererAntialias, readRendererPixelRatio } from './renderer-read.js'
+import { collectHostSceneStats } from './scene-stats.js'
+import { createGpuFrameSampler } from './gpu-timer.js'
 
 export interface DoctorReport {
   profile: Exclude<Profile, 'auto'>
@@ -68,8 +70,16 @@ export interface DoctorOptions {
   setPostfxEnabled?: (enabled: boolean) => void
   frameloop?: 'always' | 'demand'
   setFrameloop?: (mode: 'always' | 'demand') => void
-  /** Awaited between beginFrame and endFrame so live attach can sample real rAF deltas. */
+  /**
+   * Awaited between beginFrame and endFrame so live attach can sample real rAF deltas.
+   * When set, this is the host render path (do not also call renderer.render).
+   */
   waitFrame?: () => Promise<void>
+  /**
+   * Host render for one frame (`composer.render()` or `renderer.render(scene, camera)`).
+   * Used when `waitFrame` is omitted. If omitted, Doctor calls `renderer.render(scene, camera)` when present.
+   */
+  renderFrame?: () => void | Promise<void>
 }
 
 const PASS_REGISTRY: Record<PassId, OptimizePass> = {
@@ -120,13 +130,14 @@ function snapshotFrom(
       if (mat.uuid) materials.push({ uuid: mat.uuid })
     }
   })
+  const collected = collectHostSceneStats(scene, renderer)
   const walked = snapshotScene({
     objectCount,
     meshCount,
     geometries,
     materials,
-    textures: [],
-    lights: [],
+    textures: collected.textures,
+    lights: collected.lights,
     drawCalls: sample.drawCalls,
     triangles: sample.triangles,
     continuousFrameloop,
@@ -138,7 +149,7 @@ function snapshotFrom(
     ...walked,
     geometryCount: sample.geometryCount,
     textureCount: sample.textureCount,
-    estimatedVramBytes: sample.estimatedVramBytes,
+    estimatedVramBytes: sample.estimatedVramBytes ?? walked.estimatedVramBytes,
     lightCount: sample.lightCount,
     shadowCastingLightCount: sample.shadowCastingLightCount,
   }
@@ -183,6 +194,7 @@ export class Doctor {
   private qualityHudGetter: (() => QualityHudState | undefined) | undefined
   private frameloop: 'always' | 'demand'
   private postfxEnabled: boolean
+  private pinnedAutoProfile: Exclude<Profile, 'auto'> | undefined
 
   constructor(private readonly opts: DoctorOptions) {
     this.frameloop = opts.frameloop ?? 'always'
@@ -220,6 +232,7 @@ export class Doctor {
       probe.coarsePointer = matchMedia('(pointer: coarse)').matches
     }
     const getExtension = this.opts.renderer.getExtension
+    const gl = typeof this.opts.renderer.getContext === 'function' ? this.opts.renderer.getContext() : undefined
     if (typeof getExtension === 'function') {
       const signals = readWebglQualitySignals({
         getExtension: (name) => getExtension.call(this.opts.renderer, name),
@@ -231,6 +244,27 @@ export class Doctor {
         probe.floatLinear = signals.floatLinear
       }
     }
+    if (gl) {
+      const gpuSource: Parameters<typeof readWebglQualitySignals>[0] = {
+        getExtension: (name) => gl.getExtension?.(name),
+      }
+      if (typeof gl.getParameter === 'function') {
+        gpuSource.getParameter = gl.getParameter.bind(gl)
+      }
+      if (typeof gl.MAX_TEXTURE_SIZE === 'number') {
+        gpuSource.MAX_TEXTURE_SIZE = gl.MAX_TEXTURE_SIZE
+      }
+      if (typeof gl.MAX_RENDERBUFFER_SIZE === 'number') {
+        gpuSource.MAX_RENDERBUFFER_SIZE = gl.MAX_RENDERBUFFER_SIZE
+      }
+      const gpuLimits = readWebglQualitySignals(gpuSource)
+      if (gpuLimits.maxTextureSize !== undefined) {
+        probe.maxTextureSize = gpuLimits.maxTextureSize
+      }
+      if (gpuLimits.maxRenderbufferSize !== undefined) {
+        probe.maxRenderbufferSize = gpuLimits.maxRenderbufferSize
+      }
+    }
     return probeDevice(probe)
   }
 
@@ -239,13 +273,7 @@ export class Doctor {
       getRendererInfo: () => this.opts.renderer.info,
       getSceneStats:
         this.opts.getSceneStats ??
-        (() => ({
-          textureCount: this.opts.renderer.info.memory.textures,
-          estimatedVramBytes: 0,
-          geometryCount: this.opts.renderer.info.memory.geometries,
-          lightCount: 0,
-          shadowCastingLightCount: 0,
-        })),
+        (() => collectHostSceneStats(this.opts.scene, this.opts.renderer).stats),
     })
   }
 
@@ -268,6 +296,23 @@ export class Doctor {
     return ctx
   }
 
+  private concreteProfile(snap: SceneSnapshot): Exclude<Profile, 'auto'> {
+    const requested = this.opts.profile ?? 'auto'
+    if (requested !== 'auto') return requested
+    if (this.pinnedAutoProfile) return this.pinnedAutoProfile
+    this.pinnedAutoProfile = resolveProfile('auto', snap)
+    return this.pinnedAutoProfile
+  }
+
+  private hostRenderPath(): (() => void | Promise<void>) | undefined {
+    if (this.opts.renderFrame) return this.opts.renderFrame
+    const render = this.opts.renderer.render
+    if (typeof render === 'function') {
+      return () => render.call(this.opts.renderer, this.opts.scene, this.opts.camera)
+    }
+    return undefined
+  }
+
   getDevice(): DeviceCapabilities {
     return this.device()
   }
@@ -276,14 +321,40 @@ export class Doctor {
     const frames = frameCount ?? this.opts.measureFrames ?? 30
     const now = this.opts.now ?? (() => performance.now())
     const waitFrame = this.opts.waitFrame
+    const renderFrame = waitFrame ? undefined : this.hostRenderPath()
     const collector = this.collector()
-    for (let i = 0; i < frames; i++) {
-      const start = now()
-      collector.beginFrame(start)
-      if (waitFrame) await waitFrame()
-      collector.endFrame(now())
+    const info = this.opts.renderer.info
+    const hadAutoReset = Object.prototype.hasOwnProperty.call(info, 'autoReset')
+    const prevAutoReset = info.autoReset
+    const gpu = createGpuFrameSampler(this.opts.renderer)
+    info.autoReset = false
+    let lastCalls = info.render.calls
+    let lastTriangles = info.render.triangles
+    const gpuTimes: number[] = []
+    try {
+      for (let i = 0; i < frames; i++) {
+        info.reset?.()
+        const start = now()
+        collector.beginFrame(start)
+        gpu?.begin()
+        if (waitFrame) await waitFrame()
+        else if (renderFrame) await renderFrame()
+        const gpuMs = gpu?.end()
+        if (gpuMs !== undefined) gpuTimes.push(gpuMs)
+        collector.endFrame(now())
+        lastCalls = info.render.calls
+        lastTriangles = info.render.triangles
+      }
+    } finally {
+      if (hadAutoReset) info.autoReset = prevAutoReset
+      else delete (info as { autoReset?: boolean }).autoReset
     }
     const sample = collector.sample()
+    sample.drawCalls = lastCalls
+    sample.triangles = lastTriangles
+    if (gpuTimes.length > 0) {
+      sample.gpuFrameTimeMs = gpuTimes.reduce((a, b) => a + b, 0) / gpuTimes.length
+    }
     const width = this.opts.renderer.drawingBufferWidth
     const height = this.opts.renderer.drawingBufferHeight
     const measured =
@@ -300,7 +371,7 @@ export class Doctor {
     const baseline = this.baseline ?? (await this.measure())
     const device = this.device()
     const snap = this.currentSnapshot(baseline)
-    const profile = resolveProfile(this.opts.profile ?? 'auto', snap)
+    const profile = this.concreteProfile(snap)
     const findings = runRules(this.ruleContext(snap, device, profile))
     const score = computeDoctorScore(findings, snap, profile)
     return {
@@ -328,12 +399,11 @@ export class Doctor {
   ): { appliedPasses: PassId[]; failedPasses: Array<{ id: PassId; error: string }> } {
     const device = this.device()
     const cameraPosition = cameraPositionOf(this.opts.camera)
-    const requested = this.opts.profile ?? 'auto'
-    const profile: Exclude<Profile, 'auto'> =
-      requested !== 'auto'
-        ? requested
-        : this.lastReport?.profile ??
-          (this.lastSnapshot ? resolveProfile('auto', this.lastSnapshot) : 'marketing')
+    const profile = this.lastSnapshot
+      ? this.concreteProfile(this.lastSnapshot)
+      : this.opts.profile && this.opts.profile !== 'auto'
+        ? this.opts.profile
+        : this.lastReport?.profile ?? 'marketing'
     const ctx: PassContext = {
       renderer: this.opts.renderer,
       scene: this.opts.scene,

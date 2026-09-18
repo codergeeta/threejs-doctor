@@ -15,11 +15,15 @@ interface RawRenderer {
   getPixelRatio?: () => number
   getExtension?: (name: string) => unknown
   getContext?: () => {
-    drawingBufferWidth: number
-    drawingBufferHeight: number
+    drawingBufferWidth?: number
+    drawingBufferHeight?: number
     getExtension?: (name: string) => unknown
+    getParameter?: (pname: number) => unknown
     getContextAttributes?: () => { antialias?: boolean } | null
-  }
+    MAX_TEXTURE_SIZE?: number
+    MAX_RENDERBUFFER_SIZE?: number
+  } | null
+  render?: (scene: unknown, camera: unknown) => void
   setDrawingBufferSize?: (width: number, height: number, pixelRatio: number) => void
   setSize?: (width: number, height: number, updateStyle?: boolean) => void
 }
@@ -89,6 +93,12 @@ export function wrapRenderer(raw: object): DoctorRendererLike {
       if (gl && typeof gl.getExtension === 'function') return gl.getExtension(name)
       return r.extensions?.get?.(name)
     },
+  }
+  if (typeof r.getContext === 'function') {
+    wrapped.getContext = () => r.getContext!()
+  }
+  if (typeof r.render === 'function') {
+    wrapped.render = (scene, camera) => r.render!(scene, camera)
   }
 
   defineOptional(wrapped, 'antialias', {

@@ -48,7 +48,7 @@ export interface MetricsSample {
   drawCalls: number
   triangles: number
   textureCount: number
-  estimatedVramBytes: number
+  estimatedVramBytes?: number | undefined
   geometryCount: number
   lightCount: number
   shadowCastingLightCount: number
@@ -56,6 +56,8 @@ export interface MetricsSample {
   bytesLoaded?: number
   compileMs?: number
   drawingBufferPixels?: number
+  /** GPU elapsed ms from EXT_disjoint_timer_query_webgl2 when a result is actually available. */
+  gpuFrameTimeMs?: number | undefined
 }
 
 export interface SceneSnapshot {
@@ -79,6 +81,8 @@ export interface SceneSnapshot {
 }
 
 export interface RendererInfoLike {
-  render: { calls: number; triangles: number }
+  render: { calls: number; triangles: number; points?: number | undefined }
   memory: { geometries: number; textures: number }
+  autoReset?: boolean | undefined
+  reset?: () => void
 }

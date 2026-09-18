@@ -16,7 +16,10 @@ export function computeDoctorScore(
   if (snapshot.drawCalls > budgets.maxDrawCalls) {
     score -= Math.min(15, Math.floor((snapshot.drawCalls / budgets.maxDrawCalls - 1) * 10))
   }
-  if (snapshot.estimatedVramBytes > budgets.maxEstimatedVramBytes) {
+  if (
+    typeof snapshot.estimatedVramBytes === 'number' &&
+    snapshot.estimatedVramBytes > budgets.maxEstimatedVramBytes
+  ) {
     score -= 10
   }
   return Math.max(0, Math.min(100, Math.round(score)))

@@ -375,6 +375,8 @@
   var AGGRESSIVE_PASSES = ["distance-cull"];
 
   // ../../packages/core/src/device-probe.ts
+  var GL_MAX_TEXTURE_SIZE = 3379;
+  var GL_MAX_RENDERBUFFER_SIZE = 34024;
   function classifyTier(input) {
     const score = (input.hardwareConcurrency >= 12 ? 2 : input.hardwareConcurrency >= 8 ? 1 : 0) + (input.maxTextureSize >= 8192 ? 2 : input.maxTextureSize >= 4096 ? 1 : 0) + (input.devicePixelRatio <= 1.5 ? 1 : 0) + (input.webgpu ? 1 : 0);
     if (score >= 5) return "high";
@@ -413,12 +415,32 @@
     assignOptional(caps, partial);
     return caps;
   }
+  function readPositiveParam(gl, constant, fallbackPname) {
+    if (typeof gl.getParameter !== "function") return void 0;
+    const pname = typeof constant === "number" ? constant : fallbackPname;
+    try {
+      const value = gl.getParameter(pname);
+      if (typeof value === "number" && Number.isFinite(value) && value > 0) return value;
+    } catch {
+      return void 0;
+    }
+    return void 0;
+  }
   function readWebglQualitySignals(gl) {
     if (!gl) return {};
-    return {
+    const signals = {
       colorBufferFloat: Boolean(gl.getExtension("EXT_color_buffer_float")),
       floatLinear: Boolean(gl.getExtension("OES_texture_float_linear"))
     };
+    const maxTextureSize = readPositiveParam(gl, gl.MAX_TEXTURE_SIZE, GL_MAX_TEXTURE_SIZE);
+    if (maxTextureSize !== void 0) signals.maxTextureSize = maxTextureSize;
+    const maxRenderbufferSize = readPositiveParam(
+      gl,
+      gl.MAX_RENDERBUFFER_SIZE,
+      GL_MAX_RENDERBUFFER_SIZE
+    );
+    if (maxRenderbufferSize !== void 0) signals.maxRenderbufferSize = maxRenderbufferSize;
+    return signals;
   }
 
   // ../../packages/core/src/scene-snapshot.ts
@@ -476,17 +498,20 @@
       const avgFrame = times.length === 0 ? 0 : times.reduce((a, b) => a + b, 0) / times.length;
       const info = this.opts.getRendererInfo();
       const scene = this.opts.getSceneStats();
-      return {
+      const sample = {
         avgFps: avgFrame <= 0 ? 0 : 1e3 / avgFrame,
         p95FrameTimeMs: percentile(times, 95),
         drawCalls: info.render.calls,
         triangles: info.render.triangles,
         textureCount: scene.textureCount,
-        estimatedVramBytes: scene.estimatedVramBytes,
         geometryCount: scene.geometryCount,
         lightCount: scene.lightCount,
         shadowCastingLightCount: scene.shadowCastingLightCount
       };
+      if (scene.estimatedVramBytes !== void 0) {
+        sample.estimatedVramBytes = scene.estimatedVramBytes;
+      }
+      return sample;
     }
   };
 
@@ -766,9 +791,21 @@
   };
   function resolveProfile(profile, snapshot) {
     if (profile !== "auto") return profile;
-    if (snapshot.meshCount > 200 || snapshot.drawCalls > 150) return "cad";
+    const continuous = snapshot.continuousFrameloop;
+    const highDraw = snapshot.drawCalls >= 80;
+    const substantialMesh = snapshot.meshCount >= 50;
+    if (continuous && (substantialMesh || snapshot.drawCalls >= 30)) return "game";
+    if (highDraw && snapshot.meshCount >= 30) return "game";
     if (snapshot.lightCount >= 4 && snapshot.meshCount > 50) return "game";
-    if (snapshot.textureCount <= 6 && snapshot.meshCount <= 20) return "product";
+    if (!continuous && snapshot.lightCount < 4 && snapshot.meshCount > 200 && !highDraw) {
+      return "cad";
+    }
+    if (!continuous && snapshot.lightCount < 3 && snapshot.drawCalls > 150 && snapshot.meshCount <= 50) {
+      return "cad";
+    }
+    if (snapshot.textureCount <= 6 && snapshot.meshCount <= 20 && snapshot.drawCalls <= 40) {
+      return "product";
+    }
     return "marketing";
   }
 
@@ -781,7 +818,7 @@
     if (snapshot.drawCalls > budgets.maxDrawCalls) {
       score -= Math.min(15, Math.floor((snapshot.drawCalls / budgets.maxDrawCalls - 1) * 10));
     }
-    if (snapshot.estimatedVramBytes > budgets.maxEstimatedVramBytes) {
+    if (typeof snapshot.estimatedVramBytes === "number" && snapshot.estimatedVramBytes > budgets.maxEstimatedVramBytes) {
       score -= 10;
     }
     return Math.max(0, Math.min(100, Math.round(score)));
@@ -894,7 +931,7 @@
       const profile = resolveProfile(ctx.profile, ctx.snapshot);
       const findings = [];
       const vramBudget = PROFILE_BUDGETS[profile].maxEstimatedVramBytes;
-      if (ctx.snapshot.estimatedVramBytes > vramBudget) {
+      if (typeof ctx.snapshot.estimatedVramBytes === "number" && ctx.snapshot.estimatedVramBytes > vramBudget) {
         findings.push({
           id: "textures/high-vram",
           severity: "error",
@@ -1462,9 +1499,12 @@
       "shadowCastingLightCount"
     ];
     return keys.map((k) => {
-      const delta = after[k] - baseline[k];
+      const next = after[k];
+      const prev = baseline[k];
+      if (typeof next !== "number" || typeof prev !== "number") return void 0;
+      const delta = next - prev;
       return `${String(k)}: ${delta >= 0 ? "+" : ""}${delta}`;
-    }).join(" \xB7 ");
+    }).filter((line) => line !== void 0).join(" \xB7 ");
   }
   function mountOverlay(opts2) {
     const parent = opts2.root ?? document.body;
@@ -1490,6 +1530,179 @@ ${line2}` : line1;
       refresh: paint,
       unmount() {
         el.remove();
+      }
+    };
+  }
+
+  // ../../packages/runtime/src/scene-stats.ts
+  var MATERIAL_MAP_KEYS = [
+    "map",
+    "lightMap",
+    "aoMap",
+    "emissiveMap",
+    "bumpMap",
+    "normalMap",
+    "displacementMap",
+    "roughnessMap",
+    "metalnessMap",
+    "alphaMap",
+    "envMap",
+    "specularMap",
+    "gradientMap",
+    "matcap"
+  ];
+  var BYTES_PER_PIXEL = 4;
+  function finiteSize(width, height) {
+    if (typeof width !== "number" || typeof height !== "number") return void 0;
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return void 0;
+    return { width, height };
+  }
+  function textureSize(tex) {
+    const direct = finiteSize(tex.width, tex.height);
+    if (direct) return direct;
+    const image = tex.image;
+    const fromImage = image ? finiteSize(image.width, image.height) : void 0;
+    if (fromImage) return fromImage;
+    const source = tex.source;
+    if (source?.data) return finiteSize(source.data.width, source.data.height);
+    return void 0;
+  }
+  function rememberTexture(seen, tex, fallbackId) {
+    if (!tex || typeof tex !== "object") return;
+    const rec = tex;
+    const uuid = typeof rec.uuid === "string" ? rec.uuid : fallbackId;
+    if (seen.has(uuid)) return;
+    const size = textureSize(rec);
+    if (!size) {
+      seen.set(uuid, { uuid, width: 0, height: 0, bytesPerPixel: BYTES_PER_PIXEL });
+      return;
+    }
+    seen.set(uuid, {
+      uuid,
+      width: size.width,
+      height: size.height,
+      bytesPerPixel: BYTES_PER_PIXEL
+    });
+  }
+  function collectMaterialTextures(material, seen, id) {
+    if (!material || typeof material !== "object") return;
+    const rec = material;
+    for (const key of MATERIAL_MAP_KEYS) {
+      rememberTexture(seen, rec[key], `${id}:${key}`);
+    }
+  }
+  function isRenderTarget(value) {
+    if (!value || typeof value !== "object") return false;
+    const rec = value;
+    if (rec.isWebGLRenderTarget === true) return true;
+    return Boolean(rec.texture) && finiteSize(rec.width, rec.height) !== void 0;
+  }
+  function rememberRenderTarget(seen, value, fallbackId) {
+    if (!isRenderTarget(value)) return;
+    const tex = value.texture;
+    const uuid = tex && typeof tex === "object" && typeof tex.uuid === "string" ? tex.uuid : fallbackId;
+    if (seen.has(uuid)) return;
+    const size = finiteSize(value.width, value.height) ?? (tex ? textureSize(tex) : void 0);
+    if (!size) return;
+    seen.set(uuid, {
+      uuid,
+      width: size.width,
+      height: size.height,
+      bytesPerPixel: BYTES_PER_PIXEL
+    });
+  }
+  function scanObjectForRenderTargets(obj, seen, prefix) {
+    if (!obj || typeof obj !== "object") return;
+    const rec = obj;
+    rememberRenderTarget(seen, rec, prefix);
+    rememberRenderTarget(seen, rec.renderTarget, `${prefix}:renderTarget`);
+    const shadow = rec.shadow;
+    if (shadow) rememberRenderTarget(seen, shadow.map, `${prefix}:shadow`);
+  }
+  function collectHostSceneStats(scene, renderer) {
+    const lights = [];
+    const seen = /* @__PURE__ */ new Map();
+    const traversable = scene;
+    if (typeof traversable.traverse === "function") {
+      let index = 0;
+      traversable.traverse((obj) => {
+        index += 1;
+        if (obj.isLight === true) {
+          lights.push({ castShadow: obj.castShadow === true });
+        }
+        const mats = Array.isArray(obj.material) ? obj.material : obj.material ? [obj.material] : [];
+        mats.forEach((mat, i) => collectMaterialTextures(mat, seen, `m${index}-${i}`));
+        scanObjectForRenderTargets(obj, seen, `obj${index}`);
+      });
+    }
+    if (renderer && typeof renderer === "object") {
+      const rec = renderer;
+      for (const [key, value] of Object.entries(rec)) {
+        rememberRenderTarget(seen, value, `renderer:${key}`);
+      }
+      scanObjectForRenderTargets(rec.shadowMap, seen, "renderer:shadowMap");
+    }
+    const sized = [...seen.values()].filter((t) => t.width > 0 && t.height > 0);
+    const stats = {
+      textureCount: seen.size,
+      geometryCount: renderer?.info?.memory?.geometries ?? 0,
+      lightCount: lights.length,
+      shadowCastingLightCount: lights.filter((l) => l.castShadow).length
+    };
+    if (stats.geometryCount === 0) {
+      const mem = renderer?.info?.memory?.geometries;
+      if (typeof mem === "number") stats.geometryCount = mem;
+    }
+    if (sized.length > 0) {
+      stats.estimatedVramBytes = sized.reduce(
+        (sum, t) => sum + t.width * t.height * t.bytesPerPixel,
+        0
+      );
+    }
+    if (stats.textureCount === 0) {
+      const memTex = renderer?.info?.memory?.textures;
+      if (typeof memTex === "number") stats.textureCount = memTex;
+    }
+    return { stats, lights, textures: sized };
+  }
+
+  // ../../packages/runtime/src/gpu-timer.ts
+  function createGpuFrameSampler(renderer) {
+    const gl = renderer.getContext?.();
+    const extName = "EXT_disjoint_timer_query_webgl2";
+    let ext;
+    try {
+      ext = renderer.getExtension?.(extName) ?? gl?.getExtension?.(extName);
+    } catch {
+      ext = void 0;
+    }
+    if (!ext || typeof ext !== "object") return void 0;
+    const api = ext;
+    if (typeof api.createQuery !== "function" || typeof api.beginQuery !== "function") return void 0;
+    const target = api.TIME_ELAPSED_EXT;
+    if (typeof target !== "number") return void 0;
+    let query;
+    return {
+      begin() {
+        try {
+          query = api.createQuery?.();
+          if (query) api.beginQuery?.(target, query);
+        } catch {
+          query = void 0;
+        }
+      },
+      end() {
+        try {
+          api.endQuery?.(target);
+          if (!query || typeof api.getQueryParameter !== "function") return void 0;
+          const available = api.getQueryParameter(query, api.QUERY_RESULT_AVAILABLE ?? 34919);
+          if (available !== true) return void 0;
+          const ns = api.getQueryParameter(query, api.QUERY_RESULT ?? 34918);
+          if (typeof ns !== "number" || !Number.isFinite(ns)) return void 0;
+          return ns / 1e6;
+        } catch {
+          return void 0;
+        }
       }
     };
   }
@@ -1533,13 +1746,14 @@ ${line2}` : line1;
         if (mat.uuid) materials.push({ uuid: mat.uuid });
       }
     });
+    const collected = collectHostSceneStats(scene, renderer);
     const walked = snapshotScene({
       objectCount,
       meshCount,
       geometries,
       materials,
-      textures: [],
-      lights: [],
+      textures: collected.textures,
+      lights: collected.lights,
       drawCalls: sample.drawCalls,
       triangles: sample.triangles,
       continuousFrameloop,
@@ -1551,7 +1765,7 @@ ${line2}` : line1;
       ...walked,
       geometryCount: sample.geometryCount,
       textureCount: sample.textureCount,
-      estimatedVramBytes: sample.estimatedVramBytes,
+      estimatedVramBytes: sample.estimatedVramBytes ?? walked.estimatedVramBytes,
       lightCount: sample.lightCount,
       shadowCastingLightCount: sample.shadowCastingLightCount
     };
@@ -1592,6 +1806,7 @@ ${line2}` : line1;
     qualityHudGetter;
     frameloop;
     postfxEnabled;
+    pinnedAutoProfile;
     device() {
       if (this.opts.device) return this.opts.device;
       const windowDpr = typeof globalThis !== "undefined" && typeof globalThis.devicePixelRatio === "number" ? globalThis.devicePixelRatio : void 0;
@@ -1619,6 +1834,7 @@ ${line2}` : line1;
         probe.coarsePointer = matchMedia("(pointer: coarse)").matches;
       }
       const getExtension = this.opts.renderer.getExtension;
+      const gl = typeof this.opts.renderer.getContext === "function" ? this.opts.renderer.getContext() : void 0;
       if (typeof getExtension === "function") {
         const signals = readWebglQualitySignals({
           getExtension: (name) => getExtension.call(this.opts.renderer, name)
@@ -1630,18 +1846,33 @@ ${line2}` : line1;
           probe.floatLinear = signals.floatLinear;
         }
       }
+      if (gl) {
+        const gpuSource = {
+          getExtension: (name) => gl.getExtension?.(name)
+        };
+        if (typeof gl.getParameter === "function") {
+          gpuSource.getParameter = gl.getParameter.bind(gl);
+        }
+        if (typeof gl.MAX_TEXTURE_SIZE === "number") {
+          gpuSource.MAX_TEXTURE_SIZE = gl.MAX_TEXTURE_SIZE;
+        }
+        if (typeof gl.MAX_RENDERBUFFER_SIZE === "number") {
+          gpuSource.MAX_RENDERBUFFER_SIZE = gl.MAX_RENDERBUFFER_SIZE;
+        }
+        const gpuLimits = readWebglQualitySignals(gpuSource);
+        if (gpuLimits.maxTextureSize !== void 0) {
+          probe.maxTextureSize = gpuLimits.maxTextureSize;
+        }
+        if (gpuLimits.maxRenderbufferSize !== void 0) {
+          probe.maxRenderbufferSize = gpuLimits.maxRenderbufferSize;
+        }
+      }
       return probeDevice(probe);
     }
     collector() {
       return new MetricsCollector({
         getRendererInfo: () => this.opts.renderer.info,
-        getSceneStats: this.opts.getSceneStats ?? (() => ({
-          textureCount: this.opts.renderer.info.memory.textures,
-          estimatedVramBytes: 0,
-          geometryCount: this.opts.renderer.info.memory.geometries,
-          lightCount: 0,
-          shadowCastingLightCount: 0
-        }))
+        getSceneStats: this.opts.getSceneStats ?? (() => collectHostSceneStats(this.opts.scene, this.opts.renderer).stats)
       });
     }
     currentSnapshot(sample) {
@@ -1657,6 +1888,21 @@ ${line2}` : line1;
       if (this.previousSnapshot) ctx.previousSnapshot = this.previousSnapshot;
       return ctx;
     }
+    concreteProfile(snap) {
+      const requested = this.opts.profile ?? "auto";
+      if (requested !== "auto") return requested;
+      if (this.pinnedAutoProfile) return this.pinnedAutoProfile;
+      this.pinnedAutoProfile = resolveProfile("auto", snap);
+      return this.pinnedAutoProfile;
+    }
+    hostRenderPath() {
+      if (this.opts.renderFrame) return this.opts.renderFrame;
+      const render = this.opts.renderer.render;
+      if (typeof render === "function") {
+        return () => render.call(this.opts.renderer, this.opts.scene, this.opts.camera);
+      }
+      return void 0;
+    }
     getDevice() {
       return this.device();
     }
@@ -1664,14 +1910,40 @@ ${line2}` : line1;
       const frames = frameCount ?? this.opts.measureFrames ?? 30;
       const now = this.opts.now ?? (() => performance.now());
       const waitFrame = this.opts.waitFrame;
+      const renderFrame = waitFrame ? void 0 : this.hostRenderPath();
       const collector = this.collector();
-      for (let i = 0; i < frames; i++) {
-        const start = now();
-        collector.beginFrame(start);
-        if (waitFrame) await waitFrame();
-        collector.endFrame(now());
+      const info = this.opts.renderer.info;
+      const hadAutoReset = Object.prototype.hasOwnProperty.call(info, "autoReset");
+      const prevAutoReset = info.autoReset;
+      const gpu = createGpuFrameSampler(this.opts.renderer);
+      info.autoReset = false;
+      let lastCalls = info.render.calls;
+      let lastTriangles = info.render.triangles;
+      const gpuTimes = [];
+      try {
+        for (let i = 0; i < frames; i++) {
+          info.reset?.();
+          const start = now();
+          collector.beginFrame(start);
+          gpu?.begin();
+          if (waitFrame) await waitFrame();
+          else if (renderFrame) await renderFrame();
+          const gpuMs = gpu?.end();
+          if (gpuMs !== void 0) gpuTimes.push(gpuMs);
+          collector.endFrame(now());
+          lastCalls = info.render.calls;
+          lastTriangles = info.render.triangles;
+        }
+      } finally {
+        if (hadAutoReset) info.autoReset = prevAutoReset;
+        else delete info.autoReset;
       }
       const sample = collector.sample();
+      sample.drawCalls = lastCalls;
+      sample.triangles = lastTriangles;
+      if (gpuTimes.length > 0) {
+        sample.gpuFrameTimeMs = gpuTimes.reduce((a, b) => a + b, 0) / gpuTimes.length;
+      }
       const width = this.opts.renderer.drawingBufferWidth;
       const height = this.opts.renderer.drawingBufferHeight;
       const measured = typeof width === "number" && typeof height === "number" ? { ...sample, drawingBufferPixels: width * height } : sample;
@@ -1684,7 +1956,7 @@ ${line2}` : line1;
       const baseline = this.baseline ?? await this.measure();
       const device = this.device();
       const snap = this.currentSnapshot(baseline);
-      const profile = resolveProfile(this.opts.profile ?? "auto", snap);
+      const profile = this.concreteProfile(snap);
       const findings = runRules(this.ruleContext(snap, device, profile));
       const score = computeDoctorScore(findings, snap, profile);
       return {
@@ -1707,8 +1979,7 @@ ${line2}` : line1;
     applyPassesImmediate(passIds, extras) {
       const device = this.device();
       const cameraPosition = cameraPositionOf(this.opts.camera);
-      const requested = this.opts.profile ?? "auto";
-      const profile = requested !== "auto" ? requested : this.lastReport?.profile ?? (this.lastSnapshot ? resolveProfile("auto", this.lastSnapshot) : "marketing");
+      const profile = this.lastSnapshot ? this.concreteProfile(this.lastSnapshot) : this.opts.profile && this.opts.profile !== "auto" ? this.opts.profile : this.lastReport?.profile ?? "marketing";
       const ctx = {
         renderer: this.opts.renderer,
         scene: this.opts.scene,
@@ -3273,25 +3544,7 @@ ${line2}` : line1;
 
   // src/scene-stats.ts
   function collectSceneStats(scene, renderer) {
-    let lightCount = 0;
-    let shadowCastingLightCount = 0;
-    const traversable = scene;
-    if (typeof traversable.traverse === "function") {
-      traversable.traverse((obj) => {
-        if (obj.isLight === true) {
-          lightCount += 1;
-          if (obj.castShadow === true) shadowCastingLightCount += 1;
-        }
-      });
-    }
-    const memory = renderer.info?.memory;
-    return {
-      textureCount: memory?.textures ?? 0,
-      estimatedVramBytes: 0,
-      geometryCount: memory?.geometries ?? 0,
-      lightCount,
-      shadowCastingLightCount
-    };
+    return collectHostSceneStats(scene, renderer).stats;
   }
 
   // src/wrap-renderer.ts
@@ -3352,6 +3605,12 @@ ${line2}` : line1;
         return r.extensions?.get?.(name);
       }
     };
+    if (typeof r.getContext === "function") {
+      wrapped.getContext = () => r.getContext();
+    }
+    if (typeof r.render === "function") {
+      wrapped.render = (scene, camera) => r.render(scene, camera);
+    }
     defineOptional(wrapped, "antialias", {
       get: () => readRendererAntialias(r)
     });
@@ -3451,6 +3710,29 @@ ${line2}` : line1;
       });
       if (signals.colorBufferFloat !== void 0) partial.colorBufferFloat = signals.colorBufferFloat;
       if (signals.floatLinear !== void 0) partial.floatLinear = signals.floatLinear;
+    }
+    const gl = typeof renderer?.getContext === "function" ? renderer.getContext() : void 0;
+    if (gl) {
+      const gpuSource = {
+        getExtension(name) {
+          if (BLOCKED_GL_EXTENSIONS.has(name)) return null;
+          return gl.getExtension?.(name);
+        }
+      };
+      if (typeof gl.getParameter === "function") {
+        gpuSource.getParameter = gl.getParameter.bind(gl);
+      }
+      if (typeof gl.MAX_TEXTURE_SIZE === "number") {
+        gpuSource.MAX_TEXTURE_SIZE = gl.MAX_TEXTURE_SIZE;
+      }
+      if (typeof gl.MAX_RENDERBUFFER_SIZE === "number") {
+        gpuSource.MAX_RENDERBUFFER_SIZE = gl.MAX_RENDERBUFFER_SIZE;
+      }
+      const gpuLimits = readWebglQualitySignals(gpuSource);
+      if (gpuLimits.maxTextureSize !== void 0) partial.maxTextureSize = gpuLimits.maxTextureSize;
+      if (gpuLimits.maxRenderbufferSize !== void 0) {
+        partial.maxRenderbufferSize = gpuLimits.maxRenderbufferSize;
+      }
     }
     return partial;
   }
@@ -3668,7 +3950,7 @@ ${line2}` : line1;
       camera: cameraForDoctor,
       renderer,
       profile: options.profile ?? "game",
-      getSceneStats: () => collectSceneStats(found.scene, renderer)
+      getSceneStats: () => collectSceneStats(found.scene, found.renderer)
     };
     if (options.now) doctorOpts.now = options.now;
     if (options.measureFrames !== void 0) doctorOpts.measureFrames = options.measureFrames;

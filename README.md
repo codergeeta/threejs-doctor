@@ -67,12 +67,23 @@ CI (`.github/workflows/ci.yml`) runs `typecheck`, `test`, and `build`. It does *
 ```ts
 import { Doctor } from '@threejs-doctor/runtime'
 
-const doctor = new Doctor({ scene, camera, renderer, profile: 'auto', mode: 'diagnose' })
-const baseline = await doctor.measure()
+const doctor = new Doctor({
+  scene,
+  camera,
+  renderer,
+  profile: 'game', // games: set explicitly; 'auto' pins the first resolution
+  mode: 'diagnose',
+  // Host rAF is the render path. Omit waitFrame to let Doctor call renderer.render.
+  waitFrame: () => new Promise(requestAnimationFrame),
+})
+// Times the waitFrame / renderFrame / renderer.render between beginFrame and endFrame.
+const baseline = await doctor.measure(30)
 const report = await doctor.diagnose()
 const after = await doctor.optimize({ apply: ['safe'] })
 doctor.mountOverlay()
 ```
+
+`measure()` does not invent GPU times. `gpuFrameTimeMs` is set only when `EXT_disjoint_timer_query_webgl2` returns a query result. Draw-call totals use `renderer.info.autoReset = false` for the sample so EffectComposer passes accumulate. Lights, textures, and render-target VRAM come from the scene graph when dimensions are known (otherwise those fields are omitted).
 
 Live ocean attach notes for the unpublished Quality Ladder adapter (this repo does not vendor the demo) are in [`examples/ocean-adapter/README.md`](examples/ocean-adapter/README.md). Pasteable DevTools IIFE: [`examples/live-attach`](examples/live-attach/README.md). Local unpublished hosts (no pelagic) for live-attach discovery: [`examples/acceptance-fixture`](examples/acceptance-fixture/README.md) and the heavier [`examples/acceptance-fixture-game`](examples/acceptance-fixture-game/README.md). How a real game exposes `{ scene, camera, renderer }`: [`docs/superpowers/acceptance/host-integration.md`](docs/superpowers/acceptance/host-integration.md).
 

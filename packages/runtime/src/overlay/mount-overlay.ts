@@ -29,9 +29,13 @@ function formatDeltas(baseline?: MetricsSample, after?: MetricsSample): string {
   ] as const
   return keys
     .map((k) => {
-      const delta = after[k] - baseline[k]
+      const next = after[k]
+      const prev = baseline[k]
+      if (typeof next !== 'number' || typeof prev !== 'number') return undefined
+      const delta = next - prev
       return `${String(k)}: ${delta >= 0 ? '+' : ''}${delta}`
     })
+    .filter((line): line is string => line !== undefined)
     .join(' · ')
 }
 

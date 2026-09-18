@@ -15,6 +15,9 @@ export interface DeviceProbeInput {
   maxRenderbufferSize?: number
 }
 
+const GL_MAX_TEXTURE_SIZE = 0x0d33
+const GL_MAX_RENDERBUFFER_SIZE = 0x84e8
+
 function classifyTier(input: DeviceProbeInput): DeviceTier {
   const score =
     (input.hardwareConcurrency >= 12 ? 2 : input.hardwareConcurrency >= 8 ? 1 : 0) +
@@ -63,12 +66,48 @@ export function probeDevice(partial: Partial<DeviceProbeInput> = {}): DeviceCapa
   return caps
 }
 
+export interface WebglQualitySource {
+  getExtension(name: string): unknown
+  getParameter?(pname: number): unknown
+  MAX_TEXTURE_SIZE?: number
+  MAX_RENDERBUFFER_SIZE?: number
+}
+
+function readPositiveParam(
+  gl: WebglQualitySource,
+  constant: number | undefined,
+  fallbackPname: number,
+): number | undefined {
+  if (typeof gl.getParameter !== 'function') return undefined
+  const pname = typeof constant === 'number' ? constant : fallbackPname
+  try {
+    const value = gl.getParameter(pname)
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value
+  } catch {
+    return undefined
+  }
+  return undefined
+}
+
 export function readWebglQualitySignals(
-  gl: { getExtension(name: string): unknown } | undefined,
-): Pick<DeviceProbeInput, 'colorBufferFloat' | 'floatLinear'> {
+  gl: WebglQualitySource | undefined,
+): Partial<
+  Pick<DeviceProbeInput, 'colorBufferFloat' | 'floatLinear' | 'maxTextureSize' | 'maxRenderbufferSize'>
+> {
   if (!gl) return {}
-  return {
+  const signals: Partial<
+    Pick<DeviceProbeInput, 'colorBufferFloat' | 'floatLinear' | 'maxTextureSize' | 'maxRenderbufferSize'>
+  > = {
     colorBufferFloat: Boolean(gl.getExtension('EXT_color_buffer_float')),
     floatLinear: Boolean(gl.getExtension('OES_texture_float_linear')),
   }
+  const maxTextureSize = readPositiveParam(gl, gl.MAX_TEXTURE_SIZE, GL_MAX_TEXTURE_SIZE)
+  if (maxTextureSize !== undefined) signals.maxTextureSize = maxTextureSize
+  const maxRenderbufferSize = readPositiveParam(
+    gl,
+    gl.MAX_RENDERBUFFER_SIZE,
+    GL_MAX_RENDERBUFFER_SIZE,
+  )
+  if (maxRenderbufferSize !== undefined) signals.maxRenderbufferSize = maxRenderbufferSize
+  return signals
 }

@@ -17,10 +17,42 @@ export const PROFILE_BUDGETS: Record<ConcreteProfile, ProfileBudgets> = {
   cad: { maxDrawCalls: 120, maxShadowCasters: 2, maxDpr: 2, maxLights: 4, maxEstimatedVramBytes: 256_000_000 },
 }
 
+/**
+ * Auto classification for interactive games vs CAD/marketing.
+ * Continuous RAF or high draw activity prefers `game` so meshCount crossing 200
+ * (instancing/chunking) does not flip a running game to CAD.
+ * Games should still set `profile: 'game'` explicitly when known.
+ */
 export function resolveProfile(profile: Profile, snapshot: SceneSnapshot): ConcreteProfile {
   if (profile !== 'auto') return profile
-  if (snapshot.meshCount > 200 || snapshot.drawCalls > 150) return 'cad'
+
+  const continuous = snapshot.continuousFrameloop
+  const highDraw = snapshot.drawCalls >= 80
+  const substantialMesh = snapshot.meshCount >= 50
+
+  if (continuous && (substantialMesh || snapshot.drawCalls >= 30)) return 'game'
+  if (highDraw && snapshot.meshCount >= 30) return 'game'
   if (snapshot.lightCount >= 4 && snapshot.meshCount > 50) return 'game'
-  if (snapshot.textureCount <= 6 && snapshot.meshCount <= 20) return 'product'
+
+  if (
+    !continuous &&
+    snapshot.lightCount < 4 &&
+    snapshot.meshCount > 200 &&
+    !highDraw
+  ) {
+    return 'cad'
+  }
+  if (
+    !continuous &&
+    snapshot.lightCount < 3 &&
+    snapshot.drawCalls > 150 &&
+    snapshot.meshCount <= 50
+  ) {
+    return 'cad'
+  }
+
+  if (snapshot.textureCount <= 6 && snapshot.meshCount <= 20 && snapshot.drawCalls <= 40) {
+    return 'product'
+  }
   return 'marketing'
 }

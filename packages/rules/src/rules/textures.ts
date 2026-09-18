@@ -7,7 +7,10 @@ export const texturesRule: Rule = {
     const profile = resolveProfile(ctx.profile, ctx.snapshot)
     const findings = []
     const vramBudget = PROFILE_BUDGETS[profile].maxEstimatedVramBytes
-    if (ctx.snapshot.estimatedVramBytes > vramBudget) {
+    if (
+      typeof ctx.snapshot.estimatedVramBytes === 'number' &&
+      ctx.snapshot.estimatedVramBytes > vramBudget
+    ) {
       findings.push({
         id: 'textures/high-vram',
         severity: 'error' as const,
