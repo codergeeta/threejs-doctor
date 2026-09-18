@@ -49,6 +49,22 @@ describe('compareAbSamples', () => {
     expect(result.after.triangles).toBeCloseTo(20_750, -2)
   })
 
+  it('treats an A-vs-A control as inside-noise (no invented win)', () => {
+    const a = [sample({ triangles: 10_000 }), sample({ triangles: 10_400 }), sample({ triangles: 9_800 })]
+    const result = compareAbSamples({ a, b: a })
+    expect(result.claimed.triangles).toBe('inside-noise')
+    expect(result.deltas.triangles).toBe(0)
+  })
+
+  it('uses the median of rounds, not the mean', () => {
+    const a = [sample({ triangles: 10_000 }), sample({ triangles: 10_000 }), sample({ triangles: 1_000_000 })]
+    const b = [sample({ triangles: 21_000 }), sample({ triangles: 20_000 }), sample({ triangles: 19_000 })]
+    const result = compareAbSamples({ a, b })
+    expect(result.before.triangles).toBe(10_000)
+    expect(result.after.triangles).toBe(20_000)
+    expect(result.claimed.triangles).toBe('inside-noise')
+  })
+
   it('omits gpuFrameTimeMs claims when GPU times were not measured', () => {
     const result = compareAbSamples({
       a: [sample({})],

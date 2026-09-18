@@ -23,13 +23,13 @@ export function computeDoctorScore(
   ) {
     score -= 10
   }
-  const triCost = snapshot.geometryTriangleCount ?? snapshot.triangles
+  const triCost = snapshot.triangles
   if (typeof triCost === 'number' && triCost > budgets.maxTriangles) {
     score -= Math.min(15, Math.floor((triCost / budgets.maxTriangles - 1) * 10))
   }
   if (previous) {
-    const prevTri = previous.geometryTriangleCount ?? previous.triangles
-    const nextTri = snapshot.geometryTriangleCount ?? snapshot.triangles
+    const prevTri = previous.triangles
+    const nextTri = snapshot.triangles
     if (typeof prevTri === 'number' && typeof nextTri === 'number' && prevTri > 0 && nextTri < prevTri * 0.8) {
       score += Math.min(10, Math.round((1 - nextTri / prevTri) * 12))
     }

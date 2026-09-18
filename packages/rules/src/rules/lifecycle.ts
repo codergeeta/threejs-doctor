@@ -18,7 +18,20 @@ export const lifecycleRule: Rule = {
     }
     const prevBytes = ctx.previousSnapshot.instancedBufferBytes
     const bytes = ctx.snapshot.instancedBufferBytes
-    if (typeof prevBytes === 'number' && typeof bytes === 'number' && bytes > prevBytes) {
+    const removed = ctx.snapshot.removedUndisposedInstancedCount
+    if (typeof removed === 'number' && removed > 0) {
+      findings.push({
+        id: 'lifecycle/instance-buffer-growth',
+        severity: 'warn' as const,
+        evidence: {
+          removedUndisposedInstancedCount: removed,
+          ...(typeof prevBytes === 'number' ? { prevBytes } : {}),
+          ...(typeof bytes === 'number' ? { bytes } : {}),
+        },
+        message: `${removed} InstancedMesh object(s) were removed without dispose() (instance buffers leaked)`,
+        suggestedFix: 'Listen for removed and call InstancedMesh.dispose() (instanceMatrix / instanceColor). Do not only count buffers still in the scene graph.',
+      })
+    } else if (typeof prevBytes === 'number' && typeof bytes === 'number' && bytes > prevBytes) {
       findings.push({
         id: 'lifecycle/instance-buffer-growth',
         severity: 'warn' as const,

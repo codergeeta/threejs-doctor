@@ -26,6 +26,12 @@ interface RawRenderer {
   render?: (scene: unknown, camera: unknown) => void
   setDrawingBufferSize?: (width: number, height: number, pixelRatio: number) => void
   setSize?: (width: number, height: number, updateStyle?: boolean) => void
+  getSize?: (target?: { set: (x: number, y: number) => unknown; x?: number; y?: number }) => {
+    x?: number
+    y?: number
+    width?: number
+    height?: number
+  }
 }
 
 function readPixelRatio(raw: RawRenderer): number | undefined {
@@ -88,10 +94,18 @@ export function wrapRenderer(raw: object): DoctorRendererLike {
       }
     },
     getExtension(name: string) {
+      if (typeof r.extensions?.get === 'function') {
+        try {
+          const viaExtensions = r.extensions.get(name)
+          if (viaExtensions) return viaExtensions
+        } catch {
+          // fall through
+        }
+      }
       if (typeof r.getExtension === 'function') return r.getExtension(name)
       const gl = typeof r.getContext === 'function' ? r.getContext() : undefined
       if (gl && typeof gl.getExtension === 'function') return gl.getExtension(name)
-      return r.extensions?.get?.(name)
+      return undefined
     },
   }
   if (typeof r.getContext === 'function') {
@@ -99,6 +113,12 @@ export function wrapRenderer(raw: object): DoctorRendererLike {
   }
   if (typeof r.render === 'function') {
     wrapped.render = (scene, camera) => r.render!(scene, camera)
+  }
+  if (typeof r.getSize === 'function') {
+    wrapped.getSize = (target) => r.getSize!(target as never)
+  }
+  if (r.extensions) {
+    wrapped.extensions = r.extensions
   }
 
   defineOptional(wrapped, 'antialias', {

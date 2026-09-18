@@ -14,10 +14,25 @@ export interface DoctorRendererLike {
     drawingBufferHeight?: number
     getExtension?: (name: string) => unknown
     getParameter?: (pname: number) => unknown
+    createQuery?: () => unknown
+    deleteQuery?: (query: unknown) => void
+    beginQuery?: (target: number, query: unknown) => void
+    endQuery?: (target: number) => void
+    getQueryParameter?: (query: unknown, pname: number) => unknown
+    QUERY_RESULT?: number
+    QUERY_RESULT_AVAILABLE?: number
     MAX_TEXTURE_SIZE?: number
     MAX_RENDERBUFFER_SIZE?: number
   } | null
   getExtension?: (name: string) => unknown
+  /** Three.js WebGLRenderer.extensions.get('EXT_disjoint_timer_query_webgl2'). */
+  extensions?: { get?: (name: string) => unknown }
+  getSize?: (target?: { set: (x: number, y: number) => unknown; x?: number; y?: number }) => {
+    x?: number
+    y?: number
+    width?: number
+    height?: number
+  }
   toneMapping?: number
   shadowMap?: { enabled: boolean }
   drawingBufferWidth?: number
@@ -39,13 +54,21 @@ export interface DoctorObjectLike {
   geometry?: {
     uuid?: string
     boundingBox?: { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } }
-    boundingSphere?: { radius: number }
+    boundingSphere?: { radius: number; center?: { x: number; y: number; z: number } }
     computeBoundingBox?: () => void
+    computeBoundingSphere?: () => void
   }
   material?: { uuid?: string } | Array<{ uuid?: string }>
   position?: { distanceTo: (v: { x: number; y: number; z: number }) => number }
   matrixWorld?: { elements: ArrayLike<number> }
   getWorldPosition?: (target: { x: number; y: number; z: number }) => { x: number; y: number; z: number }
+  isInstancedMesh?: boolean
+  count?: number
+  boundingBox?: { min: { x: number; y: number; z: number }; max: { x: number; y: number; z: number } }
+  boundingSphere?: { radius: number; center?: { x: number; y: number; z: number } }
+  computeBoundingBox?: () => void
+  computeBoundingSphere?: () => void
+  addEventListener?: (type: string, listener: () => void) => void
 }
 
 export interface PassContext {
@@ -60,6 +83,8 @@ export interface PassContext {
   cameraPosition?: { x: number; y: number; z: number }
   cullDistance?: number
   qualityTier?: QualityTier
+  composer?: unknown
+  onPixelRatioChange?: (ratio: number) => void
 }
 
 export interface PassHandle {

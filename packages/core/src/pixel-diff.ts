@@ -24,7 +24,7 @@ export function classifyVisualSafety(opts: {
   candidateChangedRatio: number
   maxChangedRatio?: number
 }): { safe: boolean; visualDelta: boolean } {
-  const maxChangedRatio = opts.maxChangedRatio ?? 0.02
+  const maxChangedRatio = opts.maxChangedRatio ?? 0.005
   const floor = Math.max(maxChangedRatio, opts.controlChangedRatio)
   const visualDelta = opts.candidateChangedRatio > floor
   return { safe: !visualDelta, visualDelta }

@@ -75,6 +75,14 @@ describe('computeDoctorScore', () => {
     expect(afterScore).toBeGreaterThan(beforeScore)
   })
 
+  it('boosts score when drawn triangles drop even if leftover geometryTriangleCount stays high', () => {
+    const before = { ...healthy, geometryTriangleCount: 880_000, triangles: 880_000 }
+    const after = { ...healthy, geometryTriangleCount: 880_000, triangles: 211_000 }
+    expect(computeDoctorScore([], after, 'game', before)).toBeGreaterThan(
+      computeDoctorScore([], before, 'game'),
+    )
+  })
+
   it('does not invent a GPU bonus when gpuFrameTimeMs is omitted', () => {
     const before = { ...healthy, geometryTriangleCount: 100_000 }
     const after = { ...healthy, geometryTriangleCount: 100_000 }

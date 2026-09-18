@@ -99,15 +99,25 @@ describe('P1: measure times real host frames', () => {
   it('records gpuFrameTimeMs only when the timer query result is available', async () => {
     const ext = {
       TIME_ELAPSED_EXT: 0x88bf,
+      GPU_DISJOINT_EXT: 0x8fbb,
+    }
+    const gl = {
       QUERY_RESULT_AVAILABLE: 0x8867,
       QUERY_RESULT: 0x8866,
       createQuery: () => ({}),
       beginQuery() {},
       endQuery() {},
+      deleteQuery() {},
       getQueryParameter(_q: unknown, pname: number) {
         if (pname === 0x8867) return true
         if (pname === 0x8866) return 2_000_000
         return 0
+      },
+      getParameter() {
+        return false
+      },
+      getExtension(name: string) {
+        return name === 'EXT_disjoint_timer_query_webgl2' ? ext : null
       },
     }
     const renderer = {
@@ -116,8 +126,13 @@ describe('P1: measure times real host frames', () => {
         memory: { geometries: 0, textures: 0 },
       },
       setPixelRatio() {},
-      getExtension(name: string) {
-        return name === 'EXT_disjoint_timer_query_webgl2' ? ext : null
+      extensions: {
+        get(name: string) {
+          return name === 'EXT_disjoint_timer_query_webgl2' ? ext : null
+        },
+      },
+      getContext() {
+        return gl
       },
       render() {},
     }
@@ -136,13 +151,23 @@ describe('P1: measure times real host frames', () => {
   it('omits gpuFrameTimeMs when the extension exists but no query result is available', async () => {
     const ext = {
       TIME_ELAPSED_EXT: 0x88bf,
+      GPU_DISJOINT_EXT: 0x8fbb,
+    }
+    const gl = {
       QUERY_RESULT_AVAILABLE: 0x8867,
       QUERY_RESULT: 0x8866,
       createQuery: () => ({}),
       beginQuery() {},
       endQuery() {},
+      deleteQuery() {},
       getQueryParameter() {
         return false
+      },
+      getParameter() {
+        return false
+      },
+      getExtension() {
+        return ext
       },
     }
     const renderer = {
@@ -151,6 +176,9 @@ describe('P1: measure times real host frames', () => {
         memory: { geometries: 0, textures: 0 },
       },
       setPixelRatio() {},
+      getContext() {
+        return gl
+      },
       getExtension() {
         return ext
       },

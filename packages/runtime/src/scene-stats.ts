@@ -1,6 +1,8 @@
 import type { SceneStatsLike, SceneSnapshot } from '@threejs-doctor/core'
 import type { SnapshotTextureInput } from '@threejs-doctor/core'
 import type { DoctorRendererLike, DoctorSceneLike } from './passes/types.js'
+import { findComposer, readComposerSize } from './composer.js'
+import { InstanceLeakTracker, instancedBufferBytes } from './instance-leak-tracker.js'
 
 const MATERIAL_MAP_KEYS = [
   'map',
@@ -37,6 +39,7 @@ export interface HostSceneInsights {
   composerHeight?: number
   drawingBufferWidth?: number
   drawingBufferHeight?: number
+  removedUndisposedInstancedCount?: number
 }
 
 export interface HostSceneCollection {
@@ -176,26 +179,6 @@ function meshLabel(obj: Record<string, unknown>, fallback: string): string {
   return fallback
 }
 
-function instancedBufferBytes(obj: Record<string, unknown>): number | undefined {
-  if (obj.isInstancedMesh !== true) return undefined
-  let bytes = 0
-  let known = false
-  const matrix = obj.instanceMatrix as { array?: { byteLength?: unknown }; count?: unknown } | undefined
-  if (typeof matrix?.array?.byteLength === 'number') {
-    bytes += matrix.array.byteLength
-    known = true
-  } else if (typeof obj.count === 'number' && obj.count >= 0) {
-    bytes += obj.count * 16 * 4
-    known = true
-  }
-  const color = obj.instanceColor as { array?: { byteLength?: unknown } } | undefined
-  if (typeof color?.array?.byteLength === 'number') {
-    bytes += color.array.byteLength
-    known = true
-  }
-  return known ? bytes : undefined
-}
-
 function worldScale(elements: ArrayLike<number>): number {
   const sx = Math.hypot(Number(elements[0]), Number(elements[1]), Number(elements[2]))
   const sy = Math.hypot(Number(elements[4]), Number(elements[5]), Number(elements[6]))
@@ -203,20 +186,51 @@ function worldScale(elements: ArrayLike<number>): number {
   return Math.max(sx, sy, sz, 0)
 }
 
-function worldRadius(obj: Record<string, unknown>): number | undefined {
-  const geo = obj.geometry as { boundingSphere?: { radius?: unknown } } | undefined
+interface LocalSphere {
+  radius: number
+  center?: { x?: unknown; y?: unknown; z?: unknown }
+}
+
+/**
+ * InstancedMesh.computeBoundingSphere() covers every instance. Base geometry.boundingSphere
+ * is only the prototype at the origin and under-counts world-covering instance fields.
+ */
+function localBoundingSphere(obj: Record<string, unknown>): LocalSphere | undefined {
+  if (obj.isInstancedMesh === true && typeof obj.computeBoundingSphere === 'function') {
+    try {
+      ;(obj.computeBoundingSphere as () => void)()
+    } catch {
+      // fall through to whatever sphere is already stored
+    }
+    const instanced = obj.boundingSphere as LocalSphere | undefined
+    if (typeof instanced?.radius === 'number' && Number.isFinite(instanced.radius) && instanced.radius > 0) {
+      return instanced
+    }
+  }
+  const geo = obj.geometry as { boundingSphere?: LocalSphere } | undefined
   const radius = geo?.boundingSphere?.radius
   if (typeof radius !== 'number' || !Number.isFinite(radius) || radius <= 0) return undefined
+  return geo?.boundingSphere
+}
+
+function worldRadius(obj: Record<string, unknown>): number | undefined {
+  const sphere = localBoundingSphere(obj)
+  if (!sphere) return undefined
   const elements = (obj.matrixWorld as { elements?: ArrayLike<number> } | undefined)?.elements
   const scale = elements && elements.length >= 12 ? worldScale(elements) : 1
-  return radius * (scale > 0 ? scale : 1)
+  return sphere.radius * (scale > 0 ? scale : 1)
+}
+
+/** Instance-aware world radius used by oversized-bounds / casters-outside. */
+export function readHostWorldRadius(obj: unknown): number | undefined {
+  if (!obj || typeof obj !== 'object') return undefined
+  return worldRadius(obj as Record<string, unknown>)
 }
 
 function worldCenter(obj: Record<string, unknown>): [number, number, number] | undefined {
   const elements = (obj.matrixWorld as { elements?: ArrayLike<number> } | undefined)?.elements
   if (!elements || elements.length < 16) return undefined
-  const local = (obj.geometry as { boundingSphere?: { center?: { x?: unknown; y?: unknown; z?: unknown } } } | undefined)
-    ?.boundingSphere?.center
+  const local = localBoundingSphere(obj)?.center
   if (
     local &&
     typeof local.x === 'number' &&
@@ -382,51 +396,26 @@ function sphereOutsideShadowCamera(
   return false
 }
 
-function isComposerLike(value: unknown): value is Record<string, unknown> {
-  if (!value || typeof value !== 'object') return false
-  const rec = value as Record<string, unknown>
-  if (rec.isEffectComposer === true) return true
-  const hasPasses = Array.isArray(rec.passes)
-  const hasTarget = rec.renderTarget1 !== undefined || rec.writeBuffer !== undefined
-  return hasPasses && hasTarget
-}
-
-function rememberComposer(target: { current?: Record<string, unknown> }, value: unknown): void {
-  if (target.current || !isComposerLike(value)) return
-  target.current = value
-}
-
-function readComposerSize(composer: Record<string, unknown>): {
-  width?: number
-  height?: number
-  pixelRatio?: number
-} {
-  const rt =
-    (composer.renderTarget1 as { width?: unknown; height?: unknown } | undefined) ??
-    (composer.writeBuffer as { width?: unknown; height?: unknown } | undefined)
-  const size = rt ? finiteSize(rt.width, rt.height) : undefined
-  const pr = composer.pixelRatio ?? composer._pixelRatio
-  const out: { width?: number; height?: number; pixelRatio?: number } = {}
-  if (size) {
-    out.width = size.width
-    out.height = size.height
-  }
-  if (typeof pr === 'number' && Number.isFinite(pr) && pr > 0) out.pixelRatio = pr
-  return out
-}
-
 function assignDefined<T extends object, K extends keyof T>(target: T, key: K, value: T[K] | undefined): void {
   if (value !== undefined) target[key] = value
+}
+
+export interface CollectHostSceneOptions {
+  composer?: unknown
+  extraRoots?: unknown[]
+  leakTracker?: InstanceLeakTracker
 }
 
 /**
  * Walk a live scene + renderer for lights, unique textures, render targets, and P2 insights.
  * VRAM and P2 fields are omitted unless they can be counted from the graph.
+ * Triangle *cost* is renderer.info (drawn); this walk is attribution + composer discovery.
  */
 export function collectHostSceneStats(
   scene: DoctorSceneLike | unknown,
   renderer: DoctorRendererLike | unknown,
   camera?: HostCameraLike | unknown,
+  options?: CollectHostSceneOptions,
 ): HostSceneCollection {
   const lights: Array<{ castShadow: boolean }> = []
   const seen = new Map<string, SnapshotTextureInput>()
@@ -434,7 +423,8 @@ export function collectHostSceneStats(
   const contributors: Array<{ id: string; triangles: number; castShadow: boolean }> = []
   const shadowCameras: ShadowCameraBox[] = []
   const casters: Array<{ center: [number, number, number]; radius: number }> = []
-  const composerRef: { current?: Record<string, unknown> } = {}
+  const leakTracker = options?.leakTracker
+  leakTracker?.beginScan()
   let frustumCulledDisabledCount = 0
   let oversizedBoundCount = 0
   let oversizedMeasured = false
@@ -454,7 +444,7 @@ export function collectHostSceneStats(
     let index = 0
     traversable.traverse((obj) => {
       index += 1
-      rememberComposer(composerRef, obj)
+      leakTracker?.watch(obj)
       if (obj.isLight === true) {
         lights.push({ castShadow: obj.castShadow === true })
         if (obj.visible !== false && typeof obj.intensity === 'number' && obj.intensity <= 0) {
@@ -500,13 +490,12 @@ export function collectHostSceneStats(
       }
     })
   }
+  leakTracker?.endScan()
 
   if (renderer && typeof renderer === 'object') {
     const rec = renderer as Record<string, unknown>
-    rememberComposer(composerRef, rec)
     for (const [key, value] of Object.entries(rec)) {
       rememberRenderTarget(seen, value, `renderer:${key}`)
-      rememberComposer(composerRef, value)
     }
     scanObjectForRenderTargets(rec.shadowMap, seen, 'renderer:shadowMap')
     if (typeof rec.drawingBufferWidth === 'number') insights.drawingBufferWidth = rec.drawingBufferWidth
@@ -561,9 +550,18 @@ export function collectHostSceneStats(
   }
   insights.zeroIntensityLightCount = zeroIntensityLightCount
   if (instancedKnown) insights.instancedBufferBytes = instancedBytes
+  const leak = leakTracker?.snapshot()
+  if (leak && leak.count > 0) {
+    insights.removedUndisposedInstancedCount = leak.count
+  }
 
-  if (composerRef.current) {
-    const size = readComposerSize(composerRef.current)
+  const extraRoots = [...(options?.extraRoots ?? [])]
+  if (scene && typeof scene === 'object' && 'userData' in scene) {
+    extraRoots.push((scene as { userData?: unknown }).userData)
+  }
+  const composer = findComposer(scene, renderer, options?.composer, extraRoots)
+  if (composer) {
+    const size = readComposerSize(composer)
     assignDefined(insights, 'composerWidth', size.width)
     assignDefined(insights, 'composerHeight', size.height)
     assignDefined(insights, 'composerPixelRatio', size.pixelRatio)
@@ -587,6 +585,7 @@ const INSIGHT_KEYS: Array<keyof HostSceneInsights> = [
   'composerHeight',
   'drawingBufferWidth',
   'drawingBufferHeight',
+  'removedUndisposedInstancedCount',
 ]
 
 /** Copy measured P2 fields onto a snapshot; skip omitted values. */

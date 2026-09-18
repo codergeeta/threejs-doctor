@@ -1,0 +1,25 @@
+# Publishing `@threejs-doctor/*` (follow-up — not this PR)
+
+This repository is **not published to npm**. Root `package.json` is `private: true`. Do **not** run `npm publish` / `pnpm publish` until the checklist below is complete. This PR does not include registry tokens.
+
+## Reserve names
+
+1. Reserve the **unscoped** name `threejs-doctor` (the current unpublished name; `npx threejs-doctor` can otherwise run a squat).
+2. Publish scoped packages under `@threejs-doctor/*` (`core`, `rules`, `runtime`, `cli`, `bench`, `r3f`) with provenance.
+3. Keep example packages (`live-attach`, fixtures) `private: true`.
+
+## Pre-publish checklist
+
+- [ ] `pnpm typecheck` and `pnpm test` green on `main`.
+- [ ] Rebuild `examples/live-attach` IIFE; CI checksum job is green (committed `dist/attach.iife.js` matches a fresh esbuild).
+- [ ] Playwright real-three fixture green (WebGL2 GPU sampler wiring, composer mismatch, InstancedMesh bounds, drawn-triangle drop after chunking).
+- [ ] Provenance: `npm publish --provenance` (or pnpm equivalent) from CI with OIDC, not a laptop.
+- [ ] Set `publishConfig.access` / remove `"private": true` only on the packages that should ship.
+- [ ] Confirm no invented metrics in README bench tables; paste numbers from a real `bench` JSON.
+- [ ] npm 2FA / org ownership for `@threejs-doctor` and unscoped `threejs-doctor`.
+
+## This PR does not
+
+- npm publish
+- store registry tokens
+- claim a registry listing exists

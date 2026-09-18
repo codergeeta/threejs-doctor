@@ -62,6 +62,7 @@ export interface MetricsSample {
   avgFps: number
   p95FrameTimeMs: number
   drawCalls: number
+  /** Drawn triangles from renderer.info.render.triangles (never invented). */
   triangles: number
   textureCount: number
   estimatedVramBytes?: number | undefined
@@ -98,7 +99,8 @@ export interface SceneSnapshot {
   /** MSAA flag from GL context attributes when known. */
   antialias?: boolean | undefined
   /**
-   * Scene-graph triangle lower bound: indexed/non-indexed geometry × InstancedMesh.count.
+   * Scene-graph triangle attribution: indexed/non-indexed geometry × InstancedMesh.count.
+   * Used to name top contributors. Cost / score / triangles/too-many use `triangles` (drawn).
    * Omitted when no mesh geometry could be counted.
    */
   geometryTriangleCount?: number | undefined
@@ -108,6 +110,7 @@ export interface SceneSnapshot {
   frustumCulledDisabledCount?: number | undefined
   /**
    * Meshes whose world bounding-sphere radius is greater than `camera.far`.
+   * InstancedMesh uses computeBoundingSphere() (instance-aware), not the prototype sphere.
    * Omitted when camera.far or a bounding sphere cannot be read.
    */
   oversizedBoundCount?: number | undefined
@@ -116,6 +119,8 @@ export interface SceneSnapshot {
   shadowCastersOutsideFrustum?: number | undefined
   zeroIntensityLightCount?: number | undefined
   instancedBufferBytes?: number | undefined
+  /** InstancedMesh removed from the graph without dispose(). */
+  removedUndisposedInstancedCount?: number | undefined
   composerPixelRatio?: number | undefined
   composerWidth?: number | undefined
   composerHeight?: number | undefined

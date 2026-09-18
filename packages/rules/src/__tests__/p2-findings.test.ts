@@ -38,11 +38,12 @@ describe('P2 finding rules', () => {
     expect(defaultRules.map((rule) => rule.id)).toEqual(expect.arrayContaining(['triangles', 'culling']))
   })
 
-  it('emits triangles/too-many with the heavy hitter when geometryTriangleCount exceeds budget', () => {
+  it('emits triangles/too-many with the heavy hitter when drawn triangles exceed budget', () => {
     const ctx: RuleContext = {
       device,
       profile: 'marketing',
       snapshot: snap({
+        triangles: 100_000,
         geometryTriangleCount: 100_000,
         triangleContributorSummary: 'trees:82000',
         topContributorShare: 0.82,
@@ -52,10 +53,20 @@ describe('P2 finding rules', () => {
     expect(hit).toBeDefined()
     expect(hit?.evidence.topContributor).toBe('trees:82000')
     expect(hit?.evidence.topContributorShare).toBe(0.82)
+    expect(hit?.evidence.triangles).toBe(100_000)
   })
 
-  it('does not invent a triangle finding when geometryTriangleCount is omitted', () => {
-    const ctx: RuleContext = { device, profile: 'marketing', snapshot: snap({ triangles: 9_000_000 }) }
+  it('does not fire triangles/too-many on leftover geometry when drawn triangles are in budget', () => {
+    const ctx: RuleContext = {
+      device,
+      profile: 'marketing',
+      snapshot: snap({
+        triangles: 21_000,
+        geometryTriangleCount: 880_000,
+        triangleContributorSummary: 'trees:820000',
+        topContributorShare: 0.93,
+      }),
+    }
     expect(runRules(ctx).some((f) => f.id === 'triangles/too-many')).toBe(false)
   })
 

@@ -56,7 +56,8 @@ export const lightsShadowsRule: Rule = {
         severity: 'warn' as const,
         evidence: { zeroIntensityLightCount: zero },
         message: `${zero} visible light(s) have intensity 0 but still participate in lighting`,
-        suggestedFix: 'Remove or disable lights instead of leaving intensity at 0',
+        suggestedFix:
+          'Keep a fixed-size light pool and disable unused lights via intensity = 0 or visible = false. Removing lights from the scene recompiles materials and can hitch.',
       })
     }
     return findings

@@ -1,5 +1,6 @@
 import { GENERIC_CAPS } from '@threejs-doctor/core'
 import { readRendererPixelRatio } from '../renderer-read.js'
+import { notifyPixelRatioChange } from '../composer.js'
 import type { DoctorRendererLike, OptimizePass } from './types.js'
 
 /** Three.js `setDrawingBufferSize(width, height, pixelRatio)` takes CSS size, not device pixels. */
@@ -58,13 +59,17 @@ export const pixelBudgetPass: OptimizePass = {
     }
     const cssW = cssFromDrawingBuffer(prevW, prevRatio)
     const cssH = cssFromDrawingBuffer(prevH, prevRatio)
-    const restore = () => restoreDrawingBuffer(renderer, cssW, cssH, prevRatio)
+    const restore = () => {
+      restoreDrawingBuffer(renderer, cssW, cssH, prevRatio)
+      notifyPixelRatioChange(ctx, prevRatio)
+    }
     try {
       if (renderer.setDrawingBufferSize) {
         renderer.setDrawingBufferSize(cssW, cssH, newRatio)
       } else {
         renderer.setPixelRatio(newRatio)
       }
+      notifyPixelRatioChange(ctx, newRatio)
     } catch (err) {
       restore()
       throw err

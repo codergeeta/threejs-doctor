@@ -24,16 +24,28 @@ function transformPoint(elements: ArrayLike<number>, p: Vec3): Vec3 {
 }
 
 function worldAabb(obj: DoctorObjectLike): { min: Vec3; max: Vec3 } | undefined {
+  const instanced = obj as DoctorObjectLike & {
+    isInstancedMesh?: boolean
+    boundingBox?: { min: Vec3; max: Vec3 }
+    computeBoundingBox?: () => void
+  }
+  if (instanced.isInstancedMesh === true && typeof instanced.computeBoundingBox === 'function') {
+    try {
+      instanced.computeBoundingBox()
+    } catch {
+      // ignore
+    }
+  }
+  const meshBox = instanced.isInstancedMesh === true ? instanced.boundingBox : undefined
   const geom = obj.geometry
-  if (!geom) return undefined
-  if (!geom.boundingBox && typeof geom.computeBoundingBox === 'function') {
+  if (!meshBox && geom && !geom.boundingBox && typeof geom.computeBoundingBox === 'function') {
     try {
       geom.computeBoundingBox()
     } catch {
       // ignore
     }
   }
-  const box = geom.boundingBox
+  const box = meshBox ?? geom?.boundingBox
   if (!box?.min || !box?.max || !isFiniteVec(box.min) || !isFiniteVec(box.max)) return undefined
   const corners: Vec3[] = [
     { x: box.min.x, y: box.min.y, z: box.min.z },

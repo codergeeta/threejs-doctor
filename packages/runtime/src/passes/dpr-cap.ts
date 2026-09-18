@@ -1,4 +1,5 @@
 import { readRendererPixelRatio } from '../renderer-read.js'
+import { notifyPixelRatioChange } from '../composer.js'
 import type { OptimizePass } from './types.js'
 
 function restorePixelRatio(
@@ -35,6 +36,7 @@ export const dprCapPass: OptimizePass = {
     if (!Number.isFinite(next)) return { rollback() {} }
     try {
       ctx.renderer.setPixelRatio(next)
+      notifyPixelRatioChange(ctx, next)
     } catch (err) {
       restorePixelRatio(ctx.renderer.setPixelRatio.bind(ctx.renderer), prev)
       throw err
@@ -42,6 +44,7 @@ export const dprCapPass: OptimizePass = {
     return {
       rollback() {
         ctx.renderer.setPixelRatio(prev)
+        notifyPixelRatioChange(ctx, prev)
       },
     }
   },

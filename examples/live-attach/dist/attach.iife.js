@@ -793,6 +793,15 @@
     return { startTier: "high", maxTier: "high", mobile: false, noFloatRt: false };
   }
 
+  // ../../packages/core/src/stats-math.ts
+  function median(values) {
+    if (values.length === 0) return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    if (sorted.length % 2 === 1) return sorted[mid];
+    return (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+
   // ../../packages/core/src/ab-compare.ts
   var LOWER_BETTER = [
     "p95FrameTimeMs",
@@ -814,14 +823,11 @@
     if (direction === "lower-better") return delta < 0 ? "win" : "loss";
     return delta > 0 ? "win" : "loss";
   }
-  function mean(values) {
-    return values.reduce((a, b) => a + b, 0) / values.length;
-  }
   function noiseFromControl(values) {
-    const avg = mean(values);
+    const mid = median(values);
     const halfRange = (Math.max(...values) - Math.min(...values)) / 2;
     const abs = Math.max(halfRange, 0);
-    const rel = Math.abs(avg) > 0 ? abs / Math.abs(avg) : 0;
+    const rel = Math.abs(mid) > 0 ? abs / Math.abs(mid) : 0;
     return { abs, rel };
   }
   function numericSeries(samples, key) {
@@ -843,7 +849,7 @@
         continue;
       }
       ;
-      out[key] = mean(series);
+      out[key] = median(series);
     }
     return out;
   }
@@ -897,7 +903,7 @@
     return changed / pixels;
   }
   function classifyVisualSafety(opts2) {
-    const maxChangedRatio = opts2.maxChangedRatio ?? 0.02;
+    const maxChangedRatio = opts2.maxChangedRatio ?? 5e-3;
     const floor = Math.max(maxChangedRatio, opts2.controlChangedRatio);
     const visualDelta = opts2.candidateChangedRatio > floor;
     return { safe: !visualDelta, visualDelta };
@@ -987,13 +993,13 @@
     if (typeof snapshot.estimatedVramBytes === "number" && snapshot.estimatedVramBytes > budgets.maxEstimatedVramBytes) {
       score -= 10;
     }
-    const triCost = snapshot.geometryTriangleCount ?? snapshot.triangles;
+    const triCost = snapshot.triangles;
     if (typeof triCost === "number" && triCost > budgets.maxTriangles) {
       score -= Math.min(15, Math.floor((triCost / budgets.maxTriangles - 1) * 10));
     }
     if (previous) {
-      const prevTri = previous.geometryTriangleCount ?? previous.triangles;
-      const nextTri = snapshot.geometryTriangleCount ?? snapshot.triangles;
+      const prevTri = previous.triangles;
+      const nextTri = snapshot.triangles;
       if (typeof prevTri === "number" && typeof nextTri === "number" && prevTri > 0 && nextTri < prevTri * 0.8) {
         score += Math.min(10, Math.round((1 - nextTri / prevTri) * 12));
       }
@@ -1082,7 +1088,7 @@
           severity: "warn",
           evidence: { zeroIntensityLightCount: zero },
           message: `${zero} visible light(s) have intensity 0 but still participate in lighting`,
-          suggestedFix: "Remove or disable lights instead of leaving intensity at 0"
+          suggestedFix: "Keep a fixed-size light pool and disable unused lights via intensity = 0 or visible = false. Removing lights from the scene recompiles materials and can hitch."
         });
       }
       return findings;
@@ -1246,7 +1252,20 @@
       }
       const prevBytes = ctx.previousSnapshot.instancedBufferBytes;
       const bytes = ctx.snapshot.instancedBufferBytes;
-      if (typeof prevBytes === "number" && typeof bytes === "number" && bytes > prevBytes) {
+      const removed = ctx.snapshot.removedUndisposedInstancedCount;
+      if (typeof removed === "number" && removed > 0) {
+        findings.push({
+          id: "lifecycle/instance-buffer-growth",
+          severity: "warn",
+          evidence: {
+            removedUndisposedInstancedCount: removed,
+            ...typeof prevBytes === "number" ? { prevBytes } : {},
+            ...typeof bytes === "number" ? { bytes } : {}
+          },
+          message: `${removed} InstancedMesh object(s) were removed without dispose() (instance buffers leaked)`,
+          suggestedFix: "Listen for removed and call InstancedMesh.dispose() (instanceMatrix / instanceColor). Do not only count buffers still in the scene graph."
+        });
+      } else if (typeof prevBytes === "number" && typeof bytes === "number" && bytes > prevBytes) {
         findings.push({
           id: "lifecycle/instance-buffer-growth",
           severity: "warn",
@@ -1302,7 +1321,7 @@
   var trianglesRule = {
     id: "triangles",
     run(ctx) {
-      const count = ctx.snapshot.geometryTriangleCount;
+      const count = ctx.snapshot.triangles;
       if (typeof count !== "number" || !Number.isFinite(count)) return [];
       const profile = resolveProfile(ctx.profile, ctx.snapshot);
       const budget = PROFILE_BUDGETS[profile].maxTriangles;
@@ -1311,20 +1330,22 @@
       const summary = ctx.snapshot.triangleContributorSummary;
       const percent = typeof share === "number" && Number.isFinite(share) ? Math.round(share * 100) : void 0;
       const evidence = {
-        geometryTriangleCount: count,
+        triangles: count,
         budget,
         profile
       };
+      const geometryCount = ctx.snapshot.geometryTriangleCount;
+      if (typeof geometryCount === "number") evidence.geometryTriangleCount = geometryCount;
       if (typeof summary === "string") evidence.topContributor = summary;
       if (typeof share === "number") evidence.topContributorShare = share;
-      const shareNote = percent !== void 0 && summary ? ` (${summary} is ${percent}%)` : "";
+      const shareNote = percent !== void 0 && summary ? ` (${summary} is ${percent}% of scene-graph geometry)` : "";
       return [
         {
           id: "triangles/too-many",
           severity: count > budget * 1.5 ? "error" : "warn",
           evidence,
-          message: `Scene triangles ${count} exceed ${profile} budget ${budget}${shareNote}`,
-          suggestedFix: "Chunk or simplify the heaviest InstancedMesh/Mesh (instance count \xD7 index count / 3)"
+          message: `Drawn triangles ${count} exceed ${profile} budget ${budget}${shareNote}`,
+          suggestedFix: "Chunk or simplify the heaviest InstancedMesh/Mesh so GPU triangle count drops (drawn, not leftover unused geometry)"
         }
       ];
     }
@@ -1403,6 +1424,103 @@
     return void 0;
   }
 
+  // ../../packages/runtime/src/composer.ts
+  function isComposerLike(value) {
+    if (!value || typeof value !== "object") return false;
+    const rec = value;
+    if (rec.isEffectComposer === true) return true;
+    const hasPasses = Array.isArray(rec.passes);
+    const hasClassicTarget = rec.renderTarget1 !== void 0 || rec.writeBuffer !== void 0;
+    const hasPmndrsTarget = rec.inputBuffer !== void 0 || rec.outputBuffer !== void 0;
+    return hasPasses && (hasClassicTarget || hasPmndrsTarget);
+  }
+  function finiteSize(width, height) {
+    if (typeof width !== "number" || typeof height !== "number") return void 0;
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return void 0;
+    return { width, height };
+  }
+  function readComposerSize(composer) {
+    const rt = composer.renderTarget1 ?? composer.writeBuffer ?? composer.inputBuffer ?? composer.outputBuffer;
+    const size = rt ? finiteSize(rt.width, rt.height) : void 0;
+    const pr = composer.pixelRatio ?? composer._pixelRatio;
+    const out = {};
+    if (size) {
+      out.width = size.width;
+      out.height = size.height;
+    }
+    if (typeof pr === "number" && Number.isFinite(pr) && pr > 0) out.pixelRatio = pr;
+    return out;
+  }
+  function rememberComposer(target, value) {
+    if (target.current || !isComposerLike(value)) return;
+    target.current = value;
+  }
+  function scanForComposer(target, value) {
+    rememberComposer(target, value);
+    if (target.current || !value || typeof value !== "object") return;
+    for (const nested of Object.values(value)) {
+      rememberComposer(target, nested);
+      if (target.current) return;
+    }
+  }
+  function findComposer(scene, renderer, explicit, extraRoots = []) {
+    const ref = {};
+    rememberComposer(ref, explicit);
+    if (ref.current) return ref.current;
+    scanForComposer(ref, scene);
+    if (scene && typeof scene === "object") {
+      scanForComposer(ref, scene.userData);
+    }
+    scanForComposer(ref, renderer);
+    for (const root of extraRoots) scanForComposer(ref, root);
+    return ref.current;
+  }
+  function cssSizeOf(renderer) {
+    if (typeof renderer.getSize === "function") {
+      try {
+        const target = {
+          x: 0,
+          y: 0,
+          set(x, y) {
+            this.x = x;
+            this.y = y;
+            return this;
+          }
+        };
+        const size = renderer.getSize(target);
+        const width2 = size?.x ?? size?.width ?? target.x;
+        const height2 = size?.y ?? size?.height ?? target.y;
+        if (typeof width2 === "number" && typeof height2 === "number" && width2 > 0 && height2 > 0) {
+          return { width: width2, height: height2 };
+        }
+      } catch {
+      }
+    }
+    const pr = typeof renderer.getPixelRatio === "function" ? renderer.getPixelRatio() : void 0;
+    const width = renderer.drawingBufferWidth;
+    const height = renderer.drawingBufferHeight;
+    if (typeof width === "number" && typeof height === "number" && typeof pr === "number" && pr > 0) {
+      return { width: width / pr, height: height / pr };
+    }
+    return void 0;
+  }
+  function syncComposerPixelRatio(composer, renderer, pixelRatio) {
+    if (!composer || typeof composer !== "object") return;
+    const c = composer;
+    if (typeof c.setPixelRatio === "function") {
+      c.setPixelRatio(pixelRatio);
+      return;
+    }
+    if (typeof c.setSize !== "function") return;
+    const size = cssSizeOf(renderer);
+    if (!size) return;
+    c.setSize(size.width, size.height);
+  }
+  function notifyPixelRatioChange(ctx, pixelRatio) {
+    syncComposerPixelRatio(ctx.composer, ctx.renderer, pixelRatio);
+    ctx.onPixelRatioChange?.(pixelRatio);
+  }
+
   // ../../packages/runtime/src/passes/dpr-cap.ts
   function restorePixelRatio(setPixelRatio, prev) {
     try {
@@ -1428,6 +1546,7 @@
       } };
       try {
         ctx.renderer.setPixelRatio(next);
+        notifyPixelRatioChange(ctx, next);
       } catch (err) {
         restorePixelRatio(ctx.renderer.setPixelRatio.bind(ctx.renderer), prev);
         throw err;
@@ -1435,6 +1554,7 @@
       return {
         rollback() {
           ctx.renderer.setPixelRatio(prev);
+          notifyPixelRatioChange(ctx, prev);
         }
       };
     }
@@ -1493,13 +1613,17 @@
       }
       const cssW = cssFromDrawingBuffer(prevW, prevRatio);
       const cssH = cssFromDrawingBuffer(prevH, prevRatio);
-      const restore = () => restoreDrawingBuffer(renderer, cssW, cssH, prevRatio);
+      const restore = () => {
+        restoreDrawingBuffer(renderer, cssW, cssH, prevRatio);
+        notifyPixelRatioChange(ctx, prevRatio);
+      };
       try {
         if (renderer.setDrawingBufferSize) {
           renderer.setDrawingBufferSize(cssW, cssH, newRatio);
         } else {
           renderer.setPixelRatio(newRatio);
         }
+        notifyPixelRatioChange(ctx, newRatio);
       } catch (err) {
         restore();
         throw err;
@@ -1704,15 +1828,22 @@
     };
   }
   function worldAabb(obj) {
+    const instanced = obj;
+    if (instanced.isInstancedMesh === true && typeof instanced.computeBoundingBox === "function") {
+      try {
+        instanced.computeBoundingBox();
+      } catch {
+      }
+    }
+    const meshBox = instanced.isInstancedMesh === true ? instanced.boundingBox : void 0;
     const geom = obj.geometry;
-    if (!geom) return void 0;
-    if (!geom.boundingBox && typeof geom.computeBoundingBox === "function") {
+    if (!meshBox && geom && !geom.boundingBox && typeof geom.computeBoundingBox === "function") {
       try {
         geom.computeBoundingBox();
       } catch {
       }
     }
-    const box = geom.boundingBox;
+    const box = meshBox ?? geom?.boundingBox;
     if (!box?.min || !box?.max || !isFiniteVec(box.min) || !isFiniteVec(box.max)) return void 0;
     const corners = [
       { x: box.min.x, y: box.min.y, z: box.min.z },
@@ -1876,6 +2007,74 @@ ${line2}` : line1;
     };
   }
 
+  // ../../packages/runtime/src/instance-leak-tracker.ts
+  function instancedBufferBytes(obj) {
+    if (obj.isInstancedMesh !== true) return void 0;
+    let bytes = 0;
+    let known = false;
+    const matrix = obj.instanceMatrix;
+    if (typeof matrix?.array?.byteLength === "number") {
+      bytes += matrix.array.byteLength;
+      known = true;
+    } else if (typeof obj.count === "number" && obj.count >= 0) {
+      bytes += obj.count * 16 * 4;
+      known = true;
+    }
+    const color = obj.instanceColor;
+    if (typeof color?.array?.byteLength === "number") {
+      bytes += color.array.byteLength;
+      known = true;
+    }
+    return known ? bytes : void 0;
+  }
+  var InstanceLeakTracker = class {
+    known = /* @__PURE__ */ new Map();
+    alive = /* @__PURE__ */ new Set();
+    beginScan() {
+      this.alive.clear();
+    }
+    watch(obj) {
+      if (obj.isInstancedMesh !== true) return;
+      let rec = this.known.get(obj);
+      if (!rec) {
+        rec = { bytes: instancedBufferBytes(obj) ?? 0, disposed: false, leaked: false };
+        this.known.set(obj, rec);
+        const add = typeof obj.addEventListener === "function" ? obj.addEventListener : void 0;
+        if (add) {
+          add("dispose", () => {
+            rec.disposed = true;
+            rec.leaked = false;
+          });
+          add("removed", () => {
+            if (!rec.disposed) rec.leaked = true;
+          });
+        }
+      } else {
+        rec.bytes = instancedBufferBytes(obj) ?? rec.bytes;
+      }
+      this.alive.add(obj);
+    }
+    endScan() {
+      for (const [obj, rec] of this.known) {
+        if (this.alive.has(obj)) {
+          rec.leaked = false;
+          continue;
+        }
+        if (!rec.disposed) rec.leaked = true;
+      }
+    }
+    snapshot() {
+      let count = 0;
+      let bytes = 0;
+      for (const rec of this.known.values()) {
+        if (!rec.leaked) continue;
+        count += 1;
+        bytes += rec.bytes;
+      }
+      return { count, bytes };
+    }
+  };
+
   // ../../packages/runtime/src/scene-stats.ts
   var MATERIAL_MAP_KEYS = [
     "map",
@@ -1894,19 +2093,19 @@ ${line2}` : line1;
     "matcap"
   ];
   var BYTES_PER_PIXEL = 4;
-  function finiteSize(width, height) {
+  function finiteSize2(width, height) {
     if (typeof width !== "number" || typeof height !== "number") return void 0;
     if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return void 0;
     return { width, height };
   }
   function textureSize(tex) {
-    const direct = finiteSize(tex.width, tex.height);
+    const direct = finiteSize2(tex.width, tex.height);
     if (direct) return direct;
     const image = tex.image;
-    const fromImage = image ? finiteSize(image.width, image.height) : void 0;
+    const fromImage = image ? finiteSize2(image.width, image.height) : void 0;
     if (fromImage) return fromImage;
     const source = tex.source;
-    if (source?.data) return finiteSize(source.data.width, source.data.height);
+    if (source?.data) return finiteSize2(source.data.width, source.data.height);
     return void 0;
   }
   function rememberTexture(seen, tex, fallbackId) {
@@ -1937,14 +2136,14 @@ ${line2}` : line1;
     if (!value || typeof value !== "object") return false;
     const rec = value;
     if (rec.isWebGLRenderTarget === true) return true;
-    return Boolean(rec.texture) && finiteSize(rec.width, rec.height) !== void 0;
+    return Boolean(rec.texture) && finiteSize2(rec.width, rec.height) !== void 0;
   }
   function rememberRenderTarget(seen, value, fallbackId) {
     if (!isRenderTarget(value)) return;
     const tex = value.texture;
     const uuid = tex && typeof tex === "object" && typeof tex.uuid === "string" ? tex.uuid : fallbackId;
     if (seen.has(uuid)) return;
-    const size = finiteSize(value.width, value.height) ?? (tex ? textureSize(tex) : void 0);
+    const size = finiteSize2(value.width, value.height) ?? (tex ? textureSize(tex) : void 0);
     if (!size) return;
     seen.set(uuid, {
       uuid,
@@ -1987,43 +2186,40 @@ ${line2}` : line1;
     if (typeof obj.uuid === "string" && obj.uuid.length > 0) return obj.uuid;
     return fallback;
   }
-  function instancedBufferBytes(obj) {
-    if (obj.isInstancedMesh !== true) return void 0;
-    let bytes = 0;
-    let known = false;
-    const matrix = obj.instanceMatrix;
-    if (typeof matrix?.array?.byteLength === "number") {
-      bytes += matrix.array.byteLength;
-      known = true;
-    } else if (typeof obj.count === "number" && obj.count >= 0) {
-      bytes += obj.count * 16 * 4;
-      known = true;
-    }
-    const color = obj.instanceColor;
-    if (typeof color?.array?.byteLength === "number") {
-      bytes += color.array.byteLength;
-      known = true;
-    }
-    return known ? bytes : void 0;
-  }
   function worldScale(elements) {
     const sx = Math.hypot(Number(elements[0]), Number(elements[1]), Number(elements[2]));
     const sy = Math.hypot(Number(elements[4]), Number(elements[5]), Number(elements[6]));
     const sz = Math.hypot(Number(elements[8]), Number(elements[9]), Number(elements[10]));
     return Math.max(sx, sy, sz, 0);
   }
-  function worldRadius(obj) {
+  function localBoundingSphere(obj) {
+    if (obj.isInstancedMesh === true && typeof obj.computeBoundingSphere === "function") {
+      try {
+        ;
+        obj.computeBoundingSphere();
+      } catch {
+      }
+      const instanced = obj.boundingSphere;
+      if (typeof instanced?.radius === "number" && Number.isFinite(instanced.radius) && instanced.radius > 0) {
+        return instanced;
+      }
+    }
     const geo = obj.geometry;
     const radius = geo?.boundingSphere?.radius;
     if (typeof radius !== "number" || !Number.isFinite(radius) || radius <= 0) return void 0;
+    return geo?.boundingSphere;
+  }
+  function worldRadius(obj) {
+    const sphere = localBoundingSphere(obj);
+    if (!sphere) return void 0;
     const elements = obj.matrixWorld?.elements;
     const scale = elements && elements.length >= 12 ? worldScale(elements) : 1;
-    return radius * (scale > 0 ? scale : 1);
+    return sphere.radius * (scale > 0 ? scale : 1);
   }
   function worldCenter(obj) {
     const elements = obj.matrixWorld?.elements;
     if (!elements || elements.length < 16) return void 0;
-    const local = obj.geometry?.boundingSphere?.center;
+    const local = localBoundingSphere(obj)?.center;
     if (local && typeof local.x === "number" && typeof local.y === "number" && typeof local.z === "number") {
       return transformPoint2(elements, local.x, local.y, local.z);
     }
@@ -2142,41 +2338,18 @@ ${line2}` : line1;
     if (Math.abs(x) - radius > hx || Math.abs(y) - radius > hy) return true;
     return false;
   }
-  function isComposerLike(value) {
-    if (!value || typeof value !== "object") return false;
-    const rec = value;
-    if (rec.isEffectComposer === true) return true;
-    const hasPasses = Array.isArray(rec.passes);
-    const hasTarget = rec.renderTarget1 !== void 0 || rec.writeBuffer !== void 0;
-    return hasPasses && hasTarget;
-  }
-  function rememberComposer(target, value) {
-    if (target.current || !isComposerLike(value)) return;
-    target.current = value;
-  }
-  function readComposerSize(composer) {
-    const rt = composer.renderTarget1 ?? composer.writeBuffer;
-    const size = rt ? finiteSize(rt.width, rt.height) : void 0;
-    const pr = composer.pixelRatio ?? composer._pixelRatio;
-    const out = {};
-    if (size) {
-      out.width = size.width;
-      out.height = size.height;
-    }
-    if (typeof pr === "number" && Number.isFinite(pr) && pr > 0) out.pixelRatio = pr;
-    return out;
-  }
   function assignDefined(target, key, value) {
     if (value !== void 0) target[key] = value;
   }
-  function collectHostSceneStats(scene, renderer, camera) {
+  function collectHostSceneStats(scene, renderer, camera, options) {
     const lights = [];
     const seen = /* @__PURE__ */ new Map();
     const insights = {};
     const contributors = [];
     const shadowCameras = [];
     const casters = [];
-    const composerRef = {};
+    const leakTracker = options?.leakTracker;
+    leakTracker?.beginScan();
     let frustumCulledDisabledCount = 0;
     let oversizedBoundCount = 0;
     let oversizedMeasured = false;
@@ -2191,7 +2364,7 @@ ${line2}` : line1;
       let index = 0;
       traversable.traverse((obj) => {
         index += 1;
-        rememberComposer(composerRef, obj);
+        leakTracker?.watch(obj);
         if (obj.isLight === true) {
           lights.push({ castShadow: obj.castShadow === true });
           if (obj.visible !== false && typeof obj.intensity === "number" && obj.intensity <= 0) {
@@ -2236,12 +2409,11 @@ ${line2}` : line1;
         }
       });
     }
+    leakTracker?.endScan();
     if (renderer && typeof renderer === "object") {
       const rec = renderer;
-      rememberComposer(composerRef, rec);
       for (const [key, value] of Object.entries(rec)) {
         rememberRenderTarget(seen, value, `renderer:${key}`);
-        rememberComposer(composerRef, value);
       }
       scanObjectForRenderTargets(rec.shadowMap, seen, "renderer:shadowMap");
       if (typeof rec.drawingBufferWidth === "number") insights.drawingBufferWidth = rec.drawingBufferWidth;
@@ -2293,8 +2465,17 @@ ${line2}` : line1;
     }
     insights.zeroIntensityLightCount = zeroIntensityLightCount;
     if (instancedKnown) insights.instancedBufferBytes = instancedBytes;
-    if (composerRef.current) {
-      const size = readComposerSize(composerRef.current);
+    const leak = leakTracker?.snapshot();
+    if (leak && leak.count > 0) {
+      insights.removedUndisposedInstancedCount = leak.count;
+    }
+    const extraRoots = [...options?.extraRoots ?? []];
+    if (scene && typeof scene === "object" && "userData" in scene) {
+      extraRoots.push(scene.userData);
+    }
+    const composer = findComposer(scene, renderer, options?.composer, extraRoots);
+    if (composer) {
+      const size = readComposerSize(composer);
       assignDefined(insights, "composerWidth", size.width);
       assignDefined(insights, "composerHeight", size.height);
       assignDefined(insights, "composerPixelRatio", size.pixelRatio);
@@ -2315,7 +2496,8 @@ ${line2}` : line1;
     "composerWidth",
     "composerHeight",
     "drawingBufferWidth",
-    "drawingBufferHeight"
+    "drawingBufferHeight",
+    "removedUndisposedInstancedCount"
   ];
   function applyHostInsights(snapshot, insights) {
     const next = { ...snapshot };
@@ -2330,39 +2512,109 @@ ${line2}` : line1;
   }
 
   // ../../packages/runtime/src/gpu-timer.ts
+  var EXT_NAME = "EXT_disjoint_timer_query_webgl2";
+  var QUERY_RESULT = 34918;
+  var QUERY_RESULT_AVAILABLE = 34919;
+  function readDisjointExt(renderer, gl) {
+    const extensions = renderer.extensions;
+    if (typeof extensions?.get === "function") {
+      try {
+        const viaExtensions = extensions.get(EXT_NAME);
+        if (viaExtensions) return viaExtensions;
+      } catch {
+      }
+    }
+    try {
+      const viaRenderer = renderer.getExtension?.(EXT_NAME);
+      if (viaRenderer) return viaRenderer;
+    } catch {
+    }
+    try {
+      const viaGl = gl?.getExtension?.(EXT_NAME);
+      if (viaGl) return viaGl;
+    } catch {
+    }
+    return void 0;
+  }
   function createGpuFrameSampler(renderer) {
     const gl = renderer.getContext?.();
-    const extName = "EXT_disjoint_timer_query_webgl2";
-    let ext;
-    try {
-      ext = renderer.getExtension?.(extName) ?? gl?.getExtension?.(extName);
-    } catch {
-      ext = void 0;
+    if (!gl) return void 0;
+    if (typeof gl.createQuery !== "function" || typeof gl.beginQuery !== "function" || typeof gl.endQuery !== "function" || typeof gl.getQueryParameter !== "function") {
+      return void 0;
     }
-    if (!ext || typeof ext !== "object") return void 0;
-    const api = ext;
-    if (typeof api.createQuery !== "function" || typeof api.beginQuery !== "function") return void 0;
-    const target = api.TIME_ELAPSED_EXT;
+    const extRaw = readDisjointExt(renderer, gl);
+    if (!extRaw || typeof extRaw !== "object") return void 0;
+    const ext = extRaw;
+    const target = ext.TIME_ELAPSED_EXT;
     if (typeof target !== "number") return void 0;
-    let query;
+    const availablePname = typeof gl.QUERY_RESULT_AVAILABLE === "number" ? gl.QUERY_RESULT_AVAILABLE : QUERY_RESULT_AVAILABLE;
+    const resultPname = typeof gl.QUERY_RESULT === "number" ? gl.QUERY_RESULT : QUERY_RESULT;
+    const pending = [];
+    let active;
+    const deleteQuery = (query) => {
+      try {
+        gl.deleteQuery?.(query);
+      } catch {
+      }
+    };
+    const harvest = () => {
+      while (pending.length > 0) {
+        const query = pending[0];
+        let available;
+        try {
+          available = gl.getQueryParameter(query, availablePname);
+        } catch {
+          pending.shift();
+          deleteQuery(query);
+          continue;
+        }
+        if (available !== true && available !== 1) break;
+        pending.shift();
+        let disjoint = false;
+        if (typeof ext.GPU_DISJOINT_EXT === "number" && typeof gl.getParameter === "function") {
+          try {
+            const flag = gl.getParameter(ext.GPU_DISJOINT_EXT);
+            disjoint = flag === true || flag === 1;
+          } catch {
+            disjoint = false;
+          }
+        }
+        let ns;
+        try {
+          ns = gl.getQueryParameter(query, resultPname);
+        } catch {
+          ns = void 0;
+        }
+        deleteQuery(query);
+        if (disjoint) continue;
+        if (typeof ns === "number" && Number.isFinite(ns)) return ns / 1e6;
+      }
+      return void 0;
+    };
     return {
       begin() {
         try {
-          query = api.createQuery?.();
-          if (query) api.beginQuery?.(target, query);
+          if (active !== void 0) {
+            gl.endQuery(target);
+            pending.push(active);
+            active = void 0;
+          }
+          const query = gl.createQuery();
+          if (!query) return;
+          gl.beginQuery(target, query);
+          active = query;
         } catch {
-          query = void 0;
+          active = void 0;
         }
       },
       end() {
         try {
-          api.endQuery?.(target);
-          if (!query || typeof api.getQueryParameter !== "function") return void 0;
-          const available = api.getQueryParameter(query, api.QUERY_RESULT_AVAILABLE ?? 34919);
-          if (available !== true) return void 0;
-          const ns = api.getQueryParameter(query, api.QUERY_RESULT ?? 34918);
-          if (typeof ns !== "number" || !Number.isFinite(ns)) return void 0;
-          return ns / 1e6;
+          if (active !== void 0) {
+            gl.endQuery(target);
+            pending.push(active);
+            active = void 0;
+          }
+          return harvest();
         } catch {
           return void 0;
         }
@@ -2393,7 +2645,7 @@ ${line2}` : line1;
     });
     return deltas;
   }
-  function snapshotFrom(sample, renderer, scene, continuousFrameloop, camera) {
+  function snapshotFrom(sample, renderer, scene, continuousFrameloop, camera, extras) {
     let objectCount = 0;
     let meshCount = 0;
     let matrixAutoUpdateCount = 0;
@@ -2409,7 +2661,10 @@ ${line2}` : line1;
         if (mat.uuid) materials.push({ uuid: mat.uuid });
       }
     });
-    const collected = collectHostSceneStats(scene, renderer, camera);
+    const collectOpts = {};
+    if (extras?.composer !== void 0) collectOpts.composer = extras.composer;
+    if (extras?.leakTracker) collectOpts.leakTracker = extras.leakTracker;
+    const collected = collectHostSceneStats(scene, renderer, camera, collectOpts);
     const walked = snapshotScene({
       objectCount,
       meshCount,
@@ -2490,6 +2745,7 @@ ${line2}` : line1;
     frameloop;
     postfxEnabled;
     pinnedAutoProfile;
+    instanceLeaks = new InstanceLeakTracker();
     device() {
       if (this.opts.device) return this.opts.device;
       const windowDpr = typeof globalThis !== "undefined" && typeof globalThis.devicePixelRatio === "number" ? globalThis.devicePixelRatio : void 0;
@@ -2555,7 +2811,10 @@ ${line2}` : line1;
     collector() {
       return new MetricsCollector({
         getRendererInfo: () => this.opts.renderer.info,
-        getSceneStats: this.opts.getSceneStats ?? (() => collectHostSceneStats(this.opts.scene, this.opts.renderer).stats)
+        getSceneStats: this.opts.getSceneStats ?? (() => collectHostSceneStats(this.opts.scene, this.opts.renderer, this.opts.camera, {
+          composer: this.opts.composer,
+          leakTracker: this.instanceLeaks
+        }).stats)
       });
     }
     currentSnapshot(sample) {
@@ -2564,7 +2823,8 @@ ${line2}` : line1;
         this.opts.renderer,
         this.opts.scene,
         this.frameloop === "always",
-        this.opts.camera
+        this.opts.camera,
+        { composer: this.opts.composer, leakTracker: this.instanceLeaks }
       );
     }
     ruleContext(snapshot, device, profile) {
@@ -2593,11 +2853,18 @@ ${line2}` : line1;
     }
     hostRenderPath() {
       if (this.opts.renderFrame) return this.opts.renderFrame;
+      const composer = this.resolvedComposer();
+      if (composer && typeof composer.render === "function") {
+        return () => composer.render();
+      }
       const render = this.opts.renderer.render;
       if (typeof render === "function") {
         return () => render.call(this.opts.renderer, this.opts.scene, this.opts.camera);
       }
       return void 0;
+    }
+    resolvedComposer() {
+      return this.opts.composer ?? findComposer(this.opts.scene, this.opts.renderer, void 0);
     }
     getDevice() {
       return this.device();
@@ -2613,12 +2880,36 @@ ${line2}` : line1;
       const prevAutoReset = info.autoReset;
       const gpu = createGpuFrameSampler(this.opts.renderer);
       info.autoReset = false;
-      let lastCalls = info.render.calls;
-      let lastTriangles = info.render.triangles;
+      const callSamples = [];
+      const triangleSamples = [];
       const gpuTimes = [];
+      let workMs;
+      const restores = [];
+      const hook = (obj) => {
+        if (!obj || typeof obj.render !== "function") return;
+        const original = obj.render;
+        obj.render = function wrappedRender(...args) {
+          const t0 = now();
+          try {
+            return original.apply(this, args);
+          } finally {
+            workMs = now() - t0;
+          }
+        };
+        restores.push(() => {
+          obj.render = original;
+        });
+      };
+      hook(this.opts.renderer);
+      hook(this.opts.hostRenderer);
+      const composer = this.resolvedComposer();
+      if (composer && typeof composer === "object") {
+        hook(composer);
+      }
       try {
         for (let i = 0; i < frames; i++) {
           info.reset?.();
+          workMs = void 0;
           const start = now();
           collector.beginFrame(start);
           gpu?.begin();
@@ -2626,19 +2917,21 @@ ${line2}` : line1;
           else if (renderFrame) await renderFrame();
           const gpuMs = gpu?.end();
           if (gpuMs !== void 0) gpuTimes.push(gpuMs);
-          collector.endFrame(now());
-          lastCalls = info.render.calls;
-          lastTriangles = info.render.triangles;
+          const end = workMs !== void 0 ? start + workMs : now();
+          collector.endFrame(end);
+          callSamples.push(info.render.calls);
+          triangleSamples.push(info.render.triangles);
         }
       } finally {
+        for (let i = restores.length - 1; i >= 0; i--) restores[i]();
         if (hadAutoReset) info.autoReset = prevAutoReset;
         else delete info.autoReset;
       }
       const sample = collector.sample();
-      sample.drawCalls = lastCalls;
-      sample.triangles = lastTriangles;
+      if (callSamples.length > 0) sample.drawCalls = median(callSamples);
+      if (triangleSamples.length > 0) sample.triangles = median(triangleSamples);
       if (gpuTimes.length > 0) {
-        sample.gpuFrameTimeMs = gpuTimes.reduce((a, b) => a + b, 0) / gpuTimes.length;
+        sample.gpuFrameTimeMs = median(gpuTimes);
       }
       const liveClock = this.opts.now === void 0;
       const validityInput = {
@@ -2708,6 +3001,9 @@ ${line2}` : line1;
       };
       if (cameraPosition) ctx.cameraPosition = cameraPosition;
       if (extras?.qualityTier) ctx.qualityTier = extras.qualityTier;
+      const composer = this.resolvedComposer();
+      if (composer !== void 0) ctx.composer = composer;
+      if (this.opts.onPixelRatioChange) ctx.onPixelRatioChange = this.opts.onPixelRatioChange;
       const appliedPasses = [];
       const failedPasses = [];
       for (const id of passIds) {
@@ -2750,6 +3046,11 @@ ${line2}` : line1;
       const current = readRendererPixelRatio(this.opts.renderer);
       if (current !== void 0 && current > maxRatio) {
         this.opts.renderer.setPixelRatio(maxRatio);
+        const pixelRatioArgs = { renderer: this.opts.renderer };
+        const composer = this.resolvedComposer();
+        if (composer !== void 0) pixelRatioArgs.composer = composer;
+        if (this.opts.onPixelRatioChange) pixelRatioArgs.onPixelRatioChange = this.opts.onPixelRatioChange;
+        notifyPixelRatioChange(pixelRatioArgs, maxRatio);
       }
     }
     forceDrawingBufferPixels(maxPixels) {
@@ -4349,10 +4650,17 @@ ${line2}` : line1;
         }
       },
       getExtension(name) {
+        if (typeof r.extensions?.get === "function") {
+          try {
+            const viaExtensions = r.extensions.get(name);
+            if (viaExtensions) return viaExtensions;
+          } catch {
+          }
+        }
         if (typeof r.getExtension === "function") return r.getExtension(name);
         const gl = typeof r.getContext === "function" ? r.getContext() : void 0;
         if (gl && typeof gl.getExtension === "function") return gl.getExtension(name);
-        return r.extensions?.get?.(name);
+        return void 0;
       }
     };
     if (typeof r.getContext === "function") {
@@ -4360,6 +4668,12 @@ ${line2}` : line1;
     }
     if (typeof r.render === "function") {
       wrapped.render = (scene, camera) => r.render(scene, camera);
+    }
+    if (typeof r.getSize === "function") {
+      wrapped.getSize = (target) => r.getSize(target);
+    }
+    if (r.extensions) {
+      wrapped.extensions = r.extensions;
     }
     defineOptional(wrapped, "antialias", {
       get: () => readRendererAntialias(r)
@@ -4702,11 +5016,17 @@ ${line2}` : line1;
       profile: options.profile ?? "game",
       getSceneStats: () => collectSceneStats(found.scene, found.renderer)
     };
+    if (found.renderer && typeof found.renderer === "object") {
+      doctorOpts.hostRenderer = found.renderer;
+    }
     if (options.now) doctorOpts.now = options.now;
     if (options.measureFrames !== void 0) doctorOpts.measureFrames = options.measureFrames;
     if (waitFrame) doctorOpts.waitFrame = waitFrame;
     const device = resolveAttachDevice(options.device, renderer);
     if (device) doctorOpts.device = device;
+    const composer = options.composer ?? found.renderer?.composer ?? found.scene?.userData?.composer;
+    if (composer !== void 0) doctorOpts.composer = composer;
+    if (options.onPixelRatioChange) doctorOpts.onPixelRatioChange = options.onPixelRatioChange;
     const doctor = new Doctor(doctorOpts);
     const qcOpts = {
       mode: options.mode ?? "advise"
