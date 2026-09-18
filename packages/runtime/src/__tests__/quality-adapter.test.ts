@@ -76,7 +76,7 @@ describe('QualityController adapter wiring', () => {
       capabilities: () => ['fftSize', 'rtScale', 'meshLod', 'deferredHdr'],
       snapshot: () => ({}),
       apply(_tier: QualityTier, knobs: QualityKnobSet) {
-        seen.push({ ...knobs, fftSize: knobs.fftSize ? [...knobs.fftSize] : undefined })
+        seen.push({ ...knobs })
         return { rollback() {} }
       },
     }
