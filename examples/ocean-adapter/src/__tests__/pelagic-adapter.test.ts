@@ -237,6 +237,20 @@ describe('createOceanAdapter', () => {
     expect((debug.cascades[0] as HostCascade).updates).toBeGreaterThan(0)
   })
 
+  it('keeps potato fftSize 64 on cascade 0 when a later all-zero freeze is stacked', () => {
+    const debug = hostLikeDebug()
+    const adapter = createOceanAdapter(debug)
+    adapter.apply('potato', { fftSize: [64, 0, 0], spectrumEveryNFrames: 8 })
+    expect(debug.cascades![0]!.size).toBe(64)
+    adapter.apply('potato', { fftSize: [0, 0, 0], spectrumEveryNFrames: 0, effectQuality: 0 })
+    expect(debug.cascades![0]!.size).toBe(64)
+    expect(debug.cascades![0]).not.toBeNull()
+    expect(() => hostSpectrumTick(debug)).not.toThrow()
+    expect((debug.cascades![0] as HostCascade).updates).toBe(0)
+    expect((debug.cascades![1] as HostCascade).updates).toBe(0)
+    expect((debug.cascades![2] as HostCascade).updates).toBe(0)
+  })
+
   it('forces lowest effectQuality when the knob is passed and skips when pelagic omits it', () => {
     const debug = fakeDebug()
     debug.effectQuality = 0.8
@@ -415,5 +429,16 @@ describe('createOceanAdapter', () => {
     expect(debug.dprLoop!.enabled).toBe(true)
     debug.effectQuality = 1
     expect(debug.effectQuality).toBe(1)
+  })
+
+  it('forces effectQuality to 0 even after takeExclusiveControl froze the setter', () => {
+    const debug = fakeDebug()
+    debug.effectQuality = 0.8
+    const adapter = createOceanAdapter(debug)
+    adapter.takeExclusiveControl!()
+    const handle = adapter.apply('potato', { effectQuality: 0 })
+    expect(debug.effectQuality).toBe(0)
+    handle.rollback()
+    expect(debug.effectQuality).toBe(0.8)
   })
 })

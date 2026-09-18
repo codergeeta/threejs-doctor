@@ -267,12 +267,19 @@ function applyFft(debug: PelagicDebugHandle, fftSize: number[]): () => void {
 
 function applyEffectQuality(debug: PelagicDebugHandle, value: number): () => void {
   if (!('effectQuality' in debug) && debug.effectQuality === undefined) return () => {}
-  const had = Object.prototype.hasOwnProperty.call(debug, 'effectQuality')
-  const prev = debug.effectQuality
-  debug.effectQuality = value
+  const existing = Object.getOwnPropertyDescriptor(debug, 'effectQuality')
+  Object.defineProperty(debug, 'effectQuality', {
+    configurable: true,
+    enumerable: existing?.enumerable ?? true,
+    writable: true,
+    value,
+  })
   return () => {
-    if (had) debug.effectQuality = prev
-    else delete debug.effectQuality
+    if (existing) {
+      Object.defineProperty(debug, 'effectQuality', existing)
+      return
+    }
+    delete debug.effectQuality
   }
 }
 

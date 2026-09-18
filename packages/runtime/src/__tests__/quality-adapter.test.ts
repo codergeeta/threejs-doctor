@@ -110,6 +110,48 @@ describe('QualityController adapter wiring', () => {
     expect(last.rtScale).toBeUndefined()
   })
 
+  it('stacks hopeless cascade freeze on the potato apply instead of rolling it back', async () => {
+    const seen: QualityKnobSet[] = []
+    let rollbacks = 0
+    const adapter: QualityAdapter = {
+      id: 'ocean-full',
+      capabilities: () => ['fftSize', 'rtScale', 'meshLod', 'deferredHdr'],
+      snapshot: () => ({}),
+      apply(_tier: QualityTier, knobs: QualityKnobSet) {
+        seen.push({ ...knobs })
+        return {
+          rollback() {
+            rollbacks += 1
+          },
+        }
+      },
+    }
+    const { doctor } = createLadderDoctor({
+      now: (() => {
+        let t = 0
+        return () => {
+          t += 250
+          return t
+        }
+      })(),
+      measureFrames: 4,
+    })
+    const ladder = new QualityController(doctor, {
+      mode: 'safe-auto',
+      startTier: 'potato',
+      maxTier: 'potato',
+      windowFrames: 4,
+      waitForFirstInteractive: async () => {},
+    })
+    ladder.registerAdapter(adapter)
+    const settled = await ladder.runLadder()
+    expect(settled.floorFailed).toBe(true)
+    expect(settled.after?.avgFps).toBeLessThan(5)
+    expect(seen[0]?.fftSize).toEqual([64, 0, 0])
+    expect(seen[seen.length - 1]?.fftSize).toEqual([0, 0, 0])
+    expect(rollbacks).toBe(0)
+  })
+
   it('passes only advertised knobs and records unsupportedKnob for unknown keys on the adapter side', async () => {
     const seen: QualityKnobSet[] = []
     const adapter: QualityAdapter = {

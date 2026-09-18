@@ -42,7 +42,7 @@ window.__THREEJS_DOCTOR_ATTACH__ = { mode: 'safe-auto', device: 'phone' }
 Label any resulting FPS as emulator overlay, not a real phone. That does not
 close this §1 / spec §3 bar. See the live-attach README “Phone-class probe overlay”.
 
-Bundled games (tanks / catapult) with `THREE` on the page: **arm capture, then paste the IIFE** (`examples/host-shim/capture.js` or `ThreejsDoctorLiveAttach.installRendererRenderCapture()`, wait one frame, then paste `attach.iife.js`) so `window.__THREEJS_DOCTOR_HOST__` is filled.
+Bundled games (tanks / catapult) with `THREE` on the page: **arm capture, then paste the IIFE.** Either paste [`examples/host-shim/capture.js`](../../../examples/host-shim/README.md), wait one frame, then paste `attach.iife.js`; or set `window.__THREEJS_DOCTOR_ATTACH__ = { autoRun: false }`, paste the IIFE, call `ThreejsDoctorLiveAttach.installRendererRenderCapture()`, wait one frame, then `attachQualityLadder`. `installRendererRenderCapture` does not exist until the IIFE has run. If `THREE.WebGLRenderer` is missing, pass `{ scene, camera, renderer }` explicitly.
 
 The helper logs `console.log(JSON.stringify(report))` and assigns `window.__THREEJS_DOCTOR_LAST_REPORT__` after boot and after `runLadder()` so a dropped console line can still be copied. Do not invent `avgFps` / `ttfiMs` / `after` / `simPassCount`. Paste-after-load omits `ttfiMs` (it is not cold-load TTFI). Pass a `waitForFirstInteractive` hook only if you attached from document-start.
 

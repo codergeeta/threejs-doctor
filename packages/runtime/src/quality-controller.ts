@@ -697,7 +697,7 @@ export class QualityController {
       }
       return knob
     })
-    this.rollbackAdapterKnobs()
+    if (!opts.freezeCascades) this.rollbackAdapterKnobs()
     try {
       const handle = this.adapter.apply('potato', filtered.knobs)
       this.knobHandles.push(handle)

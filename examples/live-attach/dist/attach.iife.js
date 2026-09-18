@@ -232,12 +232,19 @@
   function applyEffectQuality(debug, value) {
     if (!("effectQuality" in debug) && debug.effectQuality === void 0) return () => {
     };
-    const had = Object.prototype.hasOwnProperty.call(debug, "effectQuality");
-    const prev = debug.effectQuality;
-    debug.effectQuality = value;
+    const existing = Object.getOwnPropertyDescriptor(debug, "effectQuality");
+    Object.defineProperty(debug, "effectQuality", {
+      configurable: true,
+      enumerable: existing?.enumerable ?? true,
+      writable: true,
+      value
+    });
     return () => {
-      if (had) debug.effectQuality = prev;
-      else delete debug.effectQuality;
+      if (existing) {
+        Object.defineProperty(debug, "effectQuality", existing);
+        return;
+      }
+      delete debug.effectQuality;
     };
   }
   function applyRtScale(debug, scale) {
@@ -2259,7 +2266,7 @@ ${line2}` : line1;
         }
         return knob;
       });
-      this.rollbackAdapterKnobs();
+      if (!opts2.freezeCascades) this.rollbackAdapterKnobs();
       try {
         const handle = this.adapter.apply("potato", filtered.knobs);
         this.knobHandles.push(handle);
