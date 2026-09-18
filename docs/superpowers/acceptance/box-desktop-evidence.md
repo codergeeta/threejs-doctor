@@ -85,10 +85,13 @@ captures.
 ### Claude-of-Tanks (https://cot.kevinliu.studio/)
 
 - Status: **BLOCKED** on scene discovery **and** box resources
-- Error: could not find scene/camera/renderer (bundled closures). Improved
-  live-attach discovery still may miss fully closed-over handles; explicit
-  `attachQualityLadder({ scene, camera, renderer })` required from page console
-  until host hooks exist.
+- Error: could not find scene/camera/renderer (bundled closures). Deep walk from
+  window / document / canvas now ships (non-enumerable own props, 50k-node cap,
+  skip cross-origin iframes) and unit tests cover nested
+  `{ app: { gfx: { renderer } } }`. **Re-test on the box is still required** —
+  this revision did not recapture tanks. If the live renderer is fully closed
+  over, explicit `attachQualityLadder({ scene, camera, renderer })` is still
+  required from the page console.
 - Additional note (second attempt): combat rendered, then ~125 canvases, then
   Chrome discarded the tab under memory pressure during attach evaluation —
   **no report**. Treat as box-resource blocked as well as discovery-blocked.
@@ -106,8 +109,12 @@ captures.
 
 - Status: **BLOCKED** on scene discovery
 - Observed: canvas present, **no** discoverable scene/camera/renderer handles
-- No FPS / after metrics recorded
-- Needs explicit `attachQualityLadder({ scene, camera, renderer })` or a
+  on the last box attempt (prototype hook never armed: `window.THREE` missing,
+  `window.__THREE__` a string). Deep walk now ships in live-attach + host-shim;
+  **re-test catapult on the box is still required**. No FPS / after metrics
+  recorded.
+- Needs a successful deep-walk / render-hook capture, or explicit
+  `attachQualityLadder({ scene, camera, renderer })` / a
   `window.__THREEJS_DOCTOR_HOST__` hook
 
 ### Apophenoth (https://izzoizzoizzo.github.io/Apophenoth/)
@@ -239,10 +246,14 @@ This file does not close acceptance. Still required:
   cannot prove the ocean bar.
 - External [Claude-of-Tanks](https://cot.kevinliu.studio/) /
   [Kinema](https://kinema-play.vercel.app/?forceWebGL=1) /
-  [catapult](https://sina-ghiasi.github.io/threejs-catapult-game/) still need
-  explicit `attachQualityLadder({ scene, camera, renderer })` when `THREE` is
-  not on the page. The host-shim / IIFE prototype hook is a no-op on tanks and
-  catapult today (`THREE.WebGLRenderer` not found).
+  [catapult](https://sina-ghiasi.github.io/threejs-catapult-game/) still need a
+  **box re-test** after the deep window/document/canvas walk. Unit tests prove
+  nested `isWebGLRenderer` discovery; this revision did **not** recapture those
+  live hosts. If the renderer is fully closed over, explicit
+  `attachQualityLadder({ scene, camera, renderer })` is still required.
+  Previous host-shim probe: `THREE.WebGLRenderer` not on `window` (`window.THREE`
+  missing; `window.__THREE__` a **string**). Do not treat unit tests as a live
+  tanks/catapult pass.
 
 Save those JSON files off-repo. Never invent after metrics.
 
@@ -312,9 +323,14 @@ logged `THREE.WebGLRenderer not found` on both:
 - https://cot.kevinliu.studio/ — 119 canvases, hook did not capture
 - https://sina-ghiasi.github.io/threejs-catapult-game/ — 1 canvas, hook did not capture
 
-The prototype hook is shipped and unit-tested with fakes. These two live hosts
-still need explicit `attachQualityLadder({ scene, camera, renderer })` until
-they expose `THREE` (or `__THREE__.WebGLRenderer`).
+The prototype hook is shipped and unit-tested with fakes. Deep walk from
+window / document / canvas (non-enumerable own props, constructor name
+`WebGLRenderer` or `isWebGLRenderer === true`, 50k-node cap, skip cross-origin
+iframes) now ships in live-attach and `examples/host-shim/capture.js`. **Re-test
+tanks / catapult on the box** — this revision did not recapture those hosts.
+Until a live capture succeeds, they still need explicit
+`attachQualityLadder({ scene, camera, renderer })` if the renderer is not on
+the walked graph.
 
 ## Chrome iPhone emulation 390×844 DPR3 (NOT a real phone GPU)
 
@@ -374,4 +390,18 @@ WebGL. **Box SwiftShader cannot prove the spec §3 ocean bar.** A real phone
 GPU capture on the device in [live-ocean-capture.md](./live-ocean-capture.md)
 §1 is still required. Do not treat this ~0.92 as a win or as phone-class
 proof.
+
+## Deep renderer walk (this revision, no new FPS)
+
+Live-attach + host-shim now BFS from `window` / `document` / each canvas for
+`isWebGLRenderer === true` or `constructor.name === 'WebGLRenderer'`
+(non-enumerable own props, skip cross-origin iframes, 50k-node cap). Unit tests
+cover nested `{ app: { gfx: { renderer } } }`. **Re-test catapult / tanks on
+the box** — not done this revision. Do not invent FPS.
+
+In-repo fixture Pass B was **not remeasured**. The last copied run remains
+after `avgFps` **53.970** / p95 **32** on the 0.5 DPR floor (`floorFailed:
+false`), which is still ≥30. Deep walk does not change the fixture host
+(`window.__THREEJS_DOCTOR_HOST__`).
+
 

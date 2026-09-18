@@ -2508,9 +2508,18 @@ ${line2}` : line1;
   function isRecord(value) {
     return typeof value === "object" && value !== null;
   }
+  function constructorNameOf(value) {
+    try {
+      const name = value.constructor?.name;
+      return typeof name === "string" ? name : void 0;
+    } catch {
+      return void 0;
+    }
+  }
   function isRenderer(value) {
     if (!isRecord(value)) return false;
     if (value.isWebGLRenderer === true) return true;
+    if (constructorNameOf(value) === "WebGLRenderer") return true;
     return typeof value.setPixelRatio === "function" && isRecord(value.info);
   }
   function isScene(value) {
@@ -2673,6 +2682,124 @@ ${line2}` : line1;
       return [];
     }
   }
+  var DEEP_RENDERER_MAX_VISITS = 5e4;
+  var DEEP_RENDERER_MAX_DEPTH = 16;
+  var DEEP_SKIP_KEYS = /* @__PURE__ */ new Set([
+    ...SKIP_KEYS,
+    ...CANVAS_SKIP_KEYS,
+    "children",
+    "parent",
+    "geometry",
+    "attributes",
+    "morphAttributes",
+    "index",
+    "__THREEJS_DOCTOR_HOST__",
+    "__THREEJS_DOCTOR_LAST_REPORT__",
+    "__THREEJS_DOCTOR_ATTACH__"
+  ]);
+  function isCanvasElement(value) {
+    const tag = value.tagName;
+    if (typeof tag === "string" && tag.toUpperCase() === "CANVAS") return true;
+    return typeof value.nodeType === "number" && typeof value.getContext === "function";
+  }
+  function isIFrameElement(value) {
+    const tag = value.tagName;
+    return typeof tag === "string" && tag.toUpperCase() === "IFRAME";
+  }
+  function isDomNode(value) {
+    return typeof value.nodeType === "number";
+  }
+  function isInaccessibleWindow(value) {
+    try {
+      if (value.window === value || value.self === value) {
+        void value.location?.href;
+      }
+      return false;
+    } catch {
+      return true;
+    }
+  }
+  function isCrossOriginIFrame(value) {
+    if (!isIFrameElement(value)) return false;
+    try {
+      const w = value.contentWindow;
+      if (w == null || typeof w !== "object") return false;
+      void w.location.href;
+      return false;
+    } catch {
+      return true;
+    }
+  }
+  function isTypedArrayOrBuffer(value) {
+    return ArrayBuffer.isView(value) || value instanceof ArrayBuffer;
+  }
+  function shouldExpandDeep(value, isSeed) {
+    if (isSeed) return true;
+    if (isInaccessibleWindow(value) || isCrossOriginIFrame(value)) return false;
+    if (isIFrameElement(value)) return true;
+    if (isDomNode(value)) return isCanvasElement(value);
+    return !isTypedArrayOrBuffer(value);
+  }
+  function findRendererDeep(root) {
+    const seen = /* @__PURE__ */ new Set();
+    const queue = [];
+    let visits = 0;
+    const enqueue = (value, depth, seed) => {
+      if (value == null || typeof value !== "object") return;
+      if (seen.has(value) || depth > DEEP_RENDERER_MAX_DEPTH) return;
+      if (visits + queue.length >= DEEP_RENDERER_MAX_VISITS) return;
+      seen.add(value);
+      queue.push({ value, depth, seed });
+    };
+    enqueue(root, 0, true);
+    enqueue(getDocument(root), 0, true);
+    for (const canvas of listCanvases(root)) enqueue(canvas, 0, true);
+    while (queue.length > 0 && visits < DEEP_RENDERER_MAX_VISITS) {
+      const next = queue.shift();
+      if (!next) break;
+      const { value, depth, seed } = next;
+      if (!isRecord(value)) continue;
+      visits += 1;
+      if (isInaccessibleWindow(value) || isCrossOriginIFrame(value)) continue;
+      try {
+        if (isRenderer(value)) return value;
+      } catch {
+        continue;
+      }
+      if (depth >= DEEP_RENDERER_MAX_DEPTH) continue;
+      if (!shouldExpandDeep(value, seed)) continue;
+      if (isIFrameElement(value)) {
+        try {
+          enqueue(value.contentWindow, depth + 1, true);
+          enqueue(value.contentDocument, depth + 1, true);
+        } catch {
+          continue;
+        }
+      }
+      let keys = [];
+      try {
+        keys = keysToVisit(value, true);
+      } catch {
+        continue;
+      }
+      for (const key of keys) {
+        if (DEEP_SKIP_KEYS.has(key)) continue;
+        try {
+          const child = value[key];
+          if (child == null || typeof child !== "object" || seen.has(child)) continue;
+          if (!isRecord(child)) continue;
+          if (isTypedArrayOrBuffer(child)) continue;
+          if (isCrossOriginIFrame(child) || isInaccessibleWindow(child)) continue;
+          const childSeed = isCanvasElement(child) || isIFrameElement(child);
+          if (isDomNode(child) && !childSeed) continue;
+          enqueue(child, depth + 1, childSeed);
+        } catch {
+          continue;
+        }
+      }
+    }
+    return void 0;
+  }
   function peekWebGLContext(canvas) {
     if (!isRecord(canvas) || typeof canvas.getContext !== "function") return void 0;
     const getContext = canvas.getContext;
@@ -2807,7 +2934,8 @@ ${line2}` : line1;
       "pelagic.debug",
       "canvas (__THREE__/userData/internals)",
       "bundle roots (app, game, __THREE__)",
-      "global walk"
+      "global walk",
+      "deep walk (window/document/canvas)"
     );
     if (explicit.scene != null && explicit.camera != null && explicit.renderer != null) {
       const found2 = { scene: explicit.scene, camera: explicit.camera, renderer: explicit.renderer };
@@ -2852,6 +2980,14 @@ ${line2}` : line1;
       const walked = walk(root, { maxDepth: 4, maxVisits: 400 });
       if (walked) {
         mergeHandles(found, walked);
+        source ??= "walk";
+      }
+    }
+    if (found.renderer == null) {
+      const deep = findRendererDeep(root);
+      if (deep) {
+        found.renderer = deep;
+        mergeHandles(found, fillFromRenderer(deep));
         source ??= "walk";
       }
     }
@@ -3169,12 +3305,9 @@ ${line2}` : line1;
       return void 0;
     }
   };
-  function installRendererRenderCapture(root = globalThis) {
-    const ctor = findThreeWebGLRendererCtor(root);
-    if (!ctor) return idleCapture;
-    const proto = ctor.prototype;
-    const hadOwn = Object.prototype.hasOwnProperty.call(proto, "render");
-    const original = proto.render;
+  function hookRenderMethod(root, target) {
+    const hadOwn = Object.prototype.hasOwnProperty.call(target, "render");
+    const original = target.render;
     if (typeof original !== "function") return idleCapture;
     let captured;
     let active = true;
@@ -3182,16 +3315,16 @@ ${line2}` : line1;
       if (!active) return;
       active = false;
       if (hadOwn) {
-        proto.render = original;
+        target.render = original;
         return;
       }
       try {
-        delete proto.render;
+        delete target.render;
       } catch {
-        proto.render = original;
+        target.render = original;
       }
     };
-    proto.render = function(scene, camera, ...rest) {
+    target.render = function(scene, camera, ...rest) {
       if (active && isScene2(scene)) {
         captured = {
           scene,
@@ -3210,6 +3343,18 @@ ${line2}` : line1;
         return captured;
       }
     };
+  }
+  function installRendererRenderCapture(root = globalThis) {
+    const ctor = findThreeWebGLRendererCtor(root);
+    if (ctor) return hookRenderMethod(root, ctor.prototype);
+    const instance = findRendererDeep(root);
+    if (!isRecord2(instance)) return idleCapture;
+    const fromInstance = instance.constructor;
+    if (isRendererCtor(fromInstance)) return hookRenderMethod(root, fromInstance.prototype);
+    if (typeof instance.render === "function") {
+      return hookRenderMethod(root, instance);
+    }
+    return idleCapture;
   }
 
   // src/attach.ts

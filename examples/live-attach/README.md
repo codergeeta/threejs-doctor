@@ -150,8 +150,9 @@ ThreejsDoctorLiveAttach.installRendererRenderCapture()
 await ThreejsDoctorLiveAttach.attachQualityLadder({ mode: 'advise' })
 ```
 
-If `THREE.WebGLRenderer` is not on the page, this hook is a no-op — pass
-`{ scene, camera, renderer }` explicitly from that page’s console.
+If `THREE.WebGLRenderer` is not on the page, the helper still deep-walks for an
+instance (`isWebGLRenderer` or constructor name `WebGLRenderer`). If that also
+misses, pass `{ scene, camera, renderer }` explicitly from that page’s console.
 
 ## If discovery cannot find scene / camera / renderer
 
@@ -170,11 +171,15 @@ objects in module closures, **not** on `window`. The IIFE now tries, in order:
    module-like `default` / `exports` singletons (non-enumerable keys included;
    throwing getters are skipped)
 6. Shallow enumerable global walk
-7. If `THREE.WebGLRenderer` (or `three.WebGLRenderer`) is on the page: hook
+7. **Deep walk** — BFS from `window`, `document`, and each canvas (non-enumerable
+   own props, `isWebGLRenderer === true` or `constructor.name === 'WebGLRenderer'`,
+   skip cross-origin iframes, cap ~50k nodes)
+8. If `THREE.WebGLRenderer` (or `three.WebGLRenderer`) is on the page, **or** a
+   renderer instance was found and exposes a constructor prototype: hook
    `prototype.render` **once**, wait a few frames, and read
    `__THREEJS_DOCTOR_HOST__` (same helper as
    [`examples/host-shim`](../host-shim/README.md))
-8. If a `WebGLRenderer` is found but scene/camera are missing: renderer
+9. If a `WebGLRenderer` is found but scene/camera are missing: renderer
    properties (`scene`, `_scene`, `userData`, …) then a temporary instance
    `render()` hook for a few frames
 
@@ -202,12 +207,12 @@ Ocean: `window.pelagic.debug` usually has `scene` and `renderer`; camera may be
 on that bag or in the scene graph.
 
 **Claude-of-Tanks** (`https://cot.kevinliu.studio/`) **and catapult**:
-scene/camera/renderer are typically closed over in the bundle. If `window.THREE`
-exists, paste [`examples/host-shim/capture.js`](../host-shim/capture.js) first
-(or rely on the IIFE’s own one-shot `WebGLRenderer.prototype.render` hook), wait
-one frame, then paste the IIFE. If `THREE` is not on `window`, you must pass
-handles explicitly from the page console. Do not vendor the demo. Do not invent
-metrics.
+scene/camera/renderer are typically closed over in the bundle. Host-shim and
+the IIFE now deep-walk for a renderer instance even when `window.THREE` is
+missing and `window.__THREE__` is a string. **Re-test those hosts on the box**
+— unit tests are not a live capture. If the renderer is fully closed over,
+pass `{ scene, camera, renderer }` explicitly from the page console. Do not
+vendor the demo. Do not invent metrics.
 
 Manual capture (same hook the IIFE uses):
 

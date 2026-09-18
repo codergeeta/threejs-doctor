@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { discoverThreeHandles } from '../discover.js'
+import { attemptDiscovery, discoverThreeHandles } from '../discover.js'
 
 function fakeRenderer(id: string) {
   return {
@@ -273,5 +273,86 @@ describe('discoverThreeHandles', () => {
     expect(found?.renderer).toBe(renderer)
     expect(found?.scene).toBe(scene)
     expect(found?.camera).toBe(camera)
+  })
+
+  it('discovers a nested isWebGLRenderer under app.gfx', () => {
+    const renderer = fakeRenderer('nested-app-gfx')
+    const found = attemptDiscovery({ app: { gfx: { renderer } } })
+    expect(found.renderer).toBe(renderer)
+    expect(found.probe.foundRenderer).toBe(true)
+  })
+
+  it('discovers isWebGLRenderer nested deeper than the shallow global walk', () => {
+    const renderer = fakeRenderer('deep-stash')
+    const found = attemptDiscovery({
+      stash: { a: { b: { c: { d: { e: { f: { renderer } } } } } } },
+    })
+    expect(found.renderer).toBe(renderer)
+  })
+
+  it('discovers a non-enumerable nested renderer that is not a known bundle root', () => {
+    const renderer = fakeRenderer('hidden-runtime')
+    const root: Record<string, unknown> = {}
+    Object.defineProperty(root, 'runtime', {
+      enumerable: false,
+      value: { gfx: { renderer } },
+    })
+    const found = attemptDiscovery(root)
+    expect(found.renderer).toBe(renderer)
+  })
+
+  it('treats constructor name WebGLRenderer as a renderer without isWebGLRenderer', () => {
+    class WebGLRenderer {
+      pixelRatio = 1
+    }
+    const renderer = new WebGLRenderer()
+    const found = attemptDiscovery({ stage: { view: { gpu: { renderer } } } })
+    expect(found.renderer).toBe(renderer)
+  })
+
+  it('skips cross-origin iframes and still finds a nested renderer', () => {
+    const renderer = fakeRenderer('beside-iframe')
+    const iframe = {
+      nodeType: 1,
+      tagName: 'IFRAME',
+      get contentWindow() {
+        throw new Error('Blocked a frame with origin')
+      },
+    }
+    expect(() =>
+      attemptDiscovery({
+        hostileFrame: iframe,
+        app: { gfx: { renderer } },
+      }),
+    ).not.toThrow()
+    const found = attemptDiscovery({
+      hostileFrame: iframe,
+      app: { gfx: { renderer } },
+    })
+    expect(found.renderer).toBe(renderer)
+  })
+
+  it('walks non-enumerable own props on a canvas for a nested renderer', () => {
+    const renderer = fakeRenderer('canvas-gfx')
+    const canvas: Record<string, unknown> = {
+      nodeType: 1,
+      tagName: 'CANVAS',
+      getContext() {
+        return { drawingBufferWidth: 8, drawingBufferHeight: 8 }
+      },
+    }
+    Object.defineProperty(canvas, 'gfx', {
+      enumerable: false,
+      value: { renderer },
+    })
+    const found = attemptDiscovery({
+      document: {
+        querySelectorAll(sel: string) {
+          return sel === 'canvas' ? [canvas] : []
+        },
+      },
+    })
+    expect(found.renderer).toBe(renderer)
+    expect(found.source).toBe('canvas')
   })
 })

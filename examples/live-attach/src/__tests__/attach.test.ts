@@ -312,6 +312,38 @@ describe('attachQualityLadder', () => {
     expect(err.message).toMatch(/this page's console/i)
   })
 
+  it('hooks render on a nested app.gfx renderer when window.THREE is missing', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const scene = fakeScene()
+    const camera = fakeCamera()
+    const renderer = Object.assign(fakeRenderer(), {
+      render(s: unknown, c: unknown) {
+        this._last = [s, c]
+      },
+      _last: undefined as unknown,
+    })
+    let t = 0
+    const report = await attachQualityLadder({
+      root: {
+        app: { gfx: { renderer } },
+        __THREE__: 'r152',
+      },
+      now: () => {
+        t += 16
+        return t
+      },
+      waitFrame: async () => {
+        renderer.render(scene, camera)
+      },
+      windowFrames: 3,
+      measureFrames: 3,
+      mountOverlay: false,
+    })
+    expect(report.qualityMode).toBe('advise')
+    expect(report.baseline.avgFps).toBe(62.5)
+    parseLoggedReport(log)
+  })
+
   it('hooks renderer.render to capture scene/camera when only the renderer is discoverable', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
     const scene = fakeScene()

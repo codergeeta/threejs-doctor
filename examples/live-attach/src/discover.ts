@@ -113,9 +113,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
+function constructorNameOf(value: object): string | undefined {
+  try {
+    const name = (value as { constructor?: { name?: unknown } }).constructor?.name
+    return typeof name === 'string' ? name : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function isRenderer(value: unknown): boolean {
   if (!isRecord(value)) return false
   if (value.isWebGLRenderer === true) return true
+  if (constructorNameOf(value) === 'WebGLRenderer') return true
   return typeof value.setPixelRatio === 'function' && isRecord(value.info)
 }
 
@@ -317,6 +327,145 @@ function listCanvases(root: unknown): unknown[] {
   }
 }
 
+const DEEP_RENDERER_MAX_VISITS = 50_000
+const DEEP_RENDERER_MAX_DEPTH = 16
+
+const DEEP_SKIP_KEYS = new Set([
+  ...SKIP_KEYS,
+  ...CANVAS_SKIP_KEYS,
+  'children',
+  'parent',
+  'geometry',
+  'attributes',
+  'morphAttributes',
+  'index',
+  '__THREEJS_DOCTOR_HOST__',
+  '__THREEJS_DOCTOR_LAST_REPORT__',
+  '__THREEJS_DOCTOR_ATTACH__',
+])
+
+function isCanvasElement(value: Record<string, unknown>): boolean {
+  const tag = value.tagName
+  if (typeof tag === 'string' && tag.toUpperCase() === 'CANVAS') return true
+  return typeof value.nodeType === 'number' && typeof value.getContext === 'function'
+}
+
+function isIFrameElement(value: Record<string, unknown>): boolean {
+  const tag = value.tagName
+  return typeof tag === 'string' && tag.toUpperCase() === 'IFRAME'
+}
+
+function isDomNode(value: Record<string, unknown>): boolean {
+  return typeof value.nodeType === 'number'
+}
+
+function isInaccessibleWindow(value: Record<string, unknown>): boolean {
+  try {
+    if (value.window === value || value.self === value) {
+      void (value as { location?: { href?: unknown } }).location?.href
+    }
+    return false
+  } catch {
+    return true
+  }
+}
+
+function isCrossOriginIFrame(value: Record<string, unknown>): boolean {
+  if (!isIFrameElement(value)) return false
+  try {
+    const w = value.contentWindow
+    if (w == null || typeof w !== 'object') return false
+    void (w as { location: { href: unknown } }).location.href
+    return false
+  } catch {
+    return true
+  }
+}
+
+function isTypedArrayOrBuffer(value: object): boolean {
+  return ArrayBuffer.isView(value) || value instanceof ArrayBuffer
+}
+
+function shouldExpandDeep(value: Record<string, unknown>, isSeed: boolean): boolean {
+  if (isSeed) return true
+  if (isInaccessibleWindow(value) || isCrossOriginIFrame(value)) return false
+  if (isIFrameElement(value)) return true
+  if (isDomNode(value)) return isCanvasElement(value)
+  return !isTypedArrayOrBuffer(value)
+}
+
+/**
+ * BFS from window, document, and each canvas (non-enumerable own props included).
+ * Caps visits so bundled graphs cannot OOM the paste-in helper.
+ */
+export function findRendererDeep(root: unknown): unknown {
+  const seen = new Set<unknown>()
+  const queue: Array<{ value: unknown; depth: number; seed: boolean }> = []
+  let visits = 0
+  const enqueue = (value: unknown, depth: number, seed: boolean) => {
+    if (value == null || typeof value !== 'object') return
+    if (seen.has(value) || depth > DEEP_RENDERER_MAX_DEPTH) return
+    if (visits + queue.length >= DEEP_RENDERER_MAX_VISITS) return
+    seen.add(value)
+    queue.push({ value, depth, seed })
+  }
+
+  enqueue(root, 0, true)
+  enqueue(getDocument(root), 0, true)
+  for (const canvas of listCanvases(root)) enqueue(canvas, 0, true)
+
+  while (queue.length > 0 && visits < DEEP_RENDERER_MAX_VISITS) {
+    const next = queue.shift()
+    if (!next) break
+    const { value, depth, seed } = next
+    if (!isRecord(value)) continue
+    visits += 1
+
+    if (isInaccessibleWindow(value) || isCrossOriginIFrame(value)) continue
+
+    try {
+      if (isRenderer(value)) return value
+    } catch {
+      continue
+    }
+
+    if (depth >= DEEP_RENDERER_MAX_DEPTH) continue
+    if (!shouldExpandDeep(value, seed)) continue
+
+    if (isIFrameElement(value)) {
+      try {
+        enqueue(value.contentWindow, depth + 1, true)
+        enqueue(value.contentDocument, depth + 1, true)
+      } catch {
+        continue
+      }
+    }
+
+    let keys: string[] = []
+    try {
+      keys = keysToVisit(value, true)
+    } catch {
+      continue
+    }
+    for (const key of keys) {
+      if (DEEP_SKIP_KEYS.has(key)) continue
+      try {
+        const child = value[key]
+        if (child == null || typeof child !== 'object' || seen.has(child)) continue
+        if (!isRecord(child)) continue
+        if (isTypedArrayOrBuffer(child)) continue
+        if (isCrossOriginIFrame(child) || isInaccessibleWindow(child)) continue
+        const childSeed = isCanvasElement(child) || isIFrameElement(child)
+        if (isDomNode(child) && !childSeed) continue
+        enqueue(child, depth + 1, childSeed)
+      } catch {
+        continue
+      }
+    }
+  }
+  return undefined
+}
+
 /** Probe an existing WebGL context. Live game canvases already have one; getContext returns it. */
 function peekWebGLContext(canvas: unknown): unknown {
   if (!isRecord(canvas) || typeof canvas.getContext !== 'function') return undefined
@@ -465,6 +614,7 @@ export function attemptDiscovery(root: unknown = globalThis, explicit: ExplicitH
     'canvas (__THREE__/userData/internals)',
     'bundle roots (app, game, __THREE__)',
     'global walk',
+    'deep walk (window/document/canvas)',
   )
 
   if (explicit.scene != null && explicit.camera != null && explicit.renderer != null) {
@@ -517,6 +667,15 @@ export function attemptDiscovery(root: unknown = globalThis, explicit: ExplicitH
     const walked = walk(root, { maxDepth: 4, maxVisits: 400 })
     if (walked) {
       mergeHandles(found, walked)
+      source ??= 'walk'
+    }
+  }
+
+  if (found.renderer == null) {
+    const deep = findRendererDeep(root)
+    if (deep) {
+      found.renderer = deep
+      mergeHandles(found, fillFromRenderer(deep))
       source ??= 'walk'
     }
   }

@@ -1,4 +1,4 @@
-import { DOCTOR_HOST_KEY } from './discover.js'
+import { DOCTOR_HOST_KEY, findRendererDeep } from './discover.js'
 
 export interface CapturedHost {
   scene: unknown
@@ -80,19 +80,12 @@ const idleCapture: RendererRenderCapture = {
   },
 }
 
-/**
- * Hook `THREE.WebGLRenderer.prototype.render` **once**. The first call that looks
- * like `render(scene, camera)` writes `root.__THREEJS_DOCTOR_HOST__` and restores
- * the original method. For bundled games (tanks / catapult) paste this before the
- * live-attach IIFE if THREE is on the page.
- */
-export function installRendererRenderCapture(root: unknown = globalThis): RendererRenderCapture {
-  const ctor = findThreeWebGLRendererCtor(root)
-  if (!ctor) return idleCapture
-
-  const proto = ctor.prototype as { render: (...args: unknown[]) => unknown }
-  const hadOwn = Object.prototype.hasOwnProperty.call(proto, 'render')
-  const original = proto.render
+function hookRenderMethod(
+  root: unknown,
+  target: { render: (...args: unknown[]) => unknown },
+): RendererRenderCapture {
+  const hadOwn = Object.prototype.hasOwnProperty.call(target, 'render')
+  const original = target.render
   if (typeof original !== 'function') return idleCapture
 
   let captured: CapturedHost | undefined
@@ -102,17 +95,17 @@ export function installRendererRenderCapture(root: unknown = globalThis): Render
     if (!active) return
     active = false
     if (hadOwn) {
-      proto.render = original
+      target.render = original
       return
     }
     try {
-      delete (proto as { render?: unknown }).render
+      delete (target as { render?: unknown }).render
     } catch {
-      proto.render = original
+      target.render = original
     }
   }
 
-  proto.render = function (this: unknown, scene: unknown, camera: unknown, ...rest: unknown[]) {
+  target.render = function (this: unknown, scene: unknown, camera: unknown, ...rest: unknown[]) {
     if (active && isScene(scene)) {
       captured = {
         scene,
@@ -132,4 +125,27 @@ export function installRendererRenderCapture(root: unknown = globalThis): Render
       return captured
     },
   }
+}
+
+/**
+ * Hook `WebGLRenderer.prototype.render` **once**, or a discovered instance's
+ * `render` if the constructor is not on the page. The first call that looks
+ * like `render(scene, camera)` writes `root.__THREEJS_DOCTOR_HOST__` and restores
+ * the original method. For bundled games (tanks / catapult) paste this before the
+ * live-attach IIFE when THREE is missing and `__THREE__` is not the library.
+ */
+export function installRendererRenderCapture(root: unknown = globalThis): RendererRenderCapture {
+  const ctor = findThreeWebGLRendererCtor(root)
+  if (ctor) return hookRenderMethod(root, ctor.prototype)
+
+  const instance = findRendererDeep(root)
+  if (!isRecord(instance)) return idleCapture
+
+  const fromInstance = instance.constructor
+  if (isRendererCtor(fromInstance)) return hookRenderMethod(root, fromInstance.prototype)
+
+  if (typeof instance.render === 'function') {
+    return hookRenderMethod(root, instance as { render: (...args: unknown[]) => unknown })
+  }
+  return idleCapture
 }
