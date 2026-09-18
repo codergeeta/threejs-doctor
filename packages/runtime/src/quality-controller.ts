@@ -11,7 +11,6 @@ import {
   POTATO_OCEAN_FREEZE_FFT_SIZE,
   POTATO_OCEAN_FREEZE_MAX_AVG_FPS,
   SPECTRUM_PAUSE_EVERY_N,
-  SAFE_PASSES,
   createHysteresisState,
   evaluateWindow,
   resolveStartTier,
@@ -241,7 +240,7 @@ export class QualityController {
           applyFailed = true
         }
       }
-      const result = this.doctor.applyPassesImmediate([...SAFE_PASSES], {
+      const result = this.doctor.applyPassesImmediate(this.doctor.genericSafePasses(), {
         qualityTier: startTier,
       })
       appliedPasses.push(...result.appliedPasses)
@@ -780,7 +779,9 @@ export class QualityController {
     let applyFailed = this.last?.applyFailed ?? false
     let adapterUnavailable = this.last?.adapterUnavailable ?? false
 
-    const result = this.doctor.applyPassesImmediate([...SAFE_PASSES], { qualityTier: tier })
+    const result = this.doctor.applyPassesImmediate(this.doctor.genericSafePasses(), {
+      qualityTier: tier,
+    })
     appliedPasses.push(...result.appliedPasses)
     failedPasses.push(...result.failedPasses)
     if (failedPasses.length > 0) {

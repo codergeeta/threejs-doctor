@@ -1,7 +1,7 @@
 import {
   MetricsCollector,
-  SAFE_PASSES,
   AGGRESSIVE_PASSES,
+  safePassesFor,
   probeDevice,
   readWebglQualitySignals,
   snapshotScene,
@@ -216,12 +216,19 @@ function cameraPositionOf(camera: unknown): PassContext['cameraPosition'] {
   return { x: pos.x, y: pos.y, z: pos.z }
 }
 
-function resolvePassIds(tokens: Array<'safe' | 'aggressive' | PassId>): PassId[] {
+function resolvePassIds(
+  tokens: Array<'safe' | 'aggressive' | PassId>,
+  profile: Profile,
+): PassId[] {
   const ids: PassId[] = []
   const seen = new Set<PassId>()
   for (const token of tokens) {
     const chunk: readonly PassId[] =
-      token === 'safe' ? SAFE_PASSES : token === 'aggressive' ? AGGRESSIVE_PASSES : [token]
+      token === 'safe'
+        ? safePassesFor(profile)
+        : token === 'aggressive'
+          ? AGGRESSIVE_PASSES
+          : [token]
     for (const id of chunk) {
       if (seen.has(id)) continue
       seen.add(id)
@@ -352,6 +359,20 @@ export class Doctor {
     return this.pinnedAutoProfile
   }
 
+  /**
+   * Profile used for generic caps. Defaults to `game` when unset so safe-auto
+   * never demand-loops a continuous RAF host by assuming marketing/static.
+   */
+  resolvedProfile(): Exclude<Profile, 'auto'> {
+    if (this.lastSnapshot) return this.concreteProfile(this.lastSnapshot)
+    if (this.opts.profile && this.opts.profile !== 'auto') return this.opts.profile
+    return this.lastReport?.profile ?? 'game'
+  }
+
+  genericSafePasses(): PassId[] {
+    return safePassesFor(this.resolvedProfile())
+  }
+
   private hostRenderPath(): (() => void | Promise<void>) | undefined {
     if (this.opts.renderFrame) return this.opts.renderFrame
     const render = this.opts.renderer.render
@@ -460,11 +481,7 @@ export class Doctor {
   ): { appliedPasses: PassId[]; failedPasses: Array<{ id: PassId; error: string }> } {
     const device = this.device()
     const cameraPosition = cameraPositionOf(this.opts.camera)
-    const profile = this.lastSnapshot
-      ? this.concreteProfile(this.lastSnapshot)
-      : this.opts.profile && this.opts.profile !== 'auto'
-        ? this.opts.profile
-        : this.lastReport?.profile ?? 'marketing'
+    const profile = this.resolvedProfile()
     const ctx: PassContext = {
       renderer: this.opts.renderer,
       scene: this.opts.scene,
@@ -620,7 +637,7 @@ export class Doctor {
       baselinePixels = first
       controlChangedRatio = pixelChangedRatio(first, second, options.visualGate.channelThreshold)
     }
-    const passIds = resolvePassIds(options.apply ?? ['safe'])
+    const passIds = resolvePassIds(options.apply ?? ['safe'], diagnosed.profile)
     const { appliedPasses, failedPasses } = this.applyPassesImmediate(passIds)
     const device = this.device()
 

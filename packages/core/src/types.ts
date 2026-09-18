@@ -20,11 +20,27 @@ export const SAFE_PASSES: readonly PassId[] = [
   'postfx-budget',
   'tone-map-lite',
   'anisotropy-cap',
-  'frameloop-demand',
 ] as const
 
 /** One-shot passes that are not safe by default (world-space distance-cull hides permanently). */
 export const AGGRESSIVE_PASSES: readonly PassId[] = ['distance-cull'] as const
+
+/** Marketing/product (static) scenes may demand-loop; games and CAD keep the host RAF. */
+export function isStaticDemandProfile(profile: Profile): boolean {
+  return profile === 'marketing' || profile === 'product'
+}
+
+/**
+ * Default Quality Ladder / Doctor `apply: ['safe']` set.
+ * `frameloop-demand` is omitted unless the profile is clearly marketing/product,
+ * or the host opts in via `optimize({ apply: ['frameloop-demand'] })`.
+ */
+export function safePassesFor(profile: Profile): PassId[] {
+  if (isStaticDemandProfile(profile)) {
+    return [...SAFE_PASSES, 'frameloop-demand']
+  }
+  return [...SAFE_PASSES]
+}
 
 export interface DeviceCapabilities {
   tier: DeviceTier

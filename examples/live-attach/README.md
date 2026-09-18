@@ -146,6 +146,7 @@ construct `attachQualityLadder` yourself.
 | claude-of-tanks | https://cot.kevinliu.studio/ | Generic caps. No ocean adapter. Discovery may still miss closed-over scene/camera/renderer — see below. Needs explicit inject or a host hook. |
 | Kinema | https://kinema-play.vercel.app/?forceWebGL=1 | Generic caps. Use the documented WebGL compatibility query so the capture stays on WebGL. Homepage: https://kinema-play.vercel.app. Needs explicit inject or a host hook. |
 | catapult | https://sina-ghiasi.github.io/threejs-catapult-game/ | Generic caps. v3 box recapture with `deepWalk: true`: no freeze, no renderer (`window.__THREE__` is the string `"174"`). Blocked pending a host hook. |
+| Clockwork Climb | https://tommyato.github.io/gamedevjs-2026-entry/ (or local) | Continuous rAF game. Load **`?verify-ui=1`**, then attach via `window.__ccGame`. `safe-auto` must **not** apply `frameloop-demand`. See [real-host-followups.md](../../docs/superpowers/acceptance/real-host-followups.md). |
 
 ## Arm `renderer.prototype.render` capture (tanks / catapult)
 
@@ -184,7 +185,7 @@ objects in module closures, **not** on `window`. The IIFE now tries, in order:
    `userData`, `_renderer` / `__renderer`, and a WebGL context bag if Three (or
    the host) stored a renderer there. Three.js itself does **not** always attach
    a reverse mapping on the canvas.
-5. **Bundle roots** — `window.app`, `window.game`, `window.__THREE__`, and
+5. **Bundle roots** — `window.app`, `window.game`, `window.__ccGame`, `window.__THREE__`, and
    module-like `default` / `exports` singletons (non-enumerable keys included;
    throwing getters are skipped)
 6. Shallow enumerable global walk (depth 4 / 400 visits — not a full-page BFS)

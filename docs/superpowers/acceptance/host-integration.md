@@ -19,6 +19,8 @@ Discovery finds this on the **cheap path**. No `window.pelagic`. No `deepWalk`.
 
 Optional aliases (same objects): `window.scene` / `window.camera` / `window.renderer`.
 
+**Clockwork Climb** ([tommyato/gamedevjs-2026-entry](https://github.com/tommyato/gamedevjs-2026-entry)): load with **`?verify-ui=1`**, then attach via `window.__ccGame`. Do not run Quality Ladder `safe-auto` with `frameloop-demand` on that continuous rAF loop — see [real-host-followups.md](./real-host-followups.md).
+
 ## Alternative: explicit inject from this page’s console
 
 ```js
