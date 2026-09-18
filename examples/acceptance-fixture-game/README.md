@@ -1,8 +1,10 @@
-# Unpublished acceptance fixture
+# Unpublished acceptance mini-game
 
-Vanilla Three.js page with a **non-trivial** mesh load (grid of boxes, high-segment
-sphere, shadow-casting lights) so generic Quality Ladder caps have something to
-do. **Not** a live FPS proof and **not** the spec §3 bar.
+Heavier unpublished Three.js host than
+[`examples/acceptance-fixture`](../acceptance-fixture/README.md): a denser box
+grid, extra spheres and toruses, a particle fountain, and **four**
+shadow-casting lights so generic Quality Ladder caps have more work to do.
+**Not** a live FPS proof and **not** the spec §3 bar.
 
 **This package is `private: true`.** It is not published. It does not vendor
 ocean-simulation, Claude-of-Tanks, Kinema, or catapult.
@@ -19,8 +21,6 @@ window.renderer = renderer
 There is **no** `window.pelagic`. Live-attach discovers the host object via
 `__THREEJS_DOCTOR_HOST__`. See
 [`docs/superpowers/acceptance/host-integration.md`](../../docs/superpowers/acceptance/host-integration.md).
-A heavier unpublished mini-game with the same hook:
-[`examples/acceptance-fixture-game`](../acceptance-fixture-game/README.md).
 
 Do not invent `avgFps` / `ttfiMs` / `after` metrics from this fixture. Capture
 JSON stays off-repo.
@@ -30,15 +30,15 @@ JSON stays off-repo.
 From the repo root (after `pnpm install`):
 
 ```bash
-pnpm --filter @threejs-doctor/acceptance-fixture dev
+pnpm --filter @threejs-doctor/acceptance-fixture-game dev
 ```
 
-Then open http://localhost:5174/ . `vite preview` works after `pnpm --filter
-@threejs-doctor/acceptance-fixture build`:
+Then open http://localhost:5175/ . `vite preview` works after `pnpm --filter
+@threejs-doctor/acceptance-fixture-game build`:
 
 ```bash
-pnpm --filter @threejs-doctor/acceptance-fixture build
-pnpm --filter @threejs-doctor/acceptance-fixture preview
+pnpm --filter @threejs-doctor/acceptance-fixture-game build
+pnpm --filter @threejs-doctor/acceptance-fixture-game preview
 ```
 
 A static `index.html` is in this folder; ES modules need a local server (Vite
@@ -46,7 +46,7 @@ above), not `file://`.
 
 ## Attach live-attach
 
-1. Leave the fixture tab open until the canvas is drawing.
+1. Leave the mini-game tab open until the canvas is drawing.
 2. Open DevTools → Console.
 3. Paste the entire contents of
    [`examples/live-attach/dist/attach.iife.js`](../live-attach/dist/attach.iife.js)
@@ -66,7 +66,8 @@ evidence for spec §3.
 ## Tests
 
 ```bash
-pnpm --filter @threejs-doctor/acceptance-fixture test
+pnpm --filter @threejs-doctor/acceptance-fixture-game test
 ```
 
-Node/jsdom-free smoke: host object shape and scene stats only. No FPS numbers.
+Node/jsdom-free smoke: host object shape and that this scene is heavier than
+the first unpublished fixture. No FPS numbers.

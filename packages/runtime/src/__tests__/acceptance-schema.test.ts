@@ -10,6 +10,7 @@ describe('live acceptance artifacts', () => {
     expect(files).toContain('quality-ladder-report.schema.json')
     expect(files).toContain('live-ocean-capture.md')
     expect(files).toContain('box-desktop-evidence.md')
+    expect(files).toContain('host-integration.md')
     for (const f of files) {
       if (f.endsWith('.json') && f !== 'quality-ladder-report.schema.json') {
         throw new Error(`do not check in capture JSON (${f}); store schema only`)

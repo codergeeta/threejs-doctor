@@ -31,6 +31,8 @@ Acceptance is **not** complete with ocean-simulation alone. After the ocean capt
 
 Use the unpublished IIFE in [`examples/live-attach`](../../../examples/live-attach/README.md): paste `examples/live-attach/dist/attach.iife.js` into DevTools on the live URL. It constructs `Doctor` + `QualityController` (`profile: 'game'`), registers `createOceanAdapter` only when `window.pelagic.debug` exists, then `boot()` + `runLadder()`. Default mode is `advise`. For Pass B, reload and set `window.__THREEJS_DOCTOR_ATTACH__ = { mode: 'safe-auto' }` before pasting again.
 
+A real game should expose `{ scene, camera, renderer }` (or `window.__THREEJS_DOCTOR_HOST__`) in one assignment — see [host-integration.md](./host-integration.md). Local unpublished hosts that already do this: [`acceptance-fixture`](../../../examples/acceptance-fixture/README.md) and heavier [`acceptance-fixture-game`](../../../examples/acceptance-fixture-game/README.md). Those are not the §1 phone bar.
+
 On a **box / DevTools emulator** that does not expose phone-class
 `maxTouchPoints` / coarse pointer / `deviceMemory ≤ 4` / high DPR, overlay those
 signals without requesting `WEBGL_debug_renderer_info`:

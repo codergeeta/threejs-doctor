@@ -142,6 +142,7 @@ construct `attachQualityLadder` yourself.
 |------|-----|---------|
 | ocean-simulation | https://iamtechartist.github.io/ocean-simulation/ | Registers `createOceanAdapter` when `window.pelagic.debug` exists. If it is missing, the IIFE skips `registerAdapter` and runs generic Three.js caps only. Among **external** hosts, this is the only fully injectable one on box-desktop today. |
 | acceptance-fixture (unpublished, local) | `pnpm --filter @threejs-doctor/acceptance-fixture dev` → http://localhost:5174/ | Generic caps. Discovers `window.__THREEJS_DOCTOR_HOST__`. No pelagic. Local injectability check only — **not** spec §3 / phone-class proof. |
+| acceptance-fixture-game (unpublished, local, heavier) | `pnpm --filter @threejs-doctor/acceptance-fixture-game dev` → http://localhost:5175/ | Generic caps. Same host hook; denser meshes, particles, more shadow casters. Not spec §3. See [host-integration.md](../../docs/superpowers/acceptance/host-integration.md). |
 | claude-of-tanks | https://cot.kevinliu.studio/ | Generic caps. No ocean adapter. Discovery may still miss closed-over scene/camera/renderer — see below. Needs explicit inject or a host hook. |
 | Kinema | https://kinema-play.vercel.app/?forceWebGL=1 | Generic caps. Use the documented WebGL compatibility query so the capture stays on WebGL. Homepage: https://kinema-play.vercel.app. Needs explicit inject or a host hook. |
 | catapult | https://sina-ghiasi.github.io/threejs-catapult-game/ | Generic caps. Canvas present; no discoverable handles on box-desktop. Needs explicit inject or a host hook. |
