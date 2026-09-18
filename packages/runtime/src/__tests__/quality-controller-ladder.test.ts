@@ -774,6 +774,7 @@ describe('QualityController.runLadder', () => {
     expect(settled.after?.p95FrameTimeMs).toBeLessThanOrEqual(HYSTERESIS.dropP95Ms)
     expect(settled.after?.p95FrameTimeMs).toBeLessThanOrEqual(HYSTERESIS.climbP95Ms)
     expect(settled.floorFailed).toBe(false)
+    expect(settled.tier).toBe('potato')
     expect(settled.findings.some((f) => f.id === 'quality/floor-failed')).toBe(false)
   })
 

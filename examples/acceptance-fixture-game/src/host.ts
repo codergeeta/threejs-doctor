@@ -234,6 +234,7 @@ export function createGameScene(): GameScene {
     beacon.position.set(Math.cos(angle) * 16, 0.58, Math.sin(angle) * 16)
     beacon.receiveShadow = true
     beacon.castShadow = false
+    beacon.frustumCulled = false
     beacon.matrixAutoUpdate = false
     beacon.updateMatrix()
     scene.add(beacon)
