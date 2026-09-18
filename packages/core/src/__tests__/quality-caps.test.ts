@@ -5,7 +5,7 @@ describe('ADAPTER_KNOBS', () => {
   it('omits meshLod and rtScale from potato (RT resize breaks WebGL)', () => {
     expect(ADAPTER_KNOBS.potato.meshLod).toBeUndefined()
     expect(ADAPTER_KNOBS.potato.rtScale).toBeUndefined()
-    expect(ADAPTER_KNOBS.potato.spectrumEveryNFrames).toBe(4)
+    expect(ADAPTER_KNOBS.potato.spectrumEveryNFrames).toBe(8)
     expect(ADAPTER_KNOBS.potato.deferredHdr).toBe(true)
     expect(ADAPTER_KNOBS.potato.fftSize).toEqual([64, 0, 0])
   })

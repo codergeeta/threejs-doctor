@@ -74,6 +74,53 @@ Paste `dist/attach.iife.js` again. Save the JSON off-repo (console line or
 Do not type guessed after metrics. Do not treat paste-after-load `ttfiMs` as
 cold TTFI (it will be absent by default).
 
+## Phone-class probe overlay (box / DevTools emulator)
+
+Box-desktop Chrome does **not** look like the §1 phone in
+[`live-ocean-capture.md`](../../docs/superpowers/acceptance/live-ocean-capture.md)
+(`maxTouchPoints`, coarse pointer, `deviceMemory ≤ 4`, high DPR). DevTools
+device mode may change UA / viewport / DPR but often leaves `navigator.deviceMemory`
+and `maxTouchPoints` as desktop values, so `resolveStartTier` still starts **low**.
+
+Force the phone-class signals **without** requesting `WEBGL_debug_renderer_info`
+(no unmasked vendor/renderer). Set this **before** pasting the IIFE:
+
+```js
+window.__THREEJS_DOCTOR_ATTACH__ = {
+  mode: 'safe-auto', // or omit for advise / Pass A
+  device: 'phone',
+}
+```
+
+`'phone'` overlays `{ maxTouchPoints: 5, coarsePointer: true, deviceMemory: 4, devicePixelRatio: 3, webgpu: false }`
+onto the live probe (WebGL float-buffer extensions are still read from the
+context when present). Equivalent explicit overlay:
+
+```js
+window.__THREEJS_DOCTOR_ATTACH__ = {
+  mode: 'safe-auto',
+  device: {
+    maxTouchPoints: 5,
+    coarsePointer: true,
+    deviceMemory: 4,
+    devicePixelRatio: 3,
+  },
+}
+```
+
+That is still an **emulator / overlay**, not a real phone. Label any FPS you
+copy into [`box-desktop-evidence.md`](../../docs/superpowers/acceptance/box-desktop-evidence.md)
+as emulator vs real device. It does **not** close spec §3.
+
+Pass A with the same overlay:
+
+```js
+window.__THREEJS_DOCTOR_ATTACH__ = { device: 'phone' }
+```
+
+`ThreejsDoctorLiveAttach.PHONE_CLASS_PROBE` is the `'phone'` object if you
+construct `attachQualityLadder` yourself.
+
 ## Live URLs (do not vendor)
 
 | Host | URL | Adapter |
@@ -101,9 +148,13 @@ objects in module closures, **not** on `window`. The IIFE now tries, in order:
    module-like `default` / `exports` singletons (non-enumerable keys included;
    throwing getters are skipped)
 6. Shallow enumerable global walk
-7. If a `WebGLRenderer` is found but scene/camera are missing: renderer
-   properties (`scene`, `_scene`, `userData`, …) then a temporary `render()`
-   hook for a few frames
+7. If `THREE.WebGLRenderer` (or `three.WebGLRenderer`) is on the page: hook
+   `prototype.render` **once**, wait a few frames, and read
+   `__THREEJS_DOCTOR_HOST__` (same helper as
+   [`examples/host-shim`](../host-shim/README.md))
+8. If a `WebGLRenderer` is found but scene/camera are missing: renderer
+   properties (`scene`, `_scene`, `userData`, …) then a temporary instance
+   `render()` hook for a few frames
 
 When that still fails, the throw lists what **was** found (canvas count, whether
 a WebGL context exists, renderer/scene/camera yes/no) and how to pass handles
@@ -128,10 +179,23 @@ await ThreejsDoctorLiveAttach.attachQualityLadder({
 Ocean: `window.pelagic.debug` usually has `scene` and `renderer`; camera may be
 on that bag or in the scene graph.
 
-**Claude-of-Tanks** (`https://cot.kevinliu.studio/`): scene/camera/renderer are
-typically closed over in the bundle. Canvas/`__THREE__` discovery is best-effort.
-If the IIFE still throws, you must pass handles explicitly from the page console;
-richer host hooks are still pending. Do not vendor the demo. Do not invent metrics.
+**Claude-of-Tanks** (`https://cot.kevinliu.studio/`) **and catapult**:
+scene/camera/renderer are typically closed over in the bundle. If `window.THREE`
+exists, paste [`examples/host-shim/capture.js`](../host-shim/capture.js) first
+(or rely on the IIFE’s own one-shot `WebGLRenderer.prototype.render` hook), wait
+one frame, then paste the IIFE. If `THREE` is not on `window`, you must pass
+handles explicitly from the page console. Do not vendor the demo. Do not invent
+metrics.
+
+Manual capture (same hook the IIFE uses):
+
+```js
+window.__THREEJS_DOCTOR_ATTACH__ = { autoRun: false }
+// paste attach.iife.js
+ThreejsDoctorLiveAttach.installRendererRenderCapture()
+// wait one rendered frame, then:
+await ThreejsDoctorLiveAttach.attachQualityLadder({ mode: 'advise' })
+```
 
 ## Bookmarklet
 
@@ -144,7 +208,11 @@ javascript:(function(){var s=document.createElement('script');s.src='https://YOU
 ```
 
 Set `window.__THREEJS_DOCTOR_ATTACH__` **before** the script runs to choose
-`mode: 'safe-auto'`.
+`mode: 'safe-auto'` and/or `device: 'phone'`.
+
+For bundled games, a **capture-only** bookmarklet (hook `prototype.render` once)
+is [`examples/host-shim/capture.js`](../host-shim/capture.js) — paste that first
+if the IIFE cannot find handles.
 
 ## Notes
 

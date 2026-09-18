@@ -77,7 +77,7 @@ export const POTATO_NEAR_MISS_MIN_AVG_FPS = 24
 export const ADAPTER_KNOBS: Record<QualityTier, QualityKnobSet> = {
   potato: {
     fftSize: [64, 0, 0],
-    spectrumEveryNFrames: 4,
+    spectrumEveryNFrames: 8,
     deferredHdr: true,
   },
   low: {

@@ -341,6 +341,120 @@ describe('attachQualityLadder', () => {
     parseLoggedReport(log)
   })
 
+  it('forces potato startTier from device: "phone" without WEBGL_debug_renderer_info', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const requested: string[] = []
+    const renderer = Object.assign(fakeRenderer(), {
+      getExtension(name: string) {
+        requested.push(name)
+        if (name === 'EXT_color_buffer_float' || name === 'OES_texture_float_linear') return {}
+        return null
+      },
+    })
+    let t = 0
+    const report = await attachQualityLadder({
+      scene: fakeScene(),
+      camera: fakeCamera(),
+      renderer,
+      device: 'phone',
+      now: () => {
+        t += 16
+        return t
+      },
+      windowFrames: 3,
+      measureFrames: 3,
+      mountOverlay: false,
+    })
+    expect(report.startTier).toBe('potato')
+    expect(report.maxTier).toBe('mid')
+    expect(requested).not.toContain('WEBGL_debug_renderer_info')
+    expect(requested).not.toContain('UNMASKED_RENDERER_WEBGL')
+    parseLoggedReport(log)
+  })
+
+  it('forces phone-class probe from explicit device fields (touch, coarse, memory, high DPR)', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const requested: string[] = []
+    const renderer = Object.assign(fakeRenderer(), {
+      pixelRatio: 1,
+      getExtension(name: string) {
+        requested.push(name)
+        return name === 'EXT_color_buffer_float' || name === 'OES_texture_float_linear' ? {} : null
+      },
+    })
+    let t = 0
+    const report = await attachQualityLadder({
+      scene: fakeScene(),
+      camera: fakeCamera(),
+      renderer,
+      mode: 'safe-auto',
+      device: {
+        maxTouchPoints: 5,
+        coarsePointer: true,
+        deviceMemory: 4,
+        devicePixelRatio: 3,
+      },
+      now: () => {
+        t += 16
+        return t
+      },
+      windowFrames: 3,
+      measureFrames: 3,
+      mountOverlay: false,
+    })
+    expect(report.startTier).toBe('potato')
+    expect(report.maxTier).toBe('mid')
+    expect(requested).not.toContain('WEBGL_debug_renderer_info')
+    parseLoggedReport(log)
+  })
+
+  it('captures closed-over scene/camera/renderer via THREE.WebGLRenderer.prototype.render', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    class WebGLRenderer {
+      isWebGLRenderer = true
+      pixelRatio = 2
+      last: unknown[] | undefined
+      info = {
+        render: { calls: 40, triangles: 8000 },
+        memory: { geometries: 8, textures: 4 },
+      }
+      setPixelRatio(v: number) {
+        this.pixelRatio = v
+      }
+      render(scene: unknown, camera: unknown) {
+        this.last = [scene, camera]
+      }
+    }
+    const scene = fakeScene()
+    const camera = fakeCamera()
+    let instance: WebGLRenderer | undefined
+    const root: {
+      THREE: { WebGLRenderer: typeof WebGLRenderer }
+      __THREEJS_DOCTOR_HOST__?: { scene: unknown; camera: unknown; renderer: unknown }
+    } = { THREE: { WebGLRenderer } }
+    let t = 0
+    const report = await attachQualityLadder({
+      root,
+      now: () => {
+        t += 16
+        return t
+      },
+      waitFrame: async () => {
+        instance ??= new WebGLRenderer()
+        instance.render(scene, camera)
+      },
+      windowFrames: 3,
+      measureFrames: 3,
+      mountOverlay: false,
+    })
+    expect(report.qualityMode).toBe('advise')
+    expect(root.__THREEJS_DOCTOR_HOST__?.scene).toBe(scene)
+    expect(root.__THREEJS_DOCTOR_HOST__?.camera).toBe(camera)
+    expect(root.__THREEJS_DOCTOR_HOST__?.renderer).toBe(instance)
+    expect(report.baseline.avgFps).toBe(62.5)
+    parseLoggedReport(log)
+  })
+
   it('still requires an explicit pass when renderer.render never yields scene/camera', async () => {
     const renderer = Object.assign(fakeRenderer(), {
       render() {

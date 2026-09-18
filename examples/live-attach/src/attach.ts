@@ -16,6 +16,8 @@ import {
 import { collectSceneStats } from './scene-stats.js'
 import { wrapRenderer } from './wrap-renderer.js'
 import { waitLiveFrame } from './wait-frame.js'
+import { resolveAttachDevice, type AttachDeviceOption } from './attach-device.js'
+import { installRendererRenderCapture } from './capture-host.js'
 
 export interface AttachQualityLadderOptions {
   mode?: QualityMode
@@ -32,6 +34,22 @@ export interface AttachQualityLadderOptions {
   mountOverlay?: boolean
   autoRun?: boolean
   log?: (line: string) => void
+  /**
+   * Overlay phone-class probe signals (or `'phone'`) onto the live probe.
+   * Never requests `WEBGL_debug_renderer_info`.
+   */
+  device?: AttachDeviceOption
+}
+
+function waitAnimationTick(): Promise<void> {
+  return new Promise((resolve) => {
+    const raf = (globalThis as { requestAnimationFrame?: (cb: () => void) => number }).requestAnimationFrame
+    if (typeof raf === 'function') {
+      raf(() => resolve())
+      return
+    }
+    setTimeout(resolve, 16)
+  })
 }
 
 export async function attachQualityLadder(
@@ -59,10 +77,31 @@ export async function attachQualityLadder(
   if (options.camera !== undefined) explicit.camera = options.camera
   if (options.renderer !== undefined) explicit.renderer = options.renderer
 
-  const attempt = attemptDiscovery(root, explicit)
+  let attempt = attemptDiscovery(root, explicit)
   let scene = attempt.scene
   let camera = attempt.camera
   let rendererHandle = attempt.renderer
+
+  if (scene == null || rendererHandle == null) {
+    const protoCapture = installRendererRenderCapture(root)
+    if (protoCapture.installed) {
+      const captureWait =
+        options.waitFrame ?? (options.now === undefined ? waitAnimationTick : undefined)
+      const maxAttempts = captureWait ? 32 : 1
+      const wait = captureWait ?? (async () => {})
+      try {
+        for (let i = 0; i < maxAttempts && !protoCapture.getCaptured(); i += 1) {
+          await wait()
+        }
+      } finally {
+        protoCapture.uninstall()
+      }
+      attempt = attemptDiscovery(root, explicit)
+      scene = attempt.scene
+      camera = attempt.camera ?? camera
+      rendererHandle = attempt.renderer
+    }
+  }
 
   if (rendererHandle != null && scene == null) {
     const waitFrameForHook =
@@ -107,6 +146,8 @@ export async function attachQualityLadder(
   if (options.now) doctorOpts.now = options.now
   if (options.measureFrames !== undefined) doctorOpts.measureFrames = options.measureFrames
   if (waitFrame) doctorOpts.waitFrame = waitFrame
+  const device = resolveAttachDevice(options.device, renderer)
+  if (device) doctorOpts.device = device
 
   const doctor = new Doctor(doctorOpts)
   const qcOpts: QualityControllerOptions = {

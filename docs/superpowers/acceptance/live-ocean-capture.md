@@ -31,6 +31,22 @@ Acceptance is **not** complete with ocean-simulation alone. After the ocean capt
 
 Use the unpublished IIFE in [`examples/live-attach`](../../../examples/live-attach/README.md): paste `examples/live-attach/dist/attach.iife.js` into DevTools on the live URL. It constructs `Doctor` + `QualityController` (`profile: 'game'`), registers `createOceanAdapter` only when `window.pelagic.debug` exists, then `boot()` + `runLadder()`. Default mode is `advise`. For Pass B, reload and set `window.__THREEJS_DOCTOR_ATTACH__ = { mode: 'safe-auto' }` before pasting again.
 
+On a **box / DevTools emulator** that does not expose phone-class
+`maxTouchPoints` / coarse pointer / `deviceMemory ≤ 4` / high DPR, overlay those
+signals without requesting `WEBGL_debug_renderer_info`:
+
+```js
+window.__THREEJS_DOCTOR_ATTACH__ = { mode: 'safe-auto', device: 'phone' }
+```
+
+Label any resulting FPS as emulator overlay, not a real phone. That does not
+close this §1 / spec §3 bar. See the live-attach README “Phone-class probe overlay”.
+
+Bundled games (tanks / catapult) with `THREE` on the page: paste
+[`examples/host-shim/capture.js`](../../../examples/host-shim/README.md) first
+(or use the IIFE’s one-shot `WebGLRenderer.prototype.render` hook) so
+`window.__THREEJS_DOCTOR_HOST__` is filled.
+
 The helper logs `console.log(JSON.stringify(report))` and assigns `window.__THREEJS_DOCTOR_LAST_REPORT__` after boot and after `runLadder()` so a dropped console line can still be copied. Do not invent `avgFps` / `ttfiMs` / `after` / `simPassCount`. Paste-after-load omits `ttfiMs` (it is not cold-load TTFI). Pass a `waitForFirstInteractive` hook only if you attached from document-start.
 
 Equivalent TypeScript (if you construct it yourself):

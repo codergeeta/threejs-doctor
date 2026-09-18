@@ -521,7 +521,7 @@
   var ADAPTER_KNOBS = {
     potato: {
       fftSize: [64, 0, 0],
-      spectrumEveryNFrames: 4,
+      spectrumEveryNFrames: 8,
       deferredHdr: true
     },
     low: {
@@ -2956,7 +2956,176 @@ ${line2}` : line1;
     });
   }
 
+  // src/attach-device.ts
+  var PHONE_CLASS_PROBE = {
+    maxTouchPoints: 5,
+    coarsePointer: true,
+    deviceMemory: 4,
+    devicePixelRatio: 3,
+    webgpu: false
+  };
+  var BLOCKED_GL_EXTENSIONS = /* @__PURE__ */ new Set([
+    "WEBGL_debug_renderer_info",
+    "UNMASKED_RENDERER_WEBGL",
+    "UNMASKED_VENDOR_WEBGL"
+  ]);
+  function collectLiveProbe(renderer) {
+    const partial = { webgl: true };
+    const hostDpr = globalThis.devicePixelRatio;
+    if (typeof hostDpr === "number") partial.devicePixelRatio = hostDpr;
+    else if (typeof renderer?.pixelRatio === "number") partial.devicePixelRatio = renderer.pixelRatio;
+    if (typeof navigator !== "undefined") {
+      if (typeof navigator.hardwareConcurrency === "number") {
+        partial.hardwareConcurrency = navigator.hardwareConcurrency;
+      }
+      const nav = navigator;
+      if (typeof nav.deviceMemory === "number") partial.deviceMemory = nav.deviceMemory;
+      if (typeof nav.maxTouchPoints === "number") partial.maxTouchPoints = nav.maxTouchPoints;
+    }
+    if (typeof matchMedia === "function") {
+      try {
+        partial.coarsePointer = matchMedia("(pointer: coarse)").matches;
+      } catch {
+      }
+    }
+    const getExtension = renderer?.getExtension;
+    if (typeof getExtension === "function") {
+      const signals = readWebglQualitySignals({
+        getExtension(name) {
+          if (BLOCKED_GL_EXTENSIONS.has(name)) return null;
+          return getExtension.call(renderer, name);
+        }
+      });
+      if (signals.colorBufferFloat !== void 0) partial.colorBufferFloat = signals.colorBufferFloat;
+      if (signals.floatLinear !== void 0) partial.floatLinear = signals.floatLinear;
+    }
+    return partial;
+  }
+  function resolveAttachDevice(option, renderer) {
+    if (option === void 0) return void 0;
+    const overlay = option === "phone" ? { ...PHONE_CLASS_PROBE } : { ...option };
+    const live = collectLiveProbe(renderer);
+    const merged = {
+      ...live,
+      ...overlay,
+      webgl: overlay.webgl ?? live.webgl ?? true
+    };
+    return probeDevice(merged);
+  }
+
+  // src/capture-host.ts
+  function isRecord2(value) {
+    return typeof value === "object" && value !== null;
+  }
+  function isScene2(value) {
+    if (!isRecord2(value)) return false;
+    if (value.isScene === true) return true;
+    return typeof value.traverse === "function" && Array.isArray(value.children);
+  }
+  function isCamera2(value) {
+    if (!isRecord2(value)) return false;
+    return value.isCamera === true || value.isPerspectiveCamera === true || value.isOrthographicCamera === true;
+  }
+  function isRendererCtor(value) {
+    if (typeof value !== "function") return false;
+    const proto = value.prototype;
+    return !!proto && typeof proto.render === "function";
+  }
+  function readKey2(obj, key) {
+    if (!isRecord2(obj)) return void 0;
+    try {
+      return obj[key];
+    } catch {
+      return void 0;
+    }
+  }
+  function findThreeWebGLRendererCtor(root) {
+    const direct = readKey2(root, "WebGLRenderer");
+    if (isRendererCtor(direct)) return direct;
+    for (const key of ["THREE", "three"]) {
+      const ns = readKey2(root, key);
+      const ctor = readKey2(ns, "WebGLRenderer");
+      if (isRendererCtor(ctor)) return ctor;
+      if (isRendererCtor(ns)) return ns;
+    }
+    return void 0;
+  }
+  function writeHost(root, host) {
+    const assign = (target) => {
+      if (!target || typeof target !== "object") return;
+      try {
+        ;
+        target[DOCTOR_HOST_KEY] = host;
+      } catch {
+      }
+    };
+    if (isRecord2(root)) assign(root);
+    assign(globalThis);
+    const win = globalThis.window;
+    if (win) assign(win);
+  }
+  var idleCapture = {
+    installed: false,
+    uninstall() {
+    },
+    getCaptured() {
+      return void 0;
+    }
+  };
+  function installRendererRenderCapture(root = globalThis) {
+    const ctor = findThreeWebGLRendererCtor(root);
+    if (!ctor) return idleCapture;
+    const proto = ctor.prototype;
+    const hadOwn = Object.prototype.hasOwnProperty.call(proto, "render");
+    const original = proto.render;
+    if (typeof original !== "function") return idleCapture;
+    let captured;
+    let active = true;
+    const restore = () => {
+      if (!active) return;
+      active = false;
+      if (hadOwn) {
+        proto.render = original;
+        return;
+      }
+      try {
+        delete proto.render;
+      } catch {
+        proto.render = original;
+      }
+    };
+    proto.render = function(scene, camera, ...rest) {
+      if (active && isScene2(scene)) {
+        captured = {
+          scene,
+          camera: isCamera2(camera) ? camera : camera ?? {},
+          renderer: this
+        };
+        writeHost(root, captured);
+        restore();
+      }
+      return original.apply(this, [scene, camera, ...rest]);
+    };
+    return {
+      installed: true,
+      uninstall: restore,
+      getCaptured() {
+        return captured;
+      }
+    };
+  }
+
   // src/attach.ts
+  function waitAnimationTick() {
+    return new Promise((resolve) => {
+      const raf = globalThis.requestAnimationFrame;
+      if (typeof raf === "function") {
+        raf(() => resolve());
+        return;
+      }
+      setTimeout(resolve, 16);
+    });
+  }
   async function attachQualityLadder(options = {}) {
     const root = options.root ?? globalThis;
     const persist = (report2) => {
@@ -2978,10 +3147,30 @@ ${line2}` : line1;
     if (options.scene !== void 0) explicit.scene = options.scene;
     if (options.camera !== void 0) explicit.camera = options.camera;
     if (options.renderer !== void 0) explicit.renderer = options.renderer;
-    const attempt = attemptDiscovery(root, explicit);
+    let attempt = attemptDiscovery(root, explicit);
     let scene = attempt.scene;
     let camera = attempt.camera;
     let rendererHandle = attempt.renderer;
+    if (scene == null || rendererHandle == null) {
+      const protoCapture = installRendererRenderCapture(root);
+      if (protoCapture.installed) {
+        const captureWait = options.waitFrame ?? (options.now === void 0 ? waitAnimationTick : void 0);
+        const maxAttempts = captureWait ? 32 : 1;
+        const wait = captureWait ?? (async () => {
+        });
+        try {
+          for (let i = 0; i < maxAttempts && !protoCapture.getCaptured(); i += 1) {
+            await wait();
+          }
+        } finally {
+          protoCapture.uninstall();
+        }
+        attempt = attemptDiscovery(root, explicit);
+        scene = attempt.scene;
+        camera = attempt.camera ?? camera;
+        rendererHandle = attempt.renderer;
+      }
+    }
     if (rendererHandle != null && scene == null) {
       const waitFrameForHook = options.waitFrame ?? (options.now === void 0 ? waitLiveFrame(rendererHandle) : void 0);
       const captured = await waitForSceneCameraFromRenderer(rendererHandle, {
@@ -3018,6 +3207,8 @@ ${line2}` : line1;
     if (options.now) doctorOpts.now = options.now;
     if (options.measureFrames !== void 0) doctorOpts.measureFrames = options.measureFrames;
     if (waitFrame) doctorOpts.waitFrame = waitFrame;
+    const device = resolveAttachDevice(options.device, renderer);
+    if (device) doctorOpts.device = device;
     const doctor = new Doctor(doctorOpts);
     const qcOpts = {
       mode: options.mode ?? "advise"
@@ -3056,7 +3247,12 @@ ${line2}` : line1;
 
   // src/browser.ts
   var g = globalThis;
-  g.ThreejsDoctorLiveAttach = { attachQualityLadder, discoverThreeHandles };
+  g.ThreejsDoctorLiveAttach = {
+    attachQualityLadder,
+    discoverThreeHandles,
+    installRendererRenderCapture,
+    PHONE_CLASS_PROBE
+  };
   var opts = g.__THREEJS_DOCTOR_ATTACH__ ?? {};
   if (opts.autoRun !== false) {
     void attachQualityLadder(opts).catch((err) => {

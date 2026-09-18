@@ -21,7 +21,7 @@ describe('QualityController adapter wiring', () => {
     const boot = await ladder.boot()
     expect(seen).toHaveLength(1)
     expect(seen[0]!.meshLod).toBeUndefined()
-    expect(seen[0]!.spectrumEveryNFrames).toBe(4)
+    expect(seen[0]!.spectrumEveryNFrames).toBe(8)
     expect(seen[0]!.deferredHdr).toBe(true)
     expect(seen[0]!.rtScale).toBeUndefined()
     expect(seen[0]!.fftSize).toEqual([64, 0, 0])
