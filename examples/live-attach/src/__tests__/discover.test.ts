@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
-import { attemptDiscovery, discoverThreeHandles, findRendererDeep } from '../discover.js'
+import {
+  attemptDiscovery,
+  discoverThreeHandles,
+  findRendererDeep,
+  DEEP_WALK_MAX_DEPTH,
+  DEEP_WALK_MAX_MS,
+  DEEP_WALK_MAX_NODES,
+} from '../discover.js'
 
 function fakeRenderer(id: string) {
   return {
@@ -291,7 +298,8 @@ describe('discoverThreeHandles', () => {
       __THREE__: 'r152',
     }
     expect(findRendererDeep(root)).toBe(renderer)
-    const found = attemptDiscovery(root)
+    expect(attemptDiscovery(root).renderer).toBeUndefined()
+    const found = attemptDiscovery(root, {}, { deepWalk: true })
     expect(found.renderer).toBe(renderer)
   })
 
@@ -303,7 +311,8 @@ describe('discoverThreeHandles', () => {
       value: { gfx: { renderer } },
     })
     expect(findRendererDeep(root)).toBe(renderer)
-    const found = attemptDiscovery(root)
+    expect(attemptDiscovery(root).renderer).toBeUndefined()
+    const found = attemptDiscovery(root, {}, { deepWalk: true })
     expect(found.renderer).toBe(renderer)
   })
 
@@ -315,8 +324,18 @@ describe('discoverThreeHandles', () => {
     const renderer = new WebGLRenderer()
     const root = { stash: { a: { b: { c: { d: { e: { renderer } } } } } } }
     expect(findRendererDeep(root)).toBe(renderer)
-    const found = attemptDiscovery(root)
+    expect(attemptDiscovery(root).renderer).toBeUndefined()
+    const found = attemptDiscovery(root, {}, { deepWalk: true })
     expect(found.renderer).toBe(renderer)
+  })
+
+  it('opts into deep walk from window.__THREEJS_DOCTOR_ATTACH__.deepWalk', () => {
+    const renderer = fakeRenderer('attach-flag')
+    const root = {
+      stash: { gfx: { renderer } },
+      __THREEJS_DOCTOR_ATTACH__: { deepWalk: true },
+    }
+    expect(attemptDiscovery(root).renderer).toBe(renderer)
   })
 
   it('skips cross-origin iframe contentWindow and finds a sibling renderer', () => {
@@ -363,5 +382,92 @@ describe('discoverThreeHandles', () => {
     const found = attemptDiscovery(root)
     expect(found.renderer).toBe(renderer)
     expect(found.source).toBe('canvas')
+  })
+})
+
+describe('findRendererDeep budgets', () => {
+  it('keeps hard caps at or below paste-safe limits', () => {
+    expect(DEEP_WALK_MAX_NODES).toBeLessThanOrEqual(5000)
+    expect(DEEP_WALK_MAX_DEPTH).toBeLessThanOrEqual(8)
+    expect(DEEP_WALK_MAX_MS).toBeGreaterThanOrEqual(50)
+    expect(DEEP_WALK_MAX_MS).toBeLessThanOrEqual(100)
+  })
+
+  it('still finds a nested isWebGLRenderer within budget when the graph is shallow', () => {
+    const renderer = fakeRenderer('budget-shallow')
+    const root = { app: { gfx: { renderer } } }
+    expect(
+      findRendererDeep(root, { maxNodes: DEEP_WALK_MAX_NODES, maxDepth: DEEP_WALK_MAX_DEPTH, maxMs: DEEP_WALK_MAX_MS }),
+    ).toBe(renderer)
+    expect(attemptDiscovery(root).renderer).toBe(renderer)
+  })
+
+  it('does not visit more than maxNodes on a huge object graph', () => {
+    const touched = new Set<unknown>()
+    const root: Record<string, unknown> = { label: 'hang-fixture' }
+    for (let i = 0; i < 8000; i += 1) {
+      const child: Record<string, unknown> = {}
+      Object.defineProperty(child, 'isWebGLRenderer', {
+        enumerable: false,
+        get() {
+          touched.add(child)
+          return false
+        },
+      })
+      root[`n${i}`] = child
+    }
+    const found = findRendererDeep(root, { maxNodes: 200, maxDepth: 8, maxMs: 100 })
+    expect(found).toBeUndefined()
+    expect(touched.size).toBeLessThanOrEqual(200)
+  })
+
+  it('aborts and returns undefined when wall clock exceeds maxMs', () => {
+    let nowMs = 0
+    let checks = 0
+    const root: Record<string, unknown> = { label: 'slow-hang-fixture' }
+    for (let i = 0; i < 4000; i += 1) {
+      const child: Record<string, unknown> = {}
+      Object.defineProperty(child, 'isWebGLRenderer', {
+        enumerable: false,
+        get() {
+          checks += 1
+          nowMs += 10
+          return false
+        },
+      })
+      root[`n${i}`] = child
+    }
+    const found = findRendererDeep(root, {
+      maxNodes: 5000,
+      maxDepth: 8,
+      maxMs: 50,
+      now: () => nowMs,
+    })
+    expect(found).toBeUndefined()
+    expect(nowMs).toBeLessThanOrEqual(50 + 10)
+    expect(checks).toBeLessThan(20)
+  })
+
+  it('default attach discovery skips deep walk so a huge graph cannot freeze paste', () => {
+    let checks = 0
+    const renderer = fakeRenderer('buried')
+    const root: Record<string, unknown> = {
+      stash: { a: { b: { c: { d: { e: { f: { renderer } } } } } } },
+    }
+    for (let i = 0; i < 3000; i += 1) {
+      const child: Record<string, unknown> = {}
+      Object.defineProperty(child, 'isWebGLRenderer', {
+        enumerable: false,
+        get() {
+          checks += 1
+          return false
+        },
+      })
+      root[`n${i}`] = child
+    }
+    const found = attemptDiscovery(root)
+    expect(found.renderer).toBeUndefined()
+    expect(checks).toBeLessThanOrEqual(400)
+    expect(checks).toBeLessThan(1000)
   })
 })

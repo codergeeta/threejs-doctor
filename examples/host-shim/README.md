@@ -15,18 +15,23 @@ discovery misses handles.
 
 ## Paste before the live-attach IIFE
 
-1. Paste [`capture.js`](./capture.js) into DevTools. Wait one rendered frame.
-2. Confirm `window.__THREEJS_DOCTOR_HOST__` has `scene`, `camera`, `renderer`.
-3. Optionally set `window.__THREEJS_DOCTOR_ATTACH__` (`mode`, `device: 'phone'`, …).
-4. Paste `examples/live-attach/dist/attach.iife.js`.
+1. For bundled hosts (no `window.THREE`), set
+   `window.__THREEJS_DOCTOR_ATTACH__ = { deepWalk: true }` first.
+2. Paste [`capture.js`](./capture.js) into DevTools. Wait one rendered frame.
+3. Confirm `window.__THREEJS_DOCTOR_HOST__` has `scene`, `camera`, `renderer`.
+4. Optionally set `mode` / `device: 'phone'` on `__THREEJS_DOCTOR_ATTACH__`.
+5. Paste `examples/live-attach/dist/attach.iife.js`.
 
 Lookup order:
 
 - `window.THREE` / `window.three` / object `window.__THREE__` / `window.WebGLRenderer`
-- else a **deep BFS** from `window`, `document`, and each canvas (non-enumerable
+- else, **only if** `window.__THREEJS_DOCTOR_ATTACH__.deepWalk === true`, a
+  **bounded BFS** from `window`, `document`, and each canvas (non-enumerable
   own props, `isWebGLRenderer === true` or constructor name `WebGLRenderer`,
-  skip cross-origin iframes, cap 50k nodes). A string `window.__THREE__` is not
-  treated as the library.
+  skip cross-origin iframes, **5000 nodes / depth 8 / 80ms**; abort does not
+  hook). A string `window.__THREE__` is not treated as the library. Default
+  paste of this shim does **not** walk the graph (live moonbase froze on the
+  old 50k sync walk).
 
 If the renderer is fully closed over and not on that graph, this shim cannot
 invent it. Use a breakpoint on `WebGLRenderer.prototype.render` in the page’s

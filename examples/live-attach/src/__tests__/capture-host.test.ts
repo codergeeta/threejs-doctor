@@ -84,7 +84,20 @@ describe('installRendererRenderCapture', () => {
     expect(result.getCaptured()).toBeUndefined()
   })
 
-  it('hooks a nested instance when THREE is missing and __THREE__ is a string', () => {
+  it('does not deep-walk nested instances by default', () => {
+    const THREE = makeThree()
+    const renderer = new (THREE.WebGLRenderer as unknown as new () => {
+      render: (scene: unknown, camera: unknown) => unknown
+    })()
+    const root = {
+      __THREE__: 'r152',
+      app: { gfx: { renderer } },
+    }
+    const result = installRendererRenderCapture(root)
+    expect(result.installed).toBe(false)
+  })
+
+  it('hooks a nested instance when THREE is missing and deepWalk is opted in', () => {
     const THREE = makeThree()
     const renderer = new (THREE.WebGLRenderer as unknown as new () => {
       render: (scene: unknown, camera: unknown) => unknown
@@ -97,7 +110,7 @@ describe('installRendererRenderCapture', () => {
       __THREE__: 'r152',
       app: { gfx: { renderer } },
     }
-    const installed = installRendererRenderCapture(root)
+    const installed = installRendererRenderCapture(root, { deepWalk: true })
     expect(installed.installed).toBe(true)
     const scene = fakeScene()
     const camera = fakeCamera()
@@ -116,9 +129,9 @@ describe('installRendererRenderCapture', () => {
       __THREE__: 'r152',
       app: { gfx: { renderer } },
     }
-    const skipped = installRendererRenderCapture(root, { skipDeepWalk: true })
+    const skipped = installRendererRenderCapture(root, { skipDeepWalk: true, deepWalk: true })
     expect(skipped.installed).toBe(false)
-    const installed = installRendererRenderCapture(root)
+    const installed = installRendererRenderCapture(root, { deepWalk: true })
     expect(installed.installed).toBe(true)
     installed.uninstall()
   })
@@ -133,9 +146,11 @@ describe('installRendererRenderCapture', () => {
       __THREE__: string
       app: { gfx: { renderer: typeof renderer } }
       __THREEJS_DOCTOR_HOST__?: { scene: unknown; renderer: unknown }
+      __THREEJS_DOCTOR_ATTACH__?: { deepWalk: boolean }
     } = {
       __THREE__: 'r152',
       app: { gfx: { renderer } },
+      __THREEJS_DOCTOR_ATTACH__: { deepWalk: true },
     }
     const body = src.replace(/\}\)\(typeof window !== 'undefined' \? window : globalThis\)\s*$/, '})(root)')
     const run = new Function('root', body)

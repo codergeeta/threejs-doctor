@@ -1,7 +1,8 @@
-/* @threejs-doctor/host-shim unpublished. Hook WebGLRenderer render once. Deep-walk if THREE is missing. Keep enqueue in sync with live-attach findRendererDeep. Do not invent metrics. */
+/* @threejs-doctor/host-shim unpublished. Hook WebGLRenderer render once. Deep-walk only if __THREEJS_DOCTOR_ATTACH__.deepWalk. Keep enqueue in sync with live-attach findRendererDeep. Do not invent metrics. */
 (function (root) {
-  var MAX_VISITS = 50000
-  var MAX_DEPTH = 16
+  var MAX_VISITS = 5000
+  var MAX_DEPTH = 8
+  var MAX_MS = 80
   var SKIP = {
     document: 1, location: 1, navigation: 1, window: 1, self: 1, frames: 1, parent: 1, top: 1,
     navigator: 1, performance: 1, console: 1, localStorage: 1, sessionStorage: 1, history: 1,
@@ -48,6 +49,13 @@
     return scene && (scene.isScene === true || (typeof scene.traverse === 'function' && Array.isArray(scene.children)))
   }
 
+  function nowMs() {
+    try {
+      if (typeof performance !== 'undefined' && typeof performance.now === 'function') return performance.now()
+    } catch (e) {}
+    return Date.now()
+  }
+
   function hook(target) {
     if (!target || typeof target.render !== 'function') return false
     var original = target.render
@@ -67,6 +75,12 @@
   var Ctor = (T && T.WebGLRenderer) || root.WebGLRenderer
   if (Ctor && Ctor.prototype && typeof Ctor.prototype.render === 'function') {
     hook(Ctor.prototype)
+    return
+  }
+
+  var attach = isObj(root.__THREEJS_DOCTOR_ATTACH__) ? root.__THREEJS_DOCTOR_ATTACH__ : {}
+  if (attach.deepWalk !== true) {
+    console.warn('[threejs-doctor host-shim] THREE.WebGLRenderer not found on this page. Set window.__THREEJS_DOCTOR_ATTACH__ = { deepWalk: true } for a bounded graph walk.')
     return
   }
 
@@ -106,7 +120,13 @@
   var named = null
   var duck = null
   var found = null
+  var aborted = false
+  var t0 = nowMs()
   while (head < queue.length && visits < MAX_VISITS && !found) {
+    if (nowMs() - t0 >= MAX_MS) {
+      aborted = true
+      break
+    }
     var next = queue[head++]
     var value = next.v
     var depth = next.d
@@ -150,6 +170,10 @@
       }
     }
     for (var n = 0; n < names.length; n++) {
+      if (nowMs() - t0 >= MAX_MS) {
+        aborted = true
+        break
+      }
       var key = names[n]
       if (SKIP[key]) continue
       var child
@@ -167,6 +191,12 @@
       }
       enqueue(child, depth + 1)
     }
+    if (aborted) break
+  }
+
+  if (aborted) {
+    console.warn('[threejs-doctor host-shim] deep walk aborted (budget); THREE.WebGLRenderer not found on this page')
+    return
   }
 
   found = found || named || duck

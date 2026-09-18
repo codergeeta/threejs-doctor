@@ -1,4 +1,4 @@
-import { DOCTOR_HOST_KEY, findRendererDeep } from './discover.js'
+import { DOCTOR_HOST_KEY, findRendererDeep, isDeepWalkEnabled } from './discover.js'
 
 export interface CapturedHost {
   scene: unknown
@@ -139,6 +139,8 @@ export interface InstallRendererRenderCaptureOptions {
   instance?: unknown
   /** Discovery already ran `findRendererDeep`; only look up a constructor on the root. */
   skipDeepWalk?: boolean
+  /** Opt into the bounded deep instance walk. Default off. */
+  deepWalk?: boolean
 }
 
 export function installRendererRenderCapture(
@@ -150,7 +152,7 @@ export function installRendererRenderCapture(
 
   const instance = isRecord(options.instance)
     ? options.instance
-    : options.skipDeepWalk
+    : options.skipDeepWalk || !isDeepWalkEnabled(root, options.deepWalk)
       ? undefined
       : findRendererDeep(root)
   if (!isRecord(instance)) return idleCapture

@@ -43,6 +43,21 @@ Default mode is `advise` (no pass/adapter mutation). Overlay mounts when
 `document.body` exists. Frame samples wait for `renderer.info.render.frame` to
 advance when that counter exists.
 
+**Default paste is safe:** discovery uses cheap paths only
+(`__THREEJS_DOCTOR_HOST__`, pelagic, canvas bags, bundle roots, a shallow
+global walk). It does **not** BFS the live page. A previous 50k-node
+`isWebGLRenderer` walk froze [moonbase](https://konstantinsteinmiller.github.io/moonbase)
+with no `LAST_REPORT`. For bundled hosts that need the graph walk, opt in
+**before** paste:
+
+```js
+window.__THREEJS_DOCTOR_ATTACH__ = { deepWalk: true }
+```
+
+That walk is hard-capped (`maxNodes` ≤ 5000, `maxDepth` ≤ 8, `maxMs` ≤ 80) and
+returns undefined if the budget is exceeded. It cannot freeze the tab the way
+the uncapped walk did.
+
 If auto-run is unwanted:
 
 ```js
@@ -150,9 +165,10 @@ ThreejsDoctorLiveAttach.installRendererRenderCapture()
 await ThreejsDoctorLiveAttach.attachQualityLadder({ mode: 'advise' })
 ```
 
-If `THREE.WebGLRenderer` is not on the page, the helper still deep-walks for an
-instance (`isWebGLRenderer` or constructor name `WebGLRenderer`). If that also
-misses, pass `{ scene, camera, renderer }` explicitly from that page’s console.
+If `THREE.WebGLRenderer` is not on the page, **do not** assume a default paste
+will deep-walk the graph (that froze live moonbase). Opt in with
+`window.__THREEJS_DOCTOR_ATTACH__ = { deepWalk: true }` for a bounded BFS, or
+pass `{ scene, camera, renderer }` explicitly from that page’s console.
 
 ## If discovery cannot find scene / camera / renderer
 
@@ -170,10 +186,13 @@ objects in module closures, **not** on `window`. The IIFE now tries, in order:
 5. **Bundle roots** — `window.app`, `window.game`, `window.__THREE__`, and
    module-like `default` / `exports` singletons (non-enumerable keys included;
    throwing getters are skipped)
-6. Shallow enumerable global walk
-7. **Deep walk** — BFS from `window`, `document`, and each canvas (non-enumerable
-   own props, `isWebGLRenderer === true` or `constructor.name === 'WebGLRenderer'`,
-   skip cross-origin iframes, cap ~50k nodes)
+6. Shallow enumerable global walk (depth 4 / 400 visits — not a full-page BFS)
+7. **Deep walk (opt-in)** — only if `window.__THREEJS_DOCTOR_ATTACH__.deepWalk === true`
+   (or `attachQualityLadder({ deepWalk: true })`). BFS from `window`, `document`,
+   and each canvas (non-enumerable own props, `isWebGLRenderer === true` or
+   `constructor.name === 'WebGLRenderer'`, skip cross-origin iframes). Hard caps:
+   **5000 nodes**, **depth 8**, **80ms** wall clock; abort returns undefined.
+   Default attach skips this step so paste cannot freeze a real game.
 8. If `THREE.WebGLRenderer` (or `three.WebGLRenderer`) is on the page, **or** a
    renderer instance was found and exposes a constructor prototype: hook
    `prototype.render` **once**, wait a few frames, and read
@@ -207,21 +226,23 @@ Ocean: `window.pelagic.debug` usually has `scene` and `renderer`; camera may be
 on that bag or in the scene graph.
 
 **Claude-of-Tanks** (`https://cot.kevinliu.studio/`) **and catapult**:
-scene/camera/renderer are typically closed over in the bundle. Host-shim and
-the IIFE now deep-walk for a renderer instance even when `window.THREE` is
-missing and `window.__THREE__` is a string. **Re-test those hosts on the box**
-— unit tests are not a live capture. If the renderer is fully closed over,
-pass `{ scene, camera, renderer }` explicitly from the page console. Do not
-vendor the demo. Do not invent metrics.
+scene/camera/renderer are typically closed over in the bundle. Default paste
+stays on cheap paths. For a bounded instance walk on those hosts, set
+`window.__THREEJS_DOCTOR_ATTACH__ = { deepWalk: true }` before pasting (or
+before host-shim). **Re-test those hosts on the box** — unit tests are not a
+live capture. If the renderer is fully closed over, pass
+`{ scene, camera, renderer }` explicitly from the page console. Do not vendor
+the demo. Do not invent metrics.
 
-Manual capture (same hook the IIFE uses):
+Manual capture (same hook the IIFE uses). Cheap constructor lookup by default;
+add `deepWalk: true` to search nested instances:
 
 ```js
-window.__THREEJS_DOCTOR_ATTACH__ = { autoRun: false }
+window.__THREEJS_DOCTOR_ATTACH__ = { autoRun: false, deepWalk: true }
 // paste attach.iife.js
-ThreejsDoctorLiveAttach.installRendererRenderCapture()
+ThreejsDoctorLiveAttach.installRendererRenderCapture({ deepWalk: true })
 // wait one rendered frame, then:
-await ThreejsDoctorLiveAttach.attachQualityLadder({ mode: 'advise' })
+await ThreejsDoctorLiveAttach.attachQualityLadder({ mode: 'advise', deepWalk: true })
 ```
 
 ## Bookmarklet

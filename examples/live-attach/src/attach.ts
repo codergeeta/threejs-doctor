@@ -33,6 +33,12 @@ export interface AttachQualityLadderOptions {
   measureFrames?: number
   mountOverlay?: boolean
   autoRun?: boolean
+  /**
+   * Opt into the bounded deep renderer BFS. Default false — paste must not freeze
+   * a live game. For bundled hosts set
+   * `window.__THREEJS_DOCTOR_ATTACH__ = { deepWalk: true }`.
+   */
+  deepWalk?: boolean
   log?: (line: string) => void
   /**
    * Overlay phone-class probe signals (or `'phone'`) onto the live probe.
@@ -77,7 +83,8 @@ export async function attachQualityLadder(
   if (options.camera !== undefined) explicit.camera = options.camera
   if (options.renderer !== undefined) explicit.renderer = options.renderer
 
-  let attempt = attemptDiscovery(root, explicit)
+  const discoveryOpts = options.deepWalk !== undefined ? { deepWalk: options.deepWalk } : {}
+  let attempt = attemptDiscovery(root, explicit, discoveryOpts)
   let scene = attempt.scene
   let camera = attempt.camera
   let rendererHandle = attempt.renderer
@@ -99,7 +106,7 @@ export async function attachQualityLadder(
       } finally {
         protoCapture.uninstall()
       }
-      attempt = attemptDiscovery(root, explicit)
+      attempt = attemptDiscovery(root, explicit, discoveryOpts)
       scene = attempt.scene
       camera = attempt.camera ?? camera
       rendererHandle = attempt.renderer

@@ -2432,6 +2432,9 @@ ${line2}` : line1;
 
   // src/discover.ts
   var DOCTOR_HOST_KEY = "__THREEJS_DOCTOR_HOST__";
+  var DEEP_WALK_MAX_NODES = 5e3;
+  var DEEP_WALK_MAX_DEPTH = 8;
+  var DEEP_WALK_MAX_MS = 80;
   var SKIP_KEYS = /* @__PURE__ */ new Set([
     "document",
     "location",
@@ -2688,8 +2691,32 @@ ${line2}` : line1;
       return [];
     }
   }
-  var DEEP_RENDERER_MAX_VISITS = 5e4;
-  var DEEP_RENDERER_MAX_DEPTH = 16;
+  function defaultNow() {
+    try {
+      if (typeof performance !== "undefined" && typeof performance.now === "function") {
+        return performance.now();
+      }
+    } catch {
+    }
+    return Date.now();
+  }
+  function clampDeepWalkOptions(options = {}) {
+    const maxNodes = Math.min(options.maxNodes ?? DEEP_WALK_MAX_NODES, DEEP_WALK_MAX_NODES);
+    const maxDepth = Math.min(options.maxDepth ?? DEEP_WALK_MAX_DEPTH, DEEP_WALK_MAX_DEPTH);
+    const maxMs = Math.min(options.maxMs ?? DEEP_WALK_MAX_MS, 100);
+    return {
+      maxNodes: maxNodes > 0 ? maxNodes : DEEP_WALK_MAX_NODES,
+      maxDepth: maxDepth >= 0 ? maxDepth : DEEP_WALK_MAX_DEPTH,
+      maxMs: maxMs > 0 ? maxMs : DEEP_WALK_MAX_MS,
+      now: options.now ?? defaultNow
+    };
+  }
+  function isDeepWalkEnabled(root, option) {
+    if (option === true) return true;
+    if (option === false) return false;
+    const bag = readKey(root, "__THREEJS_DOCTOR_ATTACH__");
+    return isRecord(bag) && bag.deepWalk === true;
+  }
   var DEEP_SKIP_KEYS = /* @__PURE__ */ new Set([
     ...SKIP_KEYS,
     ...CANVAS_SKIP_KEYS,
@@ -2746,15 +2773,19 @@ ${line2}` : line1;
     if (isDomNode(value)) return isCanvasElement(value);
     return !isTypedArrayOrBuffer(value);
   }
-  function findRendererDeep(root) {
+  function findRendererDeep(root, options = {}) {
+    const { maxNodes, maxDepth, maxMs, now } = clampDeepWalkOptions(options);
     const seen = /* @__PURE__ */ new Set();
     const queue = [];
     let head = 0;
     let visits = 0;
+    const started = now();
+    let aborted = false;
+    const overBudget = () => now() - started >= maxMs;
     const enqueue = (value, depth, seed) => {
       if (value == null || typeof value !== "object") return;
-      if (seen.has(value) || depth > DEEP_RENDERER_MAX_DEPTH) return;
-      if (visits + (queue.length - head) >= DEEP_RENDERER_MAX_VISITS) return;
+      if (seen.has(value) || depth > maxDepth) return;
+      if (visits + (queue.length - head) >= maxNodes) return;
       seen.add(value);
       queue.push({ value, depth, seed });
     };
@@ -2763,7 +2794,11 @@ ${line2}` : line1;
     for (const canvas of listCanvases(root)) enqueue(canvas, 0, true);
     let named;
     let duck;
-    while (head < queue.length && visits < DEEP_RENDERER_MAX_VISITS) {
+    while (head < queue.length && visits < maxNodes) {
+      if (overBudget()) {
+        aborted = true;
+        break;
+      }
       const next = queue[head];
       head += 1;
       if (!next) break;
@@ -2778,7 +2813,7 @@ ${line2}` : line1;
       } catch {
         continue;
       }
-      if (depth >= DEEP_RENDERER_MAX_DEPTH) continue;
+      if (depth >= maxDepth) continue;
       if (!shouldExpandDeep(value, seed)) continue;
       if (isIFrameElement(value)) {
         try {
@@ -2795,6 +2830,10 @@ ${line2}` : line1;
         continue;
       }
       for (const key of keys) {
+        if (overBudget()) {
+          aborted = true;
+          break;
+        }
         if (DEEP_SKIP_KEYS.has(key)) continue;
         try {
           const child = value[key];
@@ -2809,7 +2848,9 @@ ${line2}` : line1;
           continue;
         }
       }
+      if (aborted) break;
     }
+    if (aborted) return void 0;
     return named ?? duck;
   }
   function peekWebGLContext(canvas) {
@@ -2932,23 +2973,31 @@ ${line2}` : line1;
     parts.push("Pass them explicitly from this page's console once located:");
     parts.push("  await ThreejsDoctorLiveAttach.attachQualityLadder({ scene, camera, renderer })");
     parts.push("Or expose window.__THREEJS_DOCTOR_HOST__ = { scene, camera, renderer } before pasting.");
+    parts.push(
+      "Default paste skips the deep graph walk. For bundled hosts opt in with window.__THREEJS_DOCTOR_ATTACH__ = { deepWalk: true } (bounded; aborts if the graph is too large)."
+    );
     return parts.join(" ");
   }
-  function attemptDiscovery(root = globalThis, explicit = {}) {
+  function attemptDiscovery(root = globalThis, explicit = {}, options = {}) {
     const probe = emptyProbe();
     const canvases = listCanvases(root);
     probe.canvasCount = canvases.length;
     for (const canvas of canvases) {
       if (peekWebGLContext(canvas)) probe.webglContextCount += 1;
     }
+    const deepWalk = isDeepWalkEnabled(root, options.deepWalk);
     probe.tried.push(
       "__THREEJS_DOCTOR_HOST__",
       "pelagic.debug",
       "canvas (__THREE__/userData/internals)",
       "bundle roots (app, game, __THREE__)",
-      "global walk",
-      "deep walk (window/document/canvas)"
+      "global walk"
     );
+    if (deepWalk) {
+      probe.tried.push("deep walk (window/document/canvas, bounded)");
+    } else {
+      probe.tried.push("deep walk skipped (set __THREEJS_DOCTOR_ATTACH__.deepWalk)");
+    }
     if (explicit.scene != null && explicit.camera != null && explicit.renderer != null) {
       const found2 = { scene: explicit.scene, camera: explicit.camera, renderer: explicit.renderer };
       refreshProbe(probe, found2);
@@ -2995,7 +3044,7 @@ ${line2}` : line1;
         source ??= "walk";
       }
     }
-    if (found.renderer == null) {
+    if (found.renderer == null && deepWalk) {
       const deep = findRendererDeep(root);
       if (deep) {
         found.renderer = deep;
@@ -3359,7 +3408,7 @@ ${line2}` : line1;
   function installRendererRenderCapture(root = globalThis, options = {}) {
     const ctor = findThreeWebGLRendererCtor(root);
     if (ctor) return hookRenderMethod(root, ctor.prototype);
-    const instance = isRecord2(options.instance) ? options.instance : options.skipDeepWalk ? void 0 : findRendererDeep(root);
+    const instance = isRecord2(options.instance) ? options.instance : options.skipDeepWalk || !isDeepWalkEnabled(root, options.deepWalk) ? void 0 : findRendererDeep(root);
     if (!isRecord2(instance)) return idleCapture;
     const fromInstance = instance.constructor;
     if (isRendererCtor(fromInstance)) return hookRenderMethod(root, fromInstance.prototype);
@@ -3401,7 +3450,8 @@ ${line2}` : line1;
     if (options.scene !== void 0) explicit.scene = options.scene;
     if (options.camera !== void 0) explicit.camera = options.camera;
     if (options.renderer !== void 0) explicit.renderer = options.renderer;
-    let attempt = attemptDiscovery(root, explicit);
+    const discoveryOpts = options.deepWalk !== void 0 ? { deepWalk: options.deepWalk } : {};
+    let attempt = attemptDiscovery(root, explicit, discoveryOpts);
     let scene = attempt.scene;
     let camera = attempt.camera;
     let rendererHandle = attempt.renderer;
@@ -3422,7 +3472,7 @@ ${line2}` : line1;
         } finally {
           protoCapture.uninstall();
         }
-        attempt = attemptDiscovery(root, explicit);
+        attempt = attemptDiscovery(root, explicit, discoveryOpts);
         scene = attempt.scene;
         camera = attempt.camera ?? camera;
         rendererHandle = attempt.renderer;

@@ -13,6 +13,23 @@ export interface ExplicitHandles {
   renderer?: unknown
 }
 
+export interface DiscoveryOptions {
+  /** Opt into the bounded window/document/canvas BFS. Default off so paste cannot freeze. */
+  deepWalk?: boolean
+}
+
+export interface DeepWalkOptions {
+  maxNodes?: number
+  maxDepth?: number
+  maxMs?: number
+  now?: () => number
+}
+
+/** Hard caps for the optional deep renderer walk. Paste-in default does not run this walk. */
+export const DEEP_WALK_MAX_NODES = 5000
+export const DEEP_WALK_MAX_DEPTH = 8
+export const DEEP_WALK_MAX_MS = 80
+
 export interface DiscoveryProbe {
   canvasCount: number
   webglContextCount: number
@@ -335,8 +352,40 @@ function listCanvases(root: unknown): unknown[] {
   }
 }
 
-const DEEP_RENDERER_MAX_VISITS = 50_000
-const DEEP_RENDERER_MAX_DEPTH = 16
+function defaultNow(): number {
+  try {
+    if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+      return performance.now()
+    }
+  } catch {
+    // performance may throw in odd hosts
+  }
+  return Date.now()
+}
+
+function clampDeepWalkOptions(options: DeepWalkOptions = {}): {
+  maxNodes: number
+  maxDepth: number
+  maxMs: number
+  now: () => number
+} {
+  const maxNodes = Math.min(options.maxNodes ?? DEEP_WALK_MAX_NODES, DEEP_WALK_MAX_NODES)
+  const maxDepth = Math.min(options.maxDepth ?? DEEP_WALK_MAX_DEPTH, DEEP_WALK_MAX_DEPTH)
+  const maxMs = Math.min(options.maxMs ?? DEEP_WALK_MAX_MS, 100)
+  return {
+    maxNodes: maxNodes > 0 ? maxNodes : DEEP_WALK_MAX_NODES,
+    maxDepth: maxDepth >= 0 ? maxDepth : DEEP_WALK_MAX_DEPTH,
+    maxMs: maxMs > 0 ? maxMs : DEEP_WALK_MAX_MS,
+    now: options.now ?? defaultNow,
+  }
+}
+
+export function isDeepWalkEnabled(root: unknown, option?: boolean): boolean {
+  if (option === true) return true
+  if (option === false) return false
+  const bag = readKey(root, '__THREEJS_DOCTOR_ATTACH__')
+  return isRecord(bag) && bag.deepWalk === true
+}
 
 const DEEP_SKIP_KEYS = new Set([
   ...SKIP_KEYS,
@@ -403,18 +452,23 @@ function shouldExpandDeep(value: Record<string, unknown>, isSeed: boolean): bool
 }
 
 /**
- * BFS from window, document, and each canvas (non-enumerable own props included).
- * Caps visits so bundled graphs cannot OOM the paste-in helper.
+ * Optional BFS from window, document, and each canvas (non-enumerable own props).
+ * Hard-capped (nodes / depth / wall clock). Abort returns undefined — never a 50k sync walk.
+ * Default attach does not call this; set `__THREEJS_DOCTOR_ATTACH__.deepWalk = true` to opt in.
  */
-export function findRendererDeep(root: unknown): unknown {
+export function findRendererDeep(root: unknown, options: DeepWalkOptions = {}): unknown {
+  const { maxNodes, maxDepth, maxMs, now } = clampDeepWalkOptions(options)
   const seen = new Set<unknown>()
   const queue: Array<{ value: unknown; depth: number; seed: boolean }> = []
   let head = 0
   let visits = 0
+  const started = now()
+  let aborted = false
+  const overBudget = () => now() - started >= maxMs
   const enqueue = (value: unknown, depth: number, seed: boolean) => {
     if (value == null || typeof value !== 'object') return
-    if (seen.has(value) || depth > DEEP_RENDERER_MAX_DEPTH) return
-    if (visits + (queue.length - head) >= DEEP_RENDERER_MAX_VISITS) return
+    if (seen.has(value) || depth > maxDepth) return
+    if (visits + (queue.length - head) >= maxNodes) return
     seen.add(value)
     queue.push({ value, depth, seed })
   }
@@ -425,7 +479,11 @@ export function findRendererDeep(root: unknown): unknown {
 
   let named: unknown
   let duck: unknown
-  while (head < queue.length && visits < DEEP_RENDERER_MAX_VISITS) {
+  while (head < queue.length && visits < maxNodes) {
+    if (overBudget()) {
+      aborted = true
+      break
+    }
     const next = queue[head]
     head += 1
     if (!next) break
@@ -443,7 +501,7 @@ export function findRendererDeep(root: unknown): unknown {
       continue
     }
 
-    if (depth >= DEEP_RENDERER_MAX_DEPTH) continue
+    if (depth >= maxDepth) continue
     if (!shouldExpandDeep(value, seed)) continue
 
     if (isIFrameElement(value)) {
@@ -462,6 +520,10 @@ export function findRendererDeep(root: unknown): unknown {
       continue
     }
     for (const key of keys) {
+      if (overBudget()) {
+        aborted = true
+        break
+      }
       if (DEEP_SKIP_KEYS.has(key)) continue
       try {
         const child = value[key]
@@ -476,7 +538,9 @@ export function findRendererDeep(root: unknown): unknown {
         continue
       }
     }
+    if (aborted) break
   }
+  if (aborted) return undefined
   return named ?? duck
 }
 
@@ -612,24 +676,36 @@ export function formatDiscoveryError(probe: DiscoveryProbe): string {
   parts.push("Pass them explicitly from this page's console once located:")
   parts.push('  await ThreejsDoctorLiveAttach.attachQualityLadder({ scene, camera, renderer })')
   parts.push('Or expose window.__THREEJS_DOCTOR_HOST__ = { scene, camera, renderer } before pasting.')
+  parts.push(
+    'Default paste skips the deep graph walk. For bundled hosts opt in with window.__THREEJS_DOCTOR_ATTACH__ = { deepWalk: true } (bounded; aborts if the graph is too large).',
+  )
   return parts.join(' ')
 }
 
-export function attemptDiscovery(root: unknown = globalThis, explicit: ExplicitHandles = {}): DiscoveryAttempt {
+export function attemptDiscovery(
+  root: unknown = globalThis,
+  explicit: ExplicitHandles = {},
+  options: DiscoveryOptions = {},
+): DiscoveryAttempt {
   const probe = emptyProbe()
   const canvases = listCanvases(root)
   probe.canvasCount = canvases.length
   for (const canvas of canvases) {
     if (peekWebGLContext(canvas)) probe.webglContextCount += 1
   }
+  const deepWalk = isDeepWalkEnabled(root, options.deepWalk)
   probe.tried.push(
     '__THREEJS_DOCTOR_HOST__',
     'pelagic.debug',
     'canvas (__THREE__/userData/internals)',
     'bundle roots (app, game, __THREE__)',
     'global walk',
-    'deep walk (window/document/canvas)',
   )
+  if (deepWalk) {
+    probe.tried.push('deep walk (window/document/canvas, bounded)')
+  } else {
+    probe.tried.push('deep walk skipped (set __THREEJS_DOCTOR_ATTACH__.deepWalk)')
+  }
 
   if (explicit.scene != null && explicit.camera != null && explicit.renderer != null) {
     const found = { scene: explicit.scene, camera: explicit.camera, renderer: explicit.renderer }
@@ -685,7 +761,7 @@ export function attemptDiscovery(root: unknown = globalThis, explicit: ExplicitH
     }
   }
 
-  if (found.renderer == null) {
+  if (found.renderer == null && deepWalk) {
     const deep = findRendererDeep(root)
     if (deep) {
       found.renderer = deep

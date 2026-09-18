@@ -85,13 +85,15 @@ captures.
 ### Claude-of-Tanks (https://cot.kevinliu.studio/)
 
 - Status: **BLOCKED** on scene discovery **and** box resources
-- Error: could not find scene/camera/renderer (bundled closures). Deep walk from
-  window / document / canvas now ships (non-enumerable own props, 50k-node cap,
-  skip cross-origin iframes) and unit tests cover nested
-  `{ app: { gfx: { renderer } } }`. **Re-test on the box is still required** —
-  this revision did not recapture tanks. If the live renderer is fully closed
-  over, explicit `attachQualityLadder({ scene, camera, renderer })` is still
-  required from the page console.
+- Error: could not find scene/camera/renderer (bundled closures). Nested
+  `{ app: { gfx: { renderer } } }` is still covered by cheap bundle-root
+  discovery. The optional deep walk is **opt-in**
+  (`__THREEJS_DOCTOR_ATTACH__.deepWalk`) and hard-capped (5000 nodes / depth 8 /
+  80ms) after live moonbase froze on the old 50k sync BFS. **Re-test on the box
+  is still required** — this revision did not recapture tanks. If the live
+  renderer is fully closed over, explicit
+  `attachQualityLadder({ scene, camera, renderer })` is still required from the
+  page console.
 - Additional note (second attempt): combat rendered, then ~125 canvases, then
   Chrome discarded the tab under memory pressure during attach evaluation —
   **no report**. Treat as box-resource blocked as well as discovery-blocked.
@@ -110,9 +112,9 @@ captures.
 - Status: **BLOCKED** on scene discovery
 - Observed: canvas present, **no** discoverable scene/camera/renderer handles
   on the last box attempt (prototype hook never armed: `window.THREE` missing,
-  `window.__THREE__` a string). Deep walk now ships in live-attach + host-shim;
-  **re-test catapult on the box is still required**. No FPS / after metrics
-  recorded.
+  `window.__THREE__` a string). Bounded opt-in deep walk now ships in
+  live-attach + host-shim; **re-test catapult on the box is still required**.
+  No FPS / after metrics recorded.
 - Needs a successful deep-walk / render-hook capture, or explicit
   `attachQualityLadder({ scene, camera, renderer })` / a
   `window.__THREEJS_DOCTOR_HOST__` hook
@@ -247,9 +249,10 @@ This file does not close acceptance. Still required:
 - External [Claude-of-Tanks](https://cot.kevinliu.studio/) /
   [Kinema](https://kinema-play.vercel.app/?forceWebGL=1) /
   [catapult](https://sina-ghiasi.github.io/threejs-catapult-game/) still need a
-  **box re-test** after the deep window/document/canvas walk. Unit tests prove
-  nested `isWebGLRenderer` discovery; this revision did **not** recapture those
-  live hosts. If the renderer is fully closed over, explicit
+  **box re-test**. Cheap-path discovery plus an **opt-in** bounded deep walk
+  (`deepWalk: true`, 5000 / 8 / 80ms) replaced the 50k sync BFS that froze
+  moonbase. This revision did **not** recapture those live hosts. If the
+  renderer is fully closed over, explicit
   `attachQualityLadder({ scene, camera, renderer })` is still required.
   Previous host-shim probe: `THREE.WebGLRenderer` not on `window` (`window.THREE`
   missing; `window.__THREE__` a **string**). Do not treat unit tests as a live
@@ -324,13 +327,13 @@ logged `THREE.WebGLRenderer not found` on both:
 - https://sina-ghiasi.github.io/threejs-catapult-game/ — 1 canvas, hook did not capture
 
 The prototype hook is shipped and unit-tested with fakes. Deep walk from
-window / document / canvas (non-enumerable own props, constructor name
-`WebGLRenderer` or `isWebGLRenderer === true`, 50k-node cap, skip cross-origin
-iframes) now ships in live-attach and `examples/host-shim/capture.js`. **Re-test
-tanks / catapult on the box** — this revision did not recapture those hosts.
+window / document / canvas is **opt-in** (`__THREEJS_DOCTOR_ATTACH__.deepWalk`)
+with hard caps (5000 nodes, depth 8, 80ms wall clock; abort returns undefined).
+The previous default 50k sync walk froze live moonbase. **Re-test tanks /
+catapult on the box** — this revision did not recapture those hosts.
 Until a live capture succeeds, they still need explicit
 `attachQualityLadder({ scene, camera, renderer })` if the renderer is not on
-the walked graph.
+the cheap-path graph.
 
 ## Chrome iPhone emulation 390×844 DPR3 (NOT a real phone GPU)
 
@@ -393,15 +396,29 @@ proof.
 
 ## Deep renderer walk (this revision, no new FPS)
 
-Live-attach + host-shim now BFS from `window` / `document` / each canvas for
-`isWebGLRenderer === true` or `constructor.name === 'WebGLRenderer'`
-(non-enumerable own props, skip cross-origin iframes, 50k-node cap). Unit tests
-cover nested `{ app: { gfx: { renderer } } }`. **Re-test catapult / tanks on
-the box** — not done this revision. Do not invent FPS.
+Live [moonbase](https://konstantinsteinmiller.github.io/moonbase) rendered, then
+pasting the live-attach IIFE with the default deep `isWebGLRenderer` BFS
+**hung/froze the tab** — no `LAST_REPORT`. The 50k sync walk is too heavy for a
+real game. No FPS were copied from that attempt (the tab never finished). Do
+not invent them.
+
+Fix shipped this revision:
+
+- Default attach uses cheap paths only (`__THREEJS_DOCTOR_HOST__`, pelagic,
+  canvas bags, bundle roots, shallow walk). Deep walk is **off**.
+- Opt in with `window.__THREEJS_DOCTOR_ATTACH__ = { deepWalk: true }` for
+  bundled hosts. Hard caps: **5000 nodes**, **depth 8**, **80ms**; abort
+  returns undefined. Unit tests cover budget abort, shallow nested find, and a
+  hang fixture.
+- Host-shim `capture.js` matches: no graph walk unless `deepWalk: true`, same
+  caps.
+
+**Re-test catapult / tanks / moonbase on the box** — not done this revision.
+Do not invent FPS.
 
 In-repo fixture Pass B was **not remeasured**. The last copied run remains
 after `avgFps` **53.970** / p95 **32** on the 0.5 DPR floor (`floorFailed:
-false`), which is still ≥30. Deep walk does not change the fixture host
-(`window.__THREEJS_DOCTOR_HOST__`).
+false`), which is still ≥30. Default attach still finds the fixture host
+(`window.__THREEJS_DOCTOR_HOST__`) on the cheap path.
 
 
