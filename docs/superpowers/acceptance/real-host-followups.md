@@ -38,6 +38,17 @@ Prefer **invalid/incomplete** over a pretty false win. Fixed-clock mocks are not
 - Score still starts from findings; cost weighting is a directional correction, not a full profiler.
 - Hidden-tab detection is skipped when the host injects `now()` (unit tests).
 
+## Clockwork Climb / continuous RAF games
+
+[Clockwork Climb](https://github.com/tommyato/gamedevjs-2026-entry) is a continuous rAF game. Attach only after the page exposes the host:
+
+- Open with **`?verify-ui=1`** so debug/UI hooks are on.
+- Then `window.__ccGame` holds the live `{ scene, camera, renderer }` (or a bundle root the IIFE can walk). Paste [`examples/live-attach/dist/attach.iife.js`](../../../examples/live-attach/dist/attach.iife.js) after that assignment exists. Preferred alias remains `window.__THREEJS_DOCTOR_HOST__`.
+
+**`safe-auto` must not demand-loop games.** `frameloop-demand` is omitted from default `SAFE_PASSES` / Quality Ladder generic caps. Doctor `apply: ['safe']` and `QualityController` add it only when the profile is clearly `marketing` or `product` (static). Hosts that want it anyway opt in with `optimize({ apply: ['frameloop-demand'] })`. On a game, demand-loop starves frames, inflates p95, and marks samples `invalid` (`throttled-raf` / `floorFailed`).
+
+**Caps must never raise resolution.** `pixel-budget` / `dpr-cap` treat Three.js `setDrawingBufferSize(width, height, pixelRatio)` as **CSS size × DPR**. Passing drawing-buffer (device) pixels as `width`/`height` multiplies DPR again and can increase `drawingBufferPixels` versus the advise baseline.
+
 ## distance-cull (opt-in)
 
 The pass remains available as `optimize({ apply: ['distance-cull'] })` or `optimize({ apply: ['aggressive'] })`. It uses world-space bounds / `getWorldPosition` and is **one-shot**. Hosts must re-run it (or use a per-frame variant) as the camera moves. Three.js already frustum-culls; this pass is not part of default `SAFE_PASSES`.

@@ -369,10 +369,18 @@
     "shadow-budget",
     "postfx-budget",
     "tone-map-lite",
-    "anisotropy-cap",
-    "frameloop-demand"
+    "anisotropy-cap"
   ];
   var AGGRESSIVE_PASSES = ["distance-cull"];
+  function isStaticDemandProfile(profile) {
+    return profile === "marketing" || profile === "product";
+  }
+  function safePassesFor(profile) {
+    if (isStaticDemandProfile(profile)) {
+      return [...SAFE_PASSES, "frameloop-demand"];
+    }
+    return [...SAFE_PASSES];
+  }
 
   // ../../packages/core/src/device-probe.ts
   var GL_MAX_TEXTURE_SIZE = 3379;
@@ -1433,6 +1441,25 @@
   };
 
   // ../../packages/runtime/src/passes/pixel-budget.ts
+  function cssFromDrawingBuffer(devicePixels, pixelRatio) {
+    return devicePixels / pixelRatio;
+  }
+  function drawingBufferPixelsOf(renderer) {
+    const width = renderer.drawingBufferWidth;
+    const height = renderer.drawingBufferHeight;
+    if (width === void 0 || height === void 0) return void 0;
+    return width * height;
+  }
+  function restoreDrawingBuffer(renderer, cssW, cssH, prevRatio) {
+    try {
+      if (renderer.setDrawingBufferSize) {
+        renderer.setDrawingBufferSize(cssW, cssH, prevRatio);
+      } else {
+        renderer.setPixelRatio(prevRatio);
+      }
+    } catch {
+    }
+  }
   var pixelBudgetPass = {
     id: "pixel-budget",
     apply(ctx) {
@@ -1440,53 +1467,48 @@
       } };
       const renderer = ctx.renderer;
       const prevRatio = readRendererPixelRatio(renderer);
-      if (prevRatio === void 0) return { rollback() {
+      if (prevRatio === void 0 || !(prevRatio > 0)) return { rollback() {
       } };
       const prevW = renderer.drawingBufferWidth;
       const prevH = renderer.drawingBufferHeight;
       const capPixels = GENERIC_CAPS[ctx.qualityTier].drawingBufferPixels;
-      const restore = () => {
-        try {
-          if (renderer.setDrawingBufferSize && prevW !== void 0 && prevH !== void 0) {
-            renderer.setDrawingBufferSize(prevW, prevH, prevRatio);
-          } else {
-            renderer.setPixelRatio(prevRatio);
-          }
-        } catch {
-        }
-      };
       if (capPixels === void 0) {
         return { rollback() {
         } };
       }
-      const width = renderer.drawingBufferWidth;
-      const height = renderer.drawingBufferHeight;
-      if (width === void 0 || height === void 0) {
+      if (prevW === void 0 || prevH === void 0) {
         return { rollback() {
         } };
       }
-      const current = width * height;
+      const current = prevW * prevH;
       if (current <= capPixels) {
         return { rollback() {
         } };
       }
       const scale = Math.sqrt(capPixels / current);
       const newRatio = Math.min(prevRatio, prevRatio * scale);
-      if (!Number.isFinite(newRatio)) {
+      if (!Number.isFinite(newRatio) || newRatio >= prevRatio) {
         return { rollback() {
         } };
       }
+      const cssW = cssFromDrawingBuffer(prevW, prevRatio);
+      const cssH = cssFromDrawingBuffer(prevH, prevRatio);
+      const restore = () => restoreDrawingBuffer(renderer, cssW, cssH, prevRatio);
       try {
         if (renderer.setDrawingBufferSize) {
-          const newW = Math.max(1, Math.floor(width * scale));
-          const newH = Math.max(1, Math.floor(height * scale));
-          renderer.setDrawingBufferSize(newW, newH, prevRatio);
+          renderer.setDrawingBufferSize(cssW, cssH, newRatio);
         } else {
           renderer.setPixelRatio(newRatio);
         }
       } catch (err) {
         restore();
         throw err;
+      }
+      const nextPixels = drawingBufferPixelsOf(renderer);
+      if (nextPixels !== void 0 && nextPixels > current) {
+        restore();
+        return { rollback() {
+        } };
       }
       return { rollback: restore };
     }
@@ -2439,11 +2461,11 @@ ${line2}` : line1;
     }
     return { x: pos.x, y: pos.y, z: pos.z };
   }
-  function resolvePassIds(tokens) {
+  function resolvePassIds(tokens, profile) {
     const ids = [];
     const seen = /* @__PURE__ */ new Set();
     for (const token of tokens) {
-      const chunk = token === "safe" ? SAFE_PASSES : token === "aggressive" ? AGGRESSIVE_PASSES : [token];
+      const chunk = token === "safe" ? safePassesFor(profile) : token === "aggressive" ? AGGRESSIVE_PASSES : [token];
       for (const id of chunk) {
         if (seen.has(id)) continue;
         seen.add(id);
@@ -2557,6 +2579,18 @@ ${line2}` : line1;
       this.pinnedAutoProfile = resolveProfile("auto", snap);
       return this.pinnedAutoProfile;
     }
+    /**
+     * Profile used for generic caps. Defaults to `game` when unset so safe-auto
+     * never demand-loops a continuous RAF host by assuming marketing/static.
+     */
+    resolvedProfile() {
+      if (this.lastSnapshot) return this.concreteProfile(this.lastSnapshot);
+      if (this.opts.profile && this.opts.profile !== "auto") return this.opts.profile;
+      return this.lastReport?.profile ?? "game";
+    }
+    genericSafePasses() {
+      return safePassesFor(this.resolvedProfile());
+    }
     hostRenderPath() {
       if (this.opts.renderFrame) return this.opts.renderFrame;
       const render = this.opts.renderer.render;
@@ -2654,7 +2688,7 @@ ${line2}` : line1;
     applyPassesImmediate(passIds, extras) {
       const device = this.device();
       const cameraPosition = cameraPositionOf(this.opts.camera);
-      const profile = this.lastSnapshot ? this.concreteProfile(this.lastSnapshot) : this.opts.profile && this.opts.profile !== "auto" ? this.opts.profile : this.lastReport?.profile ?? "marketing";
+      const profile = this.resolvedProfile();
       const ctx = {
         renderer: this.opts.renderer,
         scene: this.opts.scene,
@@ -2784,7 +2818,7 @@ ${line2}` : line1;
         baselinePixels = first;
         controlChangedRatio = pixelChangedRatio(first, second, options.visualGate.channelThreshold);
       }
-      const passIds = resolvePassIds(options.apply ?? ["safe"]);
+      const passIds = resolvePassIds(options.apply ?? ["safe"], diagnosed.profile);
       const { appliedPasses, failedPasses } = this.applyPassesImmediate(passIds);
       const device = this.device();
       let after;
@@ -2984,7 +3018,7 @@ ${line2}` : line1;
             applyFailed = true;
           }
         }
-        const result = this.doctor.applyPassesImmediate([...SAFE_PASSES], {
+        const result = this.doctor.applyPassesImmediate(this.doctor.genericSafePasses(), {
           qualityTier: startTier
         });
         appliedPasses.push(...result.appliedPasses);
@@ -3454,7 +3488,9 @@ ${line2}` : line1;
       let thisRungFailed = false;
       let applyFailed = this.last?.applyFailed ?? false;
       let adapterUnavailable = this.last?.adapterUnavailable ?? false;
-      const result = this.doctor.applyPassesImmediate([...SAFE_PASSES], { qualityTier: tier });
+      const result = this.doctor.applyPassesImmediate(this.doctor.genericSafePasses(), {
+        qualityTier: tier
+      });
       appliedPasses.push(...result.appliedPasses);
       failedPasses.push(...result.failedPasses);
       if (failedPasses.length > 0) {
@@ -3620,6 +3656,7 @@ ${line2}` : line1;
     "app",
     "game",
     "Game",
+    "__ccGame",
     "engine",
     "Engine",
     "THREE",

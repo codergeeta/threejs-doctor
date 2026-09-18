@@ -235,6 +235,19 @@ describe('discoverThreeHandles', () => {
     expect(found?.renderer).toBe(renderer)
   })
 
+  it('finds Clockwork Climb handles under window.__ccGame', () => {
+    const scene = fakeScene('cc')
+    const camera = fakeCamera()
+    const renderer = fakeRenderer('cc')
+    const root = {
+      __ccGame: { scene, camera, renderer },
+    }
+    const found = discoverThreeHandles(root)
+    expect(found?.scene).toBe(scene)
+    expect(found?.camera).toBe(camera)
+    expect(found?.renderer).toBe(renderer)
+  })
+
   it('reads non-enumerable window.__THREE__ and module-like default exports', () => {
     const scene = fakeScene('ns')
     const camera = fakeCamera()

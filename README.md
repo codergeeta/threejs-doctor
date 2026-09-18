@@ -89,7 +89,7 @@ Hidden tabs and throttled rAF mark the sample `invalid` (and the report `incompl
 
 Live ocean attach notes for the unpublished Quality Ladder adapter (this repo does not vendor the demo) are in [`examples/ocean-adapter/README.md`](examples/ocean-adapter/README.md). Pasteable DevTools IIFE: [`examples/live-attach`](examples/live-attach/README.md). Local unpublished hosts (no pelagic) for live-attach discovery: [`examples/acceptance-fixture`](examples/acceptance-fixture/README.md) and the heavier [`examples/acceptance-fixture-game`](examples/acceptance-fixture-game/README.md). How a real game exposes `{ scene, camera, renderer }`: [`docs/superpowers/acceptance/host-integration.md`](docs/superpowers/acceptance/host-integration.md).
 
-Safe passes: `dpr-cap`, `pixel-budget` (no-op unless `qualityTier` is set), `shadow-budget`, `postfx-budget`, `tone-map-lite` / `anisotropy-cap` (same), `frameloop-demand`. Opt-in: `material-downgrade`, `distance-cull` (`apply: ['aggressive']` or `apply: ['distance-cull']`). `distance-cull` is world-space and **one-shot** — hosts must re-run it as the camera moves; it is not in default `SAFE_PASSES`. See [`docs/superpowers/acceptance/real-host-followups.md`](docs/superpowers/acceptance/real-host-followups.md).
+Safe passes: `dpr-cap`, `pixel-budget` (no-op unless `qualityTier` is set), `shadow-budget`, `postfx-budget`, `tone-map-lite` / `anisotropy-cap` (same). `frameloop-demand` is **not** in default `SAFE_PASSES`; `apply: ['safe']` / Quality Ladder `safe-auto` include it only for `marketing` / `product` (static). Games and continuous rAF hosts keep the host loop — opt in with `apply: ['frameloop-demand']`. Opt-in destructive: `material-downgrade`, `distance-cull` (`apply: ['aggressive']` or `apply: ['distance-cull']`). `distance-cull` is world-space and **one-shot** — hosts must re-run it as the camera moves; it is not in default `SAFE_PASSES`. See [`docs/superpowers/acceptance/real-host-followups.md`](docs/superpowers/acceptance/real-host-followups.md).
 
 ## React Three Fiber
 
@@ -130,7 +130,7 @@ Numbers below are copied from that JSON (`baseline` / `after` / `deltas`, plus D
 
 | Profile | Metric | Baseline (fixture) | After safe passes | Notes |
 |---------|--------|--------------------|-------------------|-------|
-| marketing | drawCalls | 90 | 90 (Δ 0) | score 75; applied default safe set (`dpr-cap`, `shadow-budget`, `postfx-budget`, `frameloop-demand`; `distance-cull` is opt-in) |
+| marketing | drawCalls | 90 | 90 (Δ 0) | score 75; applied default safe set (`dpr-cap`, `shadow-budget`, `postfx-budget`, `frameloop-demand` via marketing/static `safePassesFor`; `distance-cull` is opt-in) |
 | marketing | renderer DPR | 3 | 1.5 | low-tier `dpr-cap` (`Math.min(prev, 1.5)`); DPR is not a report metric field |
 | marketing | shadowCastingLightCount | 2 | 1 (Δ −1) | `shadow-budget` keeps 1 caster on marketing |
 | product | drawCalls | 110 | 110 (Δ 0) | score 75; same safe set |

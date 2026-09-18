@@ -142,6 +142,20 @@ describe('safe passes', () => {
     expect(mode).toBe('always')
   })
 
+  it('frameloop-demand does not switch a continuous game to demand', () => {
+    let mode: 'always' | 'demand' = 'always'
+    frameloopDemandPass.apply(
+      baseCtx({
+        profile: 'game',
+        frameloop: 'always',
+        setFrameloop(v) {
+          mode = v
+        },
+      }),
+    )
+    expect(mode).toBe('always')
+  })
+
   it('distance-cull hides far meshes in world space and rollbacks', () => {
     const near = {
       isMesh: true,
@@ -220,8 +234,8 @@ describe('v2 generic passes', () => {
       'postfx-budget',
       'tone-map-lite',
       'anisotropy-cap',
-      'frameloop-demand',
     ])
+    expect(SAFE_PASSES).not.toContain('frameloop-demand')
     expect(SAFE_PASSES).not.toContain('material-downgrade')
     expect(SAFE_PASSES).not.toContain('distance-cull')
   })
@@ -235,8 +249,8 @@ describe('v2 generic passes', () => {
         this.pixelRatio = v
       },
       setDrawingBufferSize(w: number, h: number, pr: number) {
-        this.drawingBufferWidth = w
-        this.drawingBufferHeight = h
+        this.drawingBufferWidth = Math.max(1, Math.floor(w * pr))
+        this.drawingBufferHeight = Math.max(1, Math.floor(h * pr))
         this.pixelRatio = pr
       },
     }
@@ -248,11 +262,39 @@ describe('v2 generic passes', () => {
     )
     const pixels = renderer.drawingBufferWidth * renderer.drawingBufferHeight
     expect(pixels).toBeLessThanOrEqual(1.2e6)
+    expect(pixels).toBeLessThanOrEqual(2000 * 2000)
     expect(renderer.pixelRatio).toBeLessThanOrEqual(2)
     handle.rollback()
     expect(renderer.drawingBufferWidth).toBe(2000)
     expect(renderer.drawingBufferHeight).toBe(2000)
     expect(renderer.pixelRatio).toBe(2)
+  })
+
+  it('pixel-budget does not raise drawing-buffer pixels on Three.js CSS setDrawingBufferSize', () => {
+    const renderer = {
+      pixelRatio: 2,
+      drawingBufferWidth: 1920,
+      drawingBufferHeight: 1080,
+      setPixelRatio(v: number) {
+        this.pixelRatio = v
+      },
+      setDrawingBufferSize(width: number, height: number, pixelRatio: number) {
+        this.pixelRatio = pixelRatio
+        this.drawingBufferWidth = Math.max(1, Math.floor(width * pixelRatio))
+        this.drawingBufferHeight = Math.max(1, Math.floor(height * pixelRatio))
+      },
+    }
+    const before = renderer.drawingBufferWidth * renderer.drawingBufferHeight
+    pixelBudgetPass.apply(
+      baseCtx({
+        renderer: renderer as never,
+        qualityTier: 'potato',
+      }),
+    )
+    const after = renderer.drawingBufferWidth * renderer.drawingBufferHeight
+    expect(after).toBeLessThanOrEqual(before)
+    expect(after).toBeLessThanOrEqual(1.2e6)
+    expect(renderer.pixelRatio).toBeLessThanOrEqual(2)
   })
 
   it('pixel-budget does not raise DPR when already under the pixel cap', () => {

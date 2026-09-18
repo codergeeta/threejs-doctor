@@ -96,6 +96,7 @@ const BUNDLE_ROOT_KEYS = [
   'app',
   'game',
   'Game',
+  '__ccGame',
   'engine',
   'Engine',
   'THREE',

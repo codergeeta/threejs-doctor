@@ -213,8 +213,9 @@ describe('P0: distance-cull must not hide nested scenery on default safe apply',
     return { mesh, group, scene }
   }
 
-  it('does not include distance-cull in SAFE_PASSES', () => {
+  it('does not include distance-cull or frameloop-demand in SAFE_PASSES', () => {
     expect(SAFE_PASSES).not.toContain('distance-cull')
+    expect(SAFE_PASSES).not.toContain('frameloop-demand')
   })
 
   it('default safe optimize leaves a nested mesh at local (0,0,0) visible when the camera is far from origin', async () => {

@@ -19,6 +19,7 @@ export const frameloopDemandPass: OptimizePass = {
         throw err
       }
     }
+    // Games / continuous RAF keep `always`. Do not include this pass in SAFE_PASSES.
     return {
       rollback() {
         ctx.setFrameloop(prev)

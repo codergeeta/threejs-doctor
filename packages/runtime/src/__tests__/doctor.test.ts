@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { Doctor } from '../doctor.js'
-import { SAFE_PASSES, type RendererInfoLike, type SceneStatsLike } from '@threejs-doctor/core'
+import { safePassesFor, type RendererInfoLike, type SceneStatsLike } from '@threejs-doctor/core'
 
 function createHarness(opts?: {
   getSceneStats?: () => SceneStatsLike
@@ -118,7 +118,7 @@ describe('Doctor', () => {
   it('does not apply material-downgrade or distance-cull in the default safe set', async () => {
     const { doctor } = createHarness()
     const report = await doctor.optimize({ apply: ['safe'] })
-    expect(report.appliedPasses).toEqual([...SAFE_PASSES])
+    expect(report.appliedPasses).toEqual(safePassesFor('marketing'))
     expect(report.appliedPasses).not.toContain('material-downgrade')
     expect(report.appliedPasses).not.toContain('distance-cull')
   })
