@@ -2,13 +2,37 @@
 
 P0 from the real-host report (dpr-cap NaN, distance-cull hiding nested meshes, honest scan/ci, unpublished npm name) is handled in the runtime/CLI.
 
+## Round 5 — audit of published 0.1.2 vs arcade racer (fixes in 0.1.3)
+
+Round-4 hang timeout, visual rollback, and 0.1.2 publish remain the baseline. **npm 0.1.2 is published.** **0.1.3 is not published from this PR.** Trusted Publisher is **not** attached. See [`docs/publish-checklist.md`](../../publish-checklist.md).
+
+| Item | Status |
+|------|--------|
+| P0 100ms timeout reports slow devices as `invalid: 'hidden'` | **Fixed.** Hidden only from `document.visibilityState` / `document.hidden`. Wait timeout skips GPU harvest; does not mark the sample hidden. Visible 120ms rAF stays valid. |
+| README `waitFrame` hangs | **Fixed.** README recommends `waitGpuMacrotask`. Doctor wraps user `waitFrame` so a hidden tab cannot hang. |
+| P0 composer-drift false negative | **Fixed.** three.js EffectComposer requires `setPixelRatio` (setSize reuses construction DPR). pmndrs `postprocessing` setSize-only is synced. suggestedFix text matches. |
+| Finding locations only `[0]` | **Fixed.** Every site in `locations[]`, human output, SARIF `relatedLocations`. |
+| SARIF paths + empty rules | **Fixed.** URIs relative to git root. `tool.driver.rules` from message / suggestedFix. |
+| One git process per file | **Fixed.** `git check-ignore --stdin -z` batched. |
+| Provenance / empty `dist.attestations` | **Docs + check.** Publish 0.1.3 only via `publish.yml` after Trusted Publisher; delete `NPM_TOKEN`. `scripts/check-provenance.mjs --published` fails if attestations empty. Dry-runs skip the registry. Does **not** attach Trusted Publisher or delete secrets. |
+| Static score ceiling | **Documented.** Static score often does not move when wins are runtime. |
+
+`distance-cull` and `frameloop-demand` stay **out** of default game `SAFE_PASSES`. Scan still does not invent runtime metrics.
+
+### Residual (not this PR / backlog)
+
+- Runtime Playwright pose CI vs baseline JSON (strongest next gate now that static score often does not move)
+- GPU time per composer pass / helpers / shader hitch
+- **Trusted Publisher** — attach GitHub Actions Trusted Publisher on each published package, then delete `NPM_TOKEN`, then publish 0.1.3. Not done from this agent.
+- **Phone ocean** — still a follow-up capture
+
 ## Round 4 — audit of published 0.1.1 vs arcade racer (fixes in 0.1.2)
 
 Round-3 GPU isolation, visual gate, and 0.1.1 publish remain the baseline. **npm 0.1.2 is published.** Remaining (optional, not a blocker): Trusted Publisher on each package, then delete `NPM_TOKEN`. See [`docs/publish-checklist.md`](../../publish-checklist.md).
 
 | Item | Status |
 |------|--------|
-| P0 `measure()` hang in a background tab | **Fixed.** `waitGpuMacrotask` races `requestAnimationFrame` against `setTimeout(100)`. Timeout or hidden document bails with `invalid: 'hidden'`. Unit tests stub stalled rAF. |
+| P0 `measure()` hang in a background tab | **Fixed in 0.1.2; semantics fixed in 0.1.3.** `waitGpuMacrotask` races rAF against a timeout so measure cannot hang. Timeout no longer reports `invalid: 'hidden'` on visible slow devices. |
 | P0 visual rollback undoes earlier accepted passes | **Fixed.** `optimize()` rolls back only handles added by **that** call. Report after/deltas/appliedPasses reflect the restored accepted state. Test: optimize A accepted → optimize B fails visual gate → A still applied. |
 | P1 `auto` → marketing + demand | **Fixed.** Any continuous loop (`requestAnimationFrame` + render, `setAnimationLoop`, R3F `<Canvas>`) classifies as **game**. Static scan never recommends `frameloop-demand` from auto facts. |
 | P1 missed vanilla lights / shadows | **Fixed.** Positional intensity `0` on PointLight/SpotLight/etc. Non-literal-false `castShadow =` (e.g. `this.quality !== 'low'`). |
@@ -17,7 +41,7 @@ Round-3 GPU isolation, visual gate, and 0.1.1 publish remain the baseline. **npm
 | P1 collectSources | Honours `.gitignore`; skips minified (long first line / high avg line length); skips vendored three `REVISION` banner. |
 | P1 finding locations | Findings carry `file:line`. `--format sarif` available. |
 | P1 static score label | Human/JSON report marks **Static Doctor Score**; 100 is not a runtime speed claim. |
-| P1 composer pixel-ratio drift | `new EffectComposer` + renderer `setPixelRatio` without `composer.setPixelRatio` / `composer.setSize` → `renderer/composer-pixel-ratio-drift`. |
+| P1 composer pixel-ratio drift | **Fixed in 0.1.3.** three.js EffectComposer needs `composer.setPixelRatio` when renderer DPR changes; `setSize` alone is not enough. pmndrs `postprocessing` may use `setSize` only. |
 
 `distance-cull` and `frameloop-demand` stay **out** of default game `SAFE_PASSES`. Scan still does not invent runtime metrics.
 

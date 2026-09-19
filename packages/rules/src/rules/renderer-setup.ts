@@ -73,7 +73,8 @@ export const rendererSetupRule: Rule = {
         severity: 'warn' as const,
         evidence,
         message: 'EffectComposer internal size/pixel ratio is stale vs the renderer drawing buffer',
-        suggestedFix: 'Call composer.setSize / setPixelRatio whenever the renderer resizes or DPR changes',
+        suggestedFix:
+          'For three.js EffectComposer, call composer.setPixelRatio when the renderer DPR changes; setSize alone reuses the construction pixel ratio. pmndrs postprocessing may use setSize only.',
       })
     }
     return findings

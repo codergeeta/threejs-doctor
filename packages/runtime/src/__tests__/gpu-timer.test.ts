@@ -338,8 +338,10 @@ describe('waitGpuMacrotask does not hang when rAF is stalled', () => {
     expect(result.timedOut).toBe(false)
   })
 
-  it('marks a live-clock GPU measure invalid/hidden instead of hanging on stalled rAF', async () => {
+  it('does not mark a visible live-clock GPU measure hidden when rAF is stalled', async () => {
     globalThis.requestAnimationFrame = (() => 1) as typeof requestAnimationFrame
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
     const { gl, ext } = webgl2TimerGl({ delayFrames: 1, ns: 2_000_000 })
     const renderer = rendererFor(gl, { ext })
     const doctor = new Doctor({
@@ -353,6 +355,78 @@ describe('waitGpuMacrotask does not hang when rAF is stalled', () => {
       doctor.measure(2),
       new Promise<never>((_, reject) => {
         setTimeout(() => reject(new Error('measure hung on stalled rAF')), 800)
+      }),
+    ])
+    expect(sample.invalidReason).not.toBe('hidden')
+    expect(sample.invalid).not.toBe(true)
+  })
+
+  it('does not mark a visible slow 120ms rAF as invalid hidden', async () => {
+    globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => {
+      const id = setTimeout(() => cb(0), 120)
+      return id as unknown as number
+    }) as typeof requestAnimationFrame
+    globalThis.cancelAnimationFrame = ((id: number) => {
+      clearTimeout(id)
+    }) as typeof cancelAnimationFrame
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
+    const { gl, ext } = webgl2TimerGl({ delayFrames: 1, ns: 2_000_000 })
+    const renderer = rendererFor(gl, { ext })
+    const doctor = new Doctor({
+      scene: { children: [], traverse() {} } as never,
+      camera: {},
+      renderer: renderer as never,
+      profile: 'game',
+      measureFrames: 2,
+    })
+    const sample = await doctor.measure(2)
+    expect(sample.invalidReason).not.toBe('hidden')
+    expect(sample.invalid).not.toBe(true)
+  })
+
+  it('marks a live-clock GPU measure invalid/hidden only when the document is hidden', async () => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+    const { gl, ext } = webgl2TimerGl({ delayFrames: 1, ns: 2_000_000 })
+    const renderer = rendererFor(gl, { ext })
+    const doctor = new Doctor({
+      scene: { children: [], traverse() {} } as never,
+      camera: {},
+      renderer: renderer as never,
+      profile: 'game',
+      measureFrames: 2,
+    })
+    const sample = await Promise.race([
+      doctor.measure(2),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('measure hung on hidden document')), 800)
+      }),
+    ])
+    expect(sample.invalid).toBe(true)
+    expect(sample.invalidReason).toBe('hidden')
+  })
+
+  it('does not hang when a host waitFrame is raw rAF and the document is hidden', async () => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+    globalThis.requestAnimationFrame = (() => 1) as typeof requestAnimationFrame
+    const doctor = new Doctor({
+      scene: { children: [], traverse() {} } as never,
+      camera: {},
+      renderer: {
+        info: { render: { calls: 1, triangles: 1 }, memory: { geometries: 0, textures: 0 } },
+        setPixelRatio() {},
+        render() {},
+      } as never,
+      profile: 'game',
+      measureFrames: 2,
+      waitFrame: () => new Promise(requestAnimationFrame),
+    })
+    const sample = await Promise.race([
+      doctor.measure(2),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('measure hung on user waitFrame')), 800)
       }),
     ])
     expect(sample.invalid).toBe(true)

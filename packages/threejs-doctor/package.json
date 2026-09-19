@@ -1,6 +1,6 @@
 {
   "name": "threejs-doctor",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Unscoped CLI alias that reserves the threejs-doctor name and forwards to @threejs-doctor/cli.",
   "license": "MIT",
   "author": "codergeeta",

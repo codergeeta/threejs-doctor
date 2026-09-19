@@ -38,7 +38,7 @@ export interface SourceFile {
   source: string
 }
 
-function gitTopLevel(dir: string): string | undefined {
+export function gitTopLevel(dir: string): string | undefined {
   try {
     const r = spawnSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], {
       encoding: 'utf8',
@@ -47,6 +47,32 @@ function gitTopLevel(dir: string): string | undefined {
     if (r.status !== 0) return undefined
     const top = r.stdout.trim()
     return top || undefined
+  } catch {
+    return undefined
+  }
+}
+
+function gitIgnoredAbsPaths(cwd: string, files: string[]): Set<string> | undefined {
+  if (files.length === 0) return new Set()
+  try {
+    const rels = files.map((file) => {
+      const rel = relative(cwd, file)
+      return rel.length > 0 ? rel : file
+    })
+    const r = spawnSync('git', ['-C', cwd, 'check-ignore', '--stdin', '-z', '--no-index'], {
+      input: Buffer.from(`${rels.join('\0')}\0`),
+      encoding: 'utf8',
+      maxBuffer: 32 * 1024 * 1024,
+      stdio: ['pipe', 'pipe', 'ignore'],
+    })
+    if (r.error) return undefined
+    if (r.status !== 0 && r.status !== 1) return undefined
+    const ignored = new Set<string>()
+    for (const part of (r.stdout ?? '').split('\0')) {
+      if (!part) continue
+      ignored.add(resolve(cwd, part))
+    }
+    return ignored
   } catch {
     return undefined
   }
@@ -171,12 +197,21 @@ export async function collectSources(root: string): Promise<SourceFile[]> {
   const gitRoot = gitTopLevel(scanRoot)
   const fallbackIgnore = await loadGitignorePatterns(scanRoot)
 
+  const sourceCandidates = files.filter((file) => {
+    if (!SOURCE_EXT.has(extname(file).toLowerCase())) return false
+    if (/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(file)) return false
+    if (/\.d\.ts$/.test(file)) return false
+    return true
+  })
+  const ignoredAbs = gitRoot ? gitIgnoredAbsPaths(gitRoot, sourceCandidates) : undefined
+
   const out: SourceFile[] = []
-  for (const file of files) {
-    if (!SOURCE_EXT.has(extname(file).toLowerCase())) continue
-    if (/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(file)) continue
-    if (/\.d\.ts$/.test(file)) continue
-    if (await shouldSkipFile(file, scanRoot, gitRoot, fallbackIgnore)) continue
+  for (const file of sourceCandidates) {
+    if (ignoredAbs) {
+      if (ignoredAbs.has(resolve(file))) continue
+    } else if (await shouldSkipFile(file, scanRoot, gitRoot, fallbackIgnore)) {
+      continue
+    }
     const size = (await stat(file)).size
     if (size > MAX_FILE_BYTES) continue
     const source = await readFile(file, 'utf8')

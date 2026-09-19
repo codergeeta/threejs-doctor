@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { formatHumanReport } from '../report/human.js'
 import { formatJsonReport } from '../report/json.js'
+import { formatSarifReport } from '../report/sarif.js'
 import type { DoctorReport } from '@threejs-doctor/runtime'
 
 const report: DoctorReport = {
@@ -121,5 +122,71 @@ describe('reports', () => {
     expect(text).toMatch(/Static Doctor Score/i)
     expect(text).toMatch(/not a runtime speed/i)
     expect(text).toContain('src/lights.js:42')
+  })
+
+  it('lists every finding location in human output', () => {
+    const text = formatHumanReport({
+      ...report,
+      mode: 'diagnose',
+      staticScan: true,
+      after: undefined,
+      deltas: undefined,
+      findings: [
+        {
+          id: 'culling/frustum-disabled',
+          severity: 'warn',
+          evidence: { frustumCulledDisabledCount: 2, file: 'src/game/Effects.js', line: 12 },
+          message: '2 meshes have frustumCulled === false',
+          suggestedFix: 'Enable frustumCulled on world meshes',
+          locations: [
+            { file: 'src/game/Effects.js', line: 12 },
+            { file: 'src/game/Environment.js', line: 88 },
+          ],
+        },
+      ],
+    })
+    expect(text).toContain('src/game/Effects.js:12')
+    expect(text).toContain('src/game/Environment.js:88')
+  })
+
+  it('emits SARIF relatedLocations, git-root URIs, and driver rules from suggestedFix', () => {
+    const sarif = JSON.parse(
+      formatSarifReport({
+        ...report,
+        mode: 'diagnose',
+        staticScan: true,
+        findings: [
+          {
+            id: 'culling/frustum-disabled',
+            severity: 'warn',
+            evidence: { frustumCulledDisabledCount: 2, file: 'src/game/Effects.js', line: 12 },
+            message: '2 meshes have frustumCulled === false',
+            suggestedFix: 'Enable frustumCulled on world meshes',
+            locations: [
+              { file: 'src/game/Effects.js', line: 12 },
+              { file: 'src/game/Environment.js', line: 88 },
+            ],
+          },
+        ],
+      }),
+    ) as {
+      runs: Array<{
+        tool: { driver: { rules: Array<{ id: string; shortDescription?: { text: string }; help?: { text: string } }> } }
+        results: Array<{
+          ruleId: string
+          locations?: Array<{ physicalLocation: { artifactLocation: { uri: string } } }>
+          relatedLocations?: Array<{ physicalLocation: { artifactLocation: { uri: string } } }>
+        }>
+      }>
+    }
+    const run = sarif.runs[0]!
+    const result = run.results[0]!
+    expect(result.locations?.[0]?.physicalLocation.artifactLocation.uri).toBe('src/game/Effects.js')
+    expect(result.relatedLocations?.some((l) => l.physicalLocation.artifactLocation.uri === 'src/game/Environment.js')).toBe(
+      true,
+    )
+    const rule = run.tool.driver.rules.find((r) => r.id === 'culling/frustum-disabled')
+    expect(rule?.shortDescription?.text).toMatch(/frustumCulled/)
+    expect(rule?.help?.text).toMatch(/Enable frustumCulled/)
   })
 })

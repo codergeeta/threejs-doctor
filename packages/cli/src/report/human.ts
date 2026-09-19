@@ -1,6 +1,11 @@
 import type { DoctorReport } from '@threejs-doctor/runtime'
+import type { Finding } from '@threejs-doctor/rules'
 
-function locationSuffix(evidence: { file?: unknown; line?: unknown }): string {
+function locationSuffix(finding: Finding): string {
+  if (finding.locations && finding.locations.length > 0) {
+    return ` (${finding.locations.map((loc) => `${loc.file}:${loc.line}`).join(', ')})`
+  }
+  const evidence = finding.evidence
   if (typeof evidence.file === 'string' && typeof evidence.line === 'number') {
     return ` (${evidence.file}:${evidence.line})`
   }
@@ -21,7 +26,7 @@ export function formatHumanReport(report: DoctorReport): string {
   lines.push('Findings:')
   if (report.findings.length === 0) lines.push('  (none)')
   for (const f of report.findings) {
-    lines.push(`  [${f.severity}] ${f.id}: ${f.message}${locationSuffix(f.evidence)}`)
+    lines.push(`  [${f.severity}] ${f.id}: ${f.message}${locationSuffix(f)}`)
     lines.push(`    fix: ${f.suggestedFix}`)
   }
   lines.push('')

@@ -228,12 +228,28 @@ describe('extractStaticFacts', () => {
     expect(facts.locations.rendererCtor[0]?.line).toBe(3)
   })
 
-  it('treats composer.setPixelRatio or composer.setSize as synced', () => {
+  it('does not treat three.js EffectComposer.setSize as pixel-ratio sync', () => {
+    const facts = extractStaticFacts([
+      {
+        path: 'ok2.js',
+        source: `
+          import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
+          const composer = new EffectComposer(gl)
+          renderer.setPixelRatio(2)
+          composer.setSize(w, h)
+        `,
+      },
+    ])
+    expect(facts.composerCtorCount).toBe(1)
+    expect(facts.composerPixelRatioSynced).toBe(false)
+  })
+
+  it('treats composer.setPixelRatio as synced for vanilla EffectComposer', () => {
     const synced = extractStaticFacts([
       {
         path: 'ok.js',
         source: `
-          import { EffectComposer } from 'postprocessing'
+          import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'
           const composer = new EffectComposer(renderer)
           renderer.setPixelRatio(dpr)
           composer.setPixelRatio(dpr)
@@ -242,18 +258,22 @@ describe('extractStaticFacts', () => {
     ])
     expect(synced.composerCtorCount).toBe(1)
     expect(synced.composerPixelRatioSynced).toBe(true)
+  })
 
-    const sized = extractStaticFacts([
+  it('treats pmndrs postprocessing setSize-only as synced when detectable', () => {
+    const pmndrs = extractStaticFacts([
       {
-        path: 'ok2.js',
+        path: 'pp.js',
         source: `
-          const composer = new EffectComposer(gl)
-          renderer.setPixelRatio(2)
+          import { EffectComposer } from 'postprocessing'
+          const composer = new EffectComposer(renderer)
+          renderer.setPixelRatio(dpr)
           composer.setSize(w, h)
         `,
       },
     ])
-    expect(sized.composerPixelRatioSynced).toBe(true)
+    expect(pmndrs.composerCtorCount).toBe(1)
+    expect(pmndrs.composerPixelRatioSynced).toBe(true)
   })
 })
 

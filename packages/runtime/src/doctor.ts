@@ -47,7 +47,7 @@ import { mountOverlay as mountOverlayImpl, type OverlayHandle } from './overlay/
 import type { QualityHudState } from './overlay/format-quality-hud.js'
 import { readRendererAntialias, readRendererPixelRatio } from './renderer-read.js'
 import { collectHostSceneStats, applyHostInsights, type CollectHostSceneOptions } from './scene-stats.js'
-import { createGpuFrameSampler, waitGpuMacrotask } from './gpu-timer.js'
+import { createGpuFrameSampler, waitGpuMacrotask, guardWaitFrame } from './gpu-timer.js'
 import { findComposer, notifyPixelRatioChange } from './composer.js'
 import { InstanceLeakTracker } from './instance-leak-tracker.js'
 
@@ -90,6 +90,8 @@ export interface DoctorOptions {
   /**
    * Awaited between beginFrame and endFrame so live attach can sample real rAF deltas.
    * When set, this is the host render path (do not also call renderer.render).
+   * Prefer `waitGpuMacrotask` over raw `new Promise(requestAnimationFrame)` — Doctor also
+   * wraps this hook so a hidden tab cannot hang `measure()`.
    */
   waitFrame?: () => Promise<unknown>
   /**
@@ -487,7 +489,6 @@ export class Doctor {
       hook(composer as { render?: (...args: never[]) => unknown })
     }
     gpu?.beginMeasure()
-    let gpuWaitHidden = false
     try {
       for (let i = 0; i < frames; i++) {
         info.reset?.()
@@ -495,7 +496,7 @@ export class Doctor {
         const start = now()
         collector.beginFrame(start)
         gpu?.begin()
-        if (waitFrame) await waitFrame()
+        if (waitFrame) await guardWaitFrame(waitFrame)
         else if (renderFrame) await renderFrame()
         gpuTimes.push(...(gpu?.end() ?? []))
         const end = workMs !== undefined ? start + workMs : now()
@@ -506,16 +507,15 @@ export class Doctor {
         // event loop so QUERY_RESULT_AVAILABLE never flips. Yield a macrotask when
         // a GPU sampler exists so results can complete, or leftovers are discarded.
         // Race rAF against a short timeout so a background tab cannot hang measure().
+        // Timeout skips harvest; hidden is decided only from document.visibilityState.
         if (gpu && !waitFrame && liveClock) {
-          const wait = await waitGpuMacrotask()
-          if (wait.timedOut) gpuWaitHidden = true
+          await waitGpuMacrotask()
         }
       }
       if (gpu && liveClock) {
         for (let i = 0; i < 4; i++) {
           const wait = await waitGpuMacrotask()
           if (wait.timedOut) {
-            gpuWaitHidden = true
             break
           }
           gpuTimes.push(...gpu.harvest())
@@ -539,9 +539,7 @@ export class Doctor {
       frameTimesMs: [...collector.frameTimes()],
     }
     const visibility = liveClock ? readVisibilityState() : 'visible'
-    if (gpuWaitHidden && liveClock) {
-      validityInput.visibilityState = 'hidden'
-    } else if (visibility !== undefined) {
+    if (visibility !== undefined) {
       validityInput.visibilityState = visibility
     }
     const validity = classifyMeasureValidity(validityInput)

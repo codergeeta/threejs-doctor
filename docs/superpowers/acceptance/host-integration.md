@@ -2,7 +2,7 @@
 
 Live-attach needs **`{ scene, camera, renderer }`**. Expose them **before** pasting
 [`examples/live-attach/dist/attach.iife.js`](../../../examples/live-attach/dist/attach.iife.js).
-The IIFE is still a repo file (not on npm). Runtime/CLI **0.1.2 is on npm**.
+The IIFE is still a repo file (not on npm). Runtime/CLI **0.1.2 is on npm**; **0.1.3 is pending publish**.
 Do not invent FPS. Capture JSON stays off-repo.
 
 ## Preferred: one assignment (copy-paste)
