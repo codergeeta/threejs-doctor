@@ -44,10 +44,12 @@ Default mode is `advise` (no pass/adapter mutation). Overlay mounts when
 advance when that counter exists.
 
 **Default paste is safe:** discovery uses cheap paths only
-(`__THREEJS_DOCTOR_HOST__`, pelagic, canvas bags, bundle roots, a shallow
-global walk). It does **not** BFS the live page. A previous 50k-node
-`isWebGLRenderer` walk froze [moonbase](https://konstantinsteinmiller.github.io/moonbase)
-with no `LAST_REPORT`. For bundled hosts that need the graph walk, opt in
+(`__THREEJS_DOCTOR_HOST__` including optional `composer`, pelagic, WebGL canvases
+capped at 8 with `domElement` reverse lookup / `canvas.__r3f`, bundle roots
+including `renderer` / `gameApp` / `__game`, a shallow global walk). It does
+**not** BFS the live page. A previous 50k-node `isWebGLRenderer` walk froze
+[moonbase](https://konstantinsteinmiller.github.io/moonbase) with no
+`LAST_REPORT`. For bundled hosts that need the graph walk, opt in
 **before** paste:
 
 ```js
@@ -177,17 +179,21 @@ pass `{ scene, camera, renderer }` explicitly from that page’s console.
 Bundled apps (Claude-of-Tanks, many Vite/webpack games) often keep Three.js
 objects in module closures, **not** on `window`. The IIFE now tries, in order:
 
-1. Explicit `attachQualityLadder({ scene, camera, renderer })`
-2. `window.__THREEJS_DOCTOR_HOST__` (`{ scene, camera, renderer }` — used by the
+1. Explicit `attachQualityLadder({ scene, camera, renderer, composer })`
+2. `window.__THREEJS_DOCTOR_HOST__` (`{ scene, camera, renderer, composer? }` —
+   copy-paste [`examples/host-shim/expose.js`](../host-shim/expose.js); used by the
    unpublished local [acceptance-fixture](../acceptance-fixture/README.md); no pelagic required)
 3. `window.pelagic.debug` (ocean)
-4. **Canvas walk** — `document.querySelectorAll('canvas')`, then `__THREE__`,
-   `userData`, `_renderer` / `__renderer`, and a WebGL context bag if Three (or
-   the host) stored a renderer there. Three.js itself does **not** always attach
+4. **Canvas walk** — WebGL canvases only, **at most 8**, largest drawing buffer
+   first (HUD-heavy pages with dozens of canvases must not freeze paste). Then
+   `__THREE__`, `__r3f.getState()` (R3F `{ scene, camera, gl }`), `userData`,
+   `_renderer` / `__renderer`, a WebGL context bag, and a cheap-root renderer
+   whose `domElement` is that canvas. Three.js itself does **not** always attach
    a reverse mapping on the canvas.
-5. **Bundle roots** — `window.app`, `window.game`, `window.__ccGame`, `window.__THREE__`, and
-   module-like `default` / `exports` singletons (non-enumerable keys included;
-   throwing getters are skipped)
+5. **Bundle roots** — `window.app`, `window.game`, `window.__ccGame`,
+   `window.__game`, `window.gameApp`, `window.threeApp`, `window.renderer` /
+   `window.scene` / `window.composer` (non-enumerable keys included; throwing
+   getters are skipped)
 6. Shallow enumerable global walk (depth 4 / 400 visits — not a full-page BFS)
 7. **Deep walk (opt-in)** — only if `window.__THREEJS_DOCTOR_ATTACH__.deepWalk === true`
    (or `attachQualityLadder({ deepWalk: true })`). BFS from `window`, `document`,

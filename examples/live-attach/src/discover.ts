@@ -2,6 +2,7 @@ export interface DiscoveredHandles {
   scene: unknown
   camera: unknown
   renderer: unknown
+  composer?: unknown
   source: 'explicit' | 'host' | 'pelagic' | 'walk' | 'canvas'
 }
 
@@ -11,6 +12,7 @@ export interface ExplicitHandles {
   scene?: unknown
   camera?: unknown
   renderer?: unknown
+  composer?: unknown
 }
 
 export interface DiscoveryOptions {
@@ -44,9 +46,13 @@ export interface DiscoveryAttempt {
   scene?: unknown
   camera?: unknown
   renderer?: unknown
+  composer?: unknown
   source?: DiscoveredHandles['source']
   probe: DiscoveryProbe
 }
+
+/** Cap canvas inspection so a HUD-heavy page (dozens of canvases) cannot freeze paste. */
+export const MAX_INSPECT_CANVASES = 8
 
 const SKIP_KEYS = new Set([
   'document',
@@ -112,10 +118,20 @@ const BUNDLE_ROOT_KEYS = [
   'Application',
   'instance',
   'singleton',
+  'scene',
+  'camera',
+  'renderer',
+  'composer',
+  'effectComposer',
+  '__game',
+  'threeApp',
+  'gameApp',
+  '__app',
 ] as const
 
 const CANVAS_HANDLE_KEYS = [
   '__THREE__',
+  '__r3f',
   'userData',
   '__renderer',
   '_renderer',
@@ -125,6 +141,7 @@ const CANVAS_HANDLE_KEYS = [
 
 const RENDERER_SCENE_KEYS = ['scene', '_scene', 'currentScene', '_currentScene'] as const
 const RENDERER_CAMERA_KEYS = ['camera', '_camera', 'currentCamera', '_currentCamera'] as const
+const RENDERER_COMPOSER_KEYS = ['composer', '_composer', 'effectComposer'] as const
 const GL_CONTEXT_IDS = ['webgl2', 'webgl', 'experimental-webgl'] as const
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -166,6 +183,25 @@ function isCamera(value: unknown): boolean {
   return value.isCamera === true || value.isPerspectiveCamera === true || value.isOrthographicCamera === true
 }
 
+function isComposerLike(value: unknown): boolean {
+  if (!isRecord(value)) return false
+  if (value.isEffectComposer === true) return true
+  const hasPasses = Array.isArray(value.passes)
+  const hasClassicTarget = value.renderTarget1 !== undefined || value.writeBuffer !== undefined
+  const hasPmndrsTarget = value.inputBuffer !== undefined || value.outputBuffer !== undefined
+  return hasPasses && (hasClassicTarget || hasPmndrsTarget)
+}
+
+function pickComposer(from: unknown): unknown {
+  if (isComposerLike(from)) return from
+  if (!isRecord(from)) return undefined
+  for (const key of RENDERER_COMPOSER_KEYS) {
+    const value = readKey(from, key)
+    if (isComposerLike(value)) return value
+  }
+  return undefined
+}
+
 function readKey(obj: unknown, key: string): unknown {
   if (!isRecord(obj)) return undefined
   try {
@@ -196,14 +232,19 @@ function fromDoctorHost(root: unknown): DiscoveredHandles | undefined {
   const host = readKey(root, DOCTOR_HOST_KEY)
   if (!isRecord(host) || host.scene == null || host.renderer == null) return undefined
   const camera = host.camera ?? findCameraInScene(host.scene) ?? {}
-  return { scene: host.scene, camera, renderer: host.renderer, source: 'host' }
+  const out: DiscoveredHandles = { scene: host.scene, camera, renderer: host.renderer, source: 'host' }
+  if (host.composer != null) out.composer = host.composer
+  return out
 }
 
 function fromPelagic(root: unknown): DiscoveredHandles | undefined {
   const debug = pelagicDebug(root)
   if (!debug || debug.scene == null || debug.renderer == null) return undefined
   const camera = debug.camera ?? findCameraInScene(debug.scene) ?? {}
-  return { scene: debug.scene, camera, renderer: debug.renderer, source: 'pelagic' }
+  const out: DiscoveredHandles = { scene: debug.scene, camera, renderer: debug.renderer, source: 'pelagic' }
+  const composer = debug.composer ?? debug.effectComposer
+  if (composer != null) out.composer = composer
+  return out
 }
 
 interface WalkLimits {
@@ -216,6 +257,7 @@ interface PartialHandles {
   scene?: unknown
   camera?: unknown
   renderer?: unknown
+  composer?: unknown
 }
 
 function mergeHandles(into: PartialHandles, extra: PartialHandles | undefined): void {
@@ -223,6 +265,7 @@ function mergeHandles(into: PartialHandles, extra: PartialHandles | undefined): 
   if (into.scene == null && extra.scene != null) into.scene = extra.scene
   if (into.camera == null && extra.camera != null) into.camera = extra.camera
   if (into.renderer == null && extra.renderer != null) into.renderer = extra.renderer
+  if (into.composer == null && extra.composer != null) into.composer = extra.composer
 }
 
 function fillFromRenderer(renderer: unknown): PartialHandles {
@@ -251,6 +294,8 @@ function fillFromRenderer(renderer: unknown): PartialHandles {
     const camera = readKey(userData, 'camera')
     if (isCamera(camera)) out.camera = camera
   }
+  const composer = pickComposer(renderer) ?? pickComposer(userData)
+  if (composer != null) out.composer = composer
   return out
 }
 
@@ -306,6 +351,7 @@ function walk(root: unknown, limits: WalkLimits): PartialHandles | undefined {
       if (!found.renderer && isRenderer(value)) found.renderer = value
       if (!found.scene && isScene(value)) found.scene = value
       if (!found.camera && isCamera(value)) found.camera = value
+      if (!found.composer && isComposerLike(value)) found.composer = value
     } catch {
       continue
     }
@@ -332,6 +378,10 @@ function walk(root: unknown, limits: WalkLimits): PartialHandles | undefined {
   }
 
   if (found.renderer && found.scene == null) mergeHandles(found, fillFromRenderer(found.renderer))
+  if (found.composer == null) {
+    const composer = pickComposer(found.renderer)
+    if (composer != null) found.composer = composer
+  }
   if (!found.scene && !found.renderer) return undefined
   return found
 }
@@ -565,14 +615,83 @@ function considerValue(into: PartialHandles, value: unknown, limits: WalkLimits)
   if (isRenderer(value)) into.renderer ??= value
   if (isScene(value)) into.scene ??= value
   if (isCamera(value)) into.camera ??= value
+  if (isComposerLike(value)) into.composer ??= value
   if (isRecord(value) && typeof (value as { nodeType?: unknown }).nodeType !== 'number') {
     mergeHandles(into, walk(value, limits))
   }
+  if (into.composer == null) {
+    const composer = pickComposer(value)
+    if (composer != null) into.composer = composer
+  }
 }
 
-function inspectCanvas(canvas: unknown): PartialHandles {
+function canvasArea(canvas: unknown): number {
+  const gl = peekWebGLContext(canvas)
+  if (!isRecord(gl)) return 0
+  const width = gl.drawingBufferWidth
+  const height = gl.drawingBufferHeight
+  if (typeof width !== 'number' || typeof height !== 'number') return 0
+  const area = width * height
+  return Number.isFinite(area) && area > 0 ? area : 0
+}
+
+function canvasesToInspect(root: unknown): unknown[] {
+  const all = listCanvases(root)
+  const withGl = all.filter((canvas) => peekWebGLContext(canvas))
+  const pool = withGl.length > 0 ? withGl : all
+  return [...pool].sort((a, b) => canvasArea(b) - canvasArea(a)).slice(0, MAX_INSPECT_CANVASES)
+}
+
+function rendererOwnsCanvas(renderer: unknown, canvas: unknown): boolean {
+  return isRenderer(renderer) && readKey(renderer, 'domElement') === canvas
+}
+
+function readR3fState(canvas: unknown): PartialHandles | undefined {
+  const r3f = readKey(canvas, '__r3f')
+  if (!isRecord(r3f)) return undefined
+  let state: unknown = r3f
+  if (typeof r3f.getState === 'function') {
+    try {
+      state = r3f.getState()
+    } catch {
+      return undefined
+    }
+  }
+  if (!isRecord(state)) return undefined
+  const out: PartialHandles = {}
+  if (isScene(state.scene)) out.scene = state.scene
+  if (isCamera(state.camera)) out.camera = state.camera
+  const gl = state.gl ?? state.renderer
+  if (isRenderer(gl)) out.renderer = gl
+  if (isComposerLike(state.composer)) out.composer = state.composer
+  if (out.scene == null && out.renderer == null) return undefined
+  return out
+}
+
+function reverseLookupRendererForCanvas(root: unknown, canvas: unknown): PartialHandles | undefined {
+  if (!isRecord(root)) return undefined
+  const limits: WalkLimits = { maxDepth: 6, maxVisits: 400, includeNonEnumerable: true }
+  for (const key of BUNDLE_ROOT_KEYS) {
+    const value = readKey(root, key)
+    if (value === undefined) continue
+    const local: PartialHandles = {}
+    considerValue(local, value, limits)
+    if (local.renderer && rendererOwnsCanvas(local.renderer, canvas)) {
+      mergeHandles(local, fillFromRenderer(local.renderer))
+      const composer = pickComposer(value) ?? pickComposer(local.renderer)
+      if (composer != null) local.composer ??= composer
+      return local
+    }
+  }
+  return undefined
+}
+
+function inspectCanvas(canvas: unknown, root?: unknown): PartialHandles {
   const found: PartialHandles = {}
   const limits: WalkLimits = { maxDepth: 4, maxVisits: 200, includeNonEnumerable: true }
+
+  mergeHandles(found, readR3fState(canvas))
+  if (found.scene != null && found.renderer != null) return found
 
   for (const key of CANVAS_HANDLE_KEYS) {
     considerValue(found, readKey(canvas, key), limits)
@@ -603,14 +722,18 @@ function inspectCanvas(canvas: unknown): PartialHandles {
   considerValue(found, readKey(gl, 'renderer'), limits)
   considerValue(found, readKey(gl, '__renderer'), limits)
 
+  if ((found.renderer == null || found.scene == null) && root != null) {
+    mergeHandles(found, reverseLookupRendererForCanvas(root, canvas))
+  }
+
   if (found.renderer && found.scene == null) mergeHandles(found, fillFromRenderer(found.renderer))
   return found
 }
 
 function fromCanvases(root: unknown): PartialHandles | undefined {
   const found: PartialHandles = {}
-  for (const canvas of listCanvases(root)) {
-    mergeHandles(found, inspectCanvas(canvas))
+  for (const canvas of canvasesToInspect(root)) {
+    mergeHandles(found, inspectCanvas(canvas, root))
     if (found.scene && found.renderer) break
   }
   if (!found.scene && !found.renderer) return undefined
@@ -626,6 +749,8 @@ function fromBundleRoots(root: unknown, probe: DiscoveryProbe): PartialHandles |
     if (value === undefined) continue
     probe.bundleRootsPresent.push(key)
     considerValue(found, value, limits)
+    const composer = pickComposer(value)
+    if (composer != null) found.composer ??= composer
     if (found.scene && found.renderer) break
   }
   if (!found.scene && !found.renderer) return undefined
@@ -676,7 +801,9 @@ export function formatDiscoveryError(probe: DiscoveryProbe): string {
   }
   parts.push("Pass them explicitly from this page's console once located:")
   parts.push('  await ThreejsDoctorLiveAttach.attachQualityLadder({ scene, camera, renderer })')
-  parts.push('Or expose window.__THREEJS_DOCTOR_HOST__ = { scene, camera, renderer } before pasting.')
+  parts.push(
+    'Or expose window.__THREEJS_DOCTOR_HOST__ = { scene, camera, renderer, composer } before pasting (composer optional).',
+  )
   parts.push(
     'Default paste skips the deep graph walk. For bundled hosts opt in with window.__THREEJS_DOCTOR_ATTACH__ = { deepWalk: true } (bounded; aborts if the graph is too large).',
   )
@@ -718,6 +845,7 @@ export function attemptDiscovery(
     scene: explicit.scene,
     camera: explicit.camera,
     renderer: explicit.renderer,
+    composer: explicit.composer,
   }
   let source: DiscoveredHandles['source'] | undefined =
     found.scene != null && found.renderer != null ? 'explicit' : undefined
@@ -776,6 +904,10 @@ export function attemptDiscovery(
   }
   if (found.scene != null && found.camera == null) {
     found.camera = findCameraInScene(found.scene)
+  }
+  if (found.composer == null && found.renderer != null) {
+    const composer = pickComposer(found.renderer)
+    if (composer != null) found.composer = composer
   }
 
   refreshProbe(probe, found)
@@ -846,5 +978,6 @@ export function discoverThreeHandles(
     camera: attempt.camera ?? {},
     renderer: attempt.renderer,
     source: attempt.source ?? 'explicit',
+    ...(attempt.composer != null ? { composer: attempt.composer } : {}),
   }
 }

@@ -162,6 +162,24 @@ describe('installRendererRenderCapture', () => {
     expect(root.__THREEJS_DOCTOR_HOST__?.renderer).toBe(renderer)
   })
 
+  it('capture.js IIFE leaves an existing __THREEJS_DOCTOR_HOST__ alone', () => {
+    const src = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../../../host-shim/capture.js'), 'utf8')
+    const THREE = makeThree()
+    const host = { scene: fakeScene(), camera: fakeCamera(), renderer: { id: 'already' } }
+    const root: {
+      THREE: typeof THREE
+      __THREEJS_DOCTOR_HOST__: typeof host
+    } = { THREE, __THREEJS_DOCTOR_HOST__: host }
+    const body = src.replace(/\}\)\(typeof window !== 'undefined' \? window : globalThis\)\s*$/, '})(root)')
+    const run = new Function('root', body)
+    run(root)
+    const renderer = new (THREE.WebGLRenderer as unknown as new () => {
+      render: (scene: unknown, camera: unknown) => unknown
+    })()
+    renderer.render(fakeScene(), fakeCamera())
+    expect(root.__THREEJS_DOCTOR_HOST__).toBe(host)
+  })
+
   it('finds WebGLRenderer under window.__THREE__ namespace', () => {
     const THREE = makeThree()
     const root: {

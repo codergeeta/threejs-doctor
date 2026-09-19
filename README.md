@@ -6,18 +6,20 @@ Inspired by [react-doctor](https://github.com/millionco/react-doctor). Design: [
 
 ## Install / run
 
-Repo packages are **0.1.1** (`threejs-doctor` + `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`). **0.1.0** is on npm; **0.1.1** is the next publish (real static scan + `ci --min-score`):
+**0.1.1 is on npm** (`threejs-doctor` + `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`):
 
 ```bash
 npm i @threejs-doctor/runtime
-npx threejs-doctor
+npx threejs-doctor@0.1.1
+npx threejs-doctor@0.1.1 scan ./path --format json --profile auto --budget low
+npx threejs-doctor@0.1.1 ci ./path --min-score 70 --profile marketing --budget low
 ```
 
 ```ts
 import { Doctor } from '@threejs-doctor/runtime'
 ```
 
-Unscoped `threejs-doctor` is a **name reservation + alias** that depends on `@threejs-doctor/cli` (`npx threejs-doctor bench --profile product --budget low`, or `npx @threejs-doctor/cli …`). Later publishes: attach Trusted Publisher, then delete `NPM_TOKEN` — see [`docs/publish-checklist.md`](docs/publish-checklist.md).
+Unscoped `threejs-doctor` is a **name reservation + alias** that depends on `@threejs-doctor/cli` (`npx threejs-doctor@0.1.1 bench --profile product --budget low`, or `npx @threejs-doctor/cli@0.1.1 …`). Trusted Publisher (OIDC, then delete `NPM_TOKEN`) remains optional leftover — see [`docs/publish-checklist.md`](docs/publish-checklist.md).
 
 ### Git install (monorepo)
 
@@ -38,18 +40,18 @@ node packages/cli/bin/threejs-doctor.js bench --profile product --budget low
 | `ci` | Same scan path; exits non-zero when score `< --min-score` (default 70), on error-severity findings, or when no Three.js is found |
 
 ```bash
-npx threejs-doctor scan ./path --format json --profile auto --budget low
-npx threejs-doctor ci ./path --min-score 70 --profile marketing --budget low
+npx threejs-doctor@0.1.1 scan ./path --format json --profile auto --budget low
+npx threejs-doctor@0.1.1 ci ./path --min-score 70 --profile marketing --budget low
 ```
 
 `scan` / `ci` count constructors and setup in source (lights, shadow casters, `setPixelRatio`, `antialias`, rAF / `setAnimationLoop`, `frustumCulled = false`). They do **not** invent draw-call or triangle totals. For a live scene score, attach the runtime `Doctor`.
 
 ### Use in CI
 
-After `pnpm build` (or `npx threejs-doctor` from npm):
+After `pnpm build` (or `npx threejs-doctor@0.1.1` from npm):
 
 ```yaml
-- run: npx threejs-doctor ci ./src --min-score 70 --profile marketing --budget low
+- run: npx threejs-doctor@0.1.1 ci ./src --min-score 70 --profile marketing --budget low
 ```
 
 `--budget` is the assumed device tier for rules that need one (DPR cap, antialias-on-low). `--profile auto` classifies from static facts only (not omitted draw calls) and defaults to `marketing`. Point `path` at the app that imports `three`, not a monorepo root that mixes fixtures. A project with no Three.js patterns is **incomplete** and fails `ci` even at `--min-score 0`. Static scan does not unroll `for` loops or resolve `require('three')` unless a Three.js constructor is present.
@@ -71,7 +73,7 @@ pnpm test
 pnpm build
 ```
 
-CI (`.github/workflows/ci.yml`) runs `typecheck`, `test`, `build`, a **live-attach IIFE checksum** (`pnpm check:iife` rebuilds `examples/live-attach/dist/attach.iife.js` and fails if the committed file drifted), and a **scan/ci smoke** against the CLI fixtures (`ci --min-score` must pass on the healthy fixture and fail on the heavy one). A second job runs Playwright against a real Three.js + EffectComposer + InstancedMesh fixture (SwiftShader is fine; GPU times are still omitted when the timer query has no result). npm publish is a **manual** workflow (`.github/workflows/publish.yml`) after Trusted Publisher or `NPM_TOKEN` — see [`docs/publish-checklist.md`](docs/publish-checklist.md).
+CI (`.github/workflows/ci.yml`) runs `typecheck`, `test`, `build`, a **live-attach IIFE checksum** (`pnpm check:iife` rebuilds `examples/live-attach/dist/attach.iife.js` and fails if the committed file drifted), and a **scan/ci smoke** against the CLI fixtures (`ci --min-score` must pass on the healthy fixture and fail on the heavy one). A second job runs Playwright against a real Three.js + EffectComposer + InstancedMesh fixture (SwiftShader is fine; GPU times are still omitted when the timer query has no result). npm **0.1.1 is already published**. Later publishes remain a **manual** workflow (`.github/workflows/publish.yml`) after Trusted Publisher or `NPM_TOKEN` — see [`docs/publish-checklist.md`](docs/publish-checklist.md).
 
 ## Runtime (vanilla Three.js)
 

@@ -165,6 +165,7 @@ export async function attachQualityLadder(
   if (device) doctorOpts.device = device
   const composer =
     options.composer ??
+    attempt.composer ??
     (found.renderer as { composer?: unknown } | undefined)?.composer ??
     (found.scene as { userData?: { composer?: unknown } } | undefined)?.userData?.composer
   if (composer !== undefined) doctorOpts.composer = composer

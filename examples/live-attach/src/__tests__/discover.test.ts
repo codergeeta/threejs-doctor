@@ -484,3 +484,151 @@ describe('findRendererDeep budgets', () => {
     expect(checks).toBeLessThan(1000)
   })
 })
+
+function fakeComposer() {
+  return {
+    isEffectComposer: true,
+    passes: [{}],
+    renderTarget1: { width: 800, height: 450 },
+    pixelRatio: 1,
+  }
+}
+
+describe('cheap bundled-host discovery (no deep walk)', () => {
+  it('reads composer from window.__THREEJS_DOCTOR_HOST__', () => {
+    const scene = fakeScene('host-composer')
+    const camera = fakeCamera()
+    const renderer = fakeRenderer('host-composer')
+    const composer = fakeComposer()
+    const found = discoverThreeHandles({
+      __THREEJS_DOCTOR_HOST__: { scene, camera, renderer, composer },
+    })
+    expect(found?.source).toBe('host')
+    expect(found?.scene).toBe(scene)
+    expect(found?.renderer).toBe(renderer)
+    expect(found?.composer).toBe(composer)
+  })
+
+  it('finds a non-enumerable window.renderer and pairs scene/camera on it', () => {
+    const scene = fakeScene('win-renderer')
+    const camera = fakeCamera()
+    const renderer = fakeRenderer('win-renderer')
+    Object.defineProperty(renderer, 'scene', { enumerable: false, value: scene })
+    Object.defineProperty(renderer, 'camera', { enumerable: false, value: camera })
+    const root: Record<string, unknown> = {}
+    Object.defineProperty(root, 'renderer', { enumerable: false, value: renderer })
+    const found = discoverThreeHandles(root)
+    expect(found?.renderer).toBe(renderer)
+    expect(found?.scene).toBe(scene)
+    expect(found?.camera).toBe(camera)
+  })
+
+  it('matches a cheap-root renderer to the WebGL canvas via renderer.domElement', () => {
+    const scene = fakeScene('dom-el')
+    const camera = fakeCamera()
+    const gl = { drawingBufferWidth: 64, drawingBufferHeight: 48 }
+    const canvas = {
+      nodeType: 1,
+      tagName: 'CANVAS',
+      getContext(type: string) {
+        if (type === 'webgl2' || type === 'webgl') return gl
+        return null
+      },
+    }
+    const renderer = Object.assign(fakeRenderer('dom-el'), { domElement: canvas, scene, camera })
+    const root: Record<string, unknown> = {
+      document: {
+        querySelectorAll(sel: string) {
+          return sel === 'canvas' ? [canvas] : []
+        },
+      },
+    }
+    Object.defineProperty(root, 'gameApp', { enumerable: false, value: { gfx: renderer } })
+    const found = discoverThreeHandles(root)
+    expect(found?.source).toBe('canvas')
+    expect(found?.renderer).toBe(renderer)
+    expect(found?.scene).toBe(scene)
+    expect(found?.camera).toBe(camera)
+  })
+
+  it('reads canvas.__r3f.getState() { scene, camera, gl } without deep walk', () => {
+    const scene = fakeScene('r3f')
+    const camera = fakeCamera()
+    const renderer = fakeRenderer('r3f')
+    const canvas = {
+      nodeType: 1,
+      tagName: 'CANVAS',
+      __r3f: {
+        getState() {
+          return { scene, camera, gl: renderer }
+        },
+      },
+      getContext(type: string) {
+        if (type === 'webgl' || type === 'webgl2') return { drawingBufferWidth: 8, drawingBufferHeight: 8 }
+        return null
+      },
+    }
+    const found = discoverThreeHandles({
+      document: {
+        querySelectorAll(sel: string) {
+          return sel === 'canvas' ? [canvas] : []
+        },
+      },
+    })
+    expect(found?.source).toBe('canvas')
+    expect(found?.scene).toBe(scene)
+    expect(found?.camera).toBe(camera)
+    expect(found?.renderer).toBe(renderer)
+  })
+
+  it('prefers the WebGL canvas and does not inspect dozens of dummy canvases', () => {
+    let dummyInspects = 0
+    const dummies = Array.from({ length: 40 }, () => ({
+      nodeType: 1,
+      tagName: 'CANVAS',
+      get __THREE__() {
+        dummyInspects += 1
+        return undefined
+      },
+      getContext() {
+        return null
+      },
+    }))
+    const scene = fakeScene('webgl-preferred')
+    const camera = fakeCamera()
+    const renderer = fakeRenderer('webgl-preferred')
+    const webglCanvas = {
+      nodeType: 1,
+      tagName: 'CANVAS',
+      __THREE__: { scene, camera, renderer },
+      getContext(type: string) {
+        if (type === 'webgl2' || type === 'webgl') return { drawingBufferWidth: 128, drawingBufferHeight: 96 }
+        return null
+      },
+    }
+    const found = discoverThreeHandles({
+      document: {
+        querySelectorAll(sel: string) {
+          return sel === 'canvas' ? [...dummies, webglCanvas] : []
+        },
+      },
+    })
+    expect(found?.source).toBe('canvas')
+    expect(found?.scene).toBe(scene)
+    expect(found?.renderer).toBe(renderer)
+    expect(dummyInspects).toBe(0)
+  })
+
+  it('reads composer from a cheap bundle root when the host object omitted it', () => {
+    const scene = fakeScene('bundle-composer')
+    const camera = fakeCamera()
+    const renderer = fakeRenderer('bundle-composer')
+    const composer = fakeComposer()
+    const found = discoverThreeHandles({
+      __game: { scene, camera, renderer, composer },
+    })
+    expect(found?.scene).toBe(scene)
+    expect(found?.renderer).toBe(renderer)
+    expect(found?.composer).toBe(composer)
+  })
+})

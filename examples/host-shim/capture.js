@@ -61,7 +61,9 @@
     var original = target.render
     target.render = function (scene, camera) {
       if (looksLikeScene(scene)) {
-        root.__THREEJS_DOCTOR_HOST__ = { scene: scene, camera: camera, renderer: this }
+        var host = { scene: scene, camera: camera, renderer: this }
+        if (this && this.composer) host.composer = this.composer
+        root.__THREEJS_DOCTOR_HOST__ = host
         target.render = original
         console.log('[threejs-doctor host-shim] captured scene/camera/renderer')
       }
@@ -69,6 +71,12 @@
     }
     console.log('[threejs-doctor host-shim] hooked WebGLRenderer render once')
     return true
+  }
+
+  var existing = isObj(root.__THREEJS_DOCTOR_HOST__) ? root.__THREEJS_DOCTOR_HOST__ : null
+  if (existing && existing.scene && existing.renderer) {
+    console.log('[threejs-doctor host-shim] host already present')
+    return
   }
 
   var T = root.THREE || root.three || (isObj(root.__THREE__) ? root.__THREE__ : null)

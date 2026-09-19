@@ -252,6 +252,37 @@ describe('attachQualityLadder', () => {
     parseLoggedReport(log)
   })
 
+  it('passes host composer into Doctor so composer-resolution-mismatch can fire', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const composer = {
+      isEffectComposer: true,
+      passes: [{}],
+      renderTarget1: { width: 800, height: 450 },
+      pixelRatio: 1,
+    }
+    const renderer = fakeRenderer()
+    let t = 0
+    const report = await attachQualityLadder({
+      root: {
+        __THREEJS_DOCTOR_HOST__: {
+          scene: fakeScene(),
+          camera: fakeCamera(),
+          renderer,
+          composer,
+        },
+      },
+      now: () => {
+        t += 16
+        return t
+      },
+      windowFrames: 3,
+      measureFrames: 3,
+      mountOverlay: false,
+    })
+    expect(report.findings.some((f) => f.id === 'renderer/composer-resolution-mismatch')).toBe(true)
+    parseLoggedReport(log)
+  })
+
   it('skips ocean adapter registration when pelagic.debug is missing', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {})
     let t = 0
