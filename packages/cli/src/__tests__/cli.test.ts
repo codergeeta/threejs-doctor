@@ -51,6 +51,24 @@ describe('cli', () => {
     })
   })
 
+  it('parses --format sarif', () => {
+    expect(parseArgs(['scan', './demo', '--format', 'sarif']).format).toBe('sarif')
+  })
+
+  it('writes SARIF when --format sarif is set', async () => {
+    const chunks: string[] = []
+    await main(['scan', '--format', 'sarif'], {
+      runScan: async () => fakeReport,
+      runBench: async () => fakeReport,
+      write: (text) => {
+        chunks.push(text)
+      },
+    })
+    const parsed = JSON.parse(chunks.join('')) as { version: string; runs: unknown[] }
+    expect(parsed.version).toBe('2.1.0')
+    expect(parsed.runs).toHaveLength(1)
+  })
+
   it('parses ci path and min-score', () => {
     expect(parseArgs(['ci', './demo', '--min-score', '85'])).toEqual({
       command: 'ci',

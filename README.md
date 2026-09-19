@@ -6,20 +6,20 @@ Inspired by [react-doctor](https://github.com/millionco/react-doctor). Design: [
 
 ## Install / run
 
-**0.1.1 is on npm** (`threejs-doctor` + `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`):
+**0.1.2 is pending npm publish** after merge (do not publish from a cloud agent VM). **0.1.1 is currently on npm** (`threejs-doctor` + `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`). 0.1.0/0.1.1 were token publishes — Trusted Publisher (OIDC provenance) is still needed for later releases.
 
 ```bash
 npm i @threejs-doctor/runtime
 npx threejs-doctor@0.1.1
-npx threejs-doctor@0.1.1 scan ./path --format json --profile auto --budget low
-npx threejs-doctor@0.1.1 ci ./path --min-score 70 --profile marketing --budget low
+npx threejs-doctor@0.1.2 scan ./path --format json --profile auto --budget low
+npx threejs-doctor@0.1.2 ci ./path --min-score 70 --profile marketing --budget low
 ```
 
 ```ts
 import { Doctor } from '@threejs-doctor/runtime'
 ```
 
-Unscoped `threejs-doctor` is a **name reservation + alias** that depends on `@threejs-doctor/cli` (`npx threejs-doctor@0.1.1 bench --profile product --budget low`, or `npx @threejs-doctor/cli@0.1.1 …`). Trusted Publisher (OIDC, then delete `NPM_TOKEN`) remains optional leftover — see [`docs/publish-checklist.md`](docs/publish-checklist.md).
+Unscoped `threejs-doctor` is a **name reservation + alias** that depends on `@threejs-doctor/cli` (`npx threejs-doctor@0.1.2 bench --profile product --budget low`, or `npx @threejs-doctor/cli@0.1.2 …`). Trusted Publisher (OIDC, then delete `NPM_TOKEN`) is still required for provenance on 0.1.2+ — 0.1.0/0.1.1 were token publishes. See [`docs/publish-checklist.md`](docs/publish-checklist.md).
 
 ### Git install (monorepo)
 
@@ -36,25 +36,26 @@ node packages/cli/bin/threejs-doctor.js bench --profile product --budget low
 | Command | Status |
 |---------|--------|
 | `bench` | Works after `pnpm build` (headless fixtures) |
-| `scan` | Static JS/TS/HTML scan — findings + Doctor Score from `@threejs-doctor/rules`. Runtime metrics (FPS, draw calls, drawn triangles, VRAM, GPU) are **omitted** |
+| `scan` | Static JS/TS/HTML scan — **Static Doctor Score** from source patterns (`@threejs-doctor/rules`). Runtime metrics (FPS, draw calls, drawn triangles, VRAM, GPU) are **omitted**; a score of 100 is not a “fast” claim. Findings include `file:line`. `--format sarif` is supported. |
 | `ci` | Same scan path; exits non-zero when score `< --min-score` (default 70), on error-severity findings, or when no Three.js is found |
 
 ```bash
-npx threejs-doctor@0.1.1 scan ./path --format json --profile auto --budget low
-npx threejs-doctor@0.1.1 ci ./path --min-score 70 --profile marketing --budget low
+npx threejs-doctor@0.1.2 scan ./path --format json --profile auto --budget low
+npx threejs-doctor@0.1.2 scan ./path --format sarif
+npx threejs-doctor@0.1.2 ci ./path --min-score 70 --profile marketing --budget low
 ```
 
-`scan` / `ci` count constructors and setup in source (lights, shadow casters, `setPixelRatio`, `antialias`, rAF / `setAnimationLoop`, `frustumCulled = false`). They do **not** invent draw-call or triangle totals. For a live scene score, attach the runtime `Doctor`.
+`scan` / `ci` count constructors and setup in source (lights, shadow casters, `setPixelRatio`, `antialias`, rAF / `setAnimationLoop`, `frustumCulled = false`). They honour `.gitignore`, skip minified bundles and vendored `three` (`REVISION` banner), and do **not** invent draw-call or triangle totals. `--profile auto` treats a continuous loop (`requestAnimationFrame` + render, `setAnimationLoop`, R3F `<Canvas>`) as **game** and never recommends `frameloop-demand` from static facts alone. For a live scene score, attach the runtime `Doctor`.
 
 ### Use in CI
 
-After `pnpm build` (or `npx threejs-doctor@0.1.1` from npm):
+After `pnpm build` (or `npx threejs-doctor@0.1.2` once published; until then `npx threejs-doctor@0.1.1`):
 
 ```yaml
-- run: npx threejs-doctor@0.1.1 ci ./src --min-score 70 --profile marketing --budget low
+- run: npx threejs-doctor@0.1.2 ci ./src --min-score 70 --profile marketing --budget low
 ```
 
-`--budget` is the assumed device tier for rules that need one (DPR cap, antialias-on-low). `--profile auto` classifies from static facts only (not omitted draw calls) and defaults to `marketing`. Point `path` at the app that imports `three`, not a monorepo root that mixes fixtures. A project with no Three.js patterns is **incomplete** and fails `ci` even at `--min-score 0`. Static scan does not unroll `for` loops or resolve `require('three')` unless a Three.js constructor is present.
+`--budget` is the assumed device tier for rules that need one (DPR cap, antialias-on-low). `--profile auto` classifies from static facts only (not omitted draw calls): a continuous loop is `game`; otherwise it may still default to `marketing`. Point `path` at the app that imports `three`, not a monorepo root that mixes fixtures. A project with no Three.js patterns is **incomplete** and fails `ci` even at `--min-score 0`. Static scan does not unroll `for` loops or resolve `require('three')` unless a Three.js constructor is present.
 
 ## Monorepo scripts
 
@@ -73,7 +74,7 @@ pnpm test
 pnpm build
 ```
 
-CI (`.github/workflows/ci.yml`) runs `typecheck`, `test`, `build`, a **live-attach IIFE checksum** (`pnpm check:iife` rebuilds `examples/live-attach/dist/attach.iife.js` and fails if the committed file drifted), and a **scan/ci smoke** against the CLI fixtures (`ci --min-score` must pass on the healthy fixture and fail on the heavy one). A second job runs Playwright against a real Three.js + EffectComposer + InstancedMesh fixture (SwiftShader is fine; GPU times are still omitted when the timer query has no result). npm **0.1.1 is already published**. Later publishes remain a **manual** workflow (`.github/workflows/publish.yml`) after Trusted Publisher or `NPM_TOKEN` — see [`docs/publish-checklist.md`](docs/publish-checklist.md).
+CI (`.github/workflows/ci.yml`) runs `typecheck`, `test`, `build`, a **live-attach IIFE checksum** (`pnpm check:iife` rebuilds `examples/live-attach/dist/attach.iife.js` and fails if the committed file drifted), and a **scan/ci smoke** against the CLI fixtures (`ci --min-score` must pass on the healthy fixture and fail on the heavy one). A second job runs Playwright against a real Three.js + EffectComposer + InstancedMesh fixture (SwiftShader is fine; GPU times are still omitted when the timer query has no result). npm **0.1.1 is published**; **0.1.2 is pending publish** after merge. Later publishes remain a **manual** workflow (`.github/workflows/publish.yml`) after Trusted Publisher or `NPM_TOKEN` — see [`docs/publish-checklist.md`](docs/publish-checklist.md).
 
 ## Runtime (vanilla Three.js)
 
@@ -102,7 +103,7 @@ doctor.mountOverlay()
 
 Pass `composer` **explicitly** when you have an EffectComposer (three.js `renderTarget1`/`writeBuffer` or pmndrs `inputBuffer`/`outputBuffer`). Auto-discovery is **shallow** (the composer object, `scene.userData`, renderer own properties). `dpr-cap` can then call `setPixelRatio`/`setSize` or `onPixelRatioChange`. Triangle **cost** is `renderer.info.triangles` (drawn, including extra shadow/composer passes when measured). Scene-graph `geometryTriangleCount` is attribution only — after chunking, drawn cost can drop even if unused geometry remains.
 
-Hidden tabs and throttled rAF mark the sample `invalid` (and the report `incomplete`). For A/B, use `doctor.compareAb({ rounds, poses, applyB, control })` or `compareAbSamples` — **medians**, with a noise band of `max(half-range, 1.4826 × MAD)`. Pass optional `control` A-vs-A rounds (or run A vs A) rather than treating two close A samples as proof. Never claim a win inside the noise band. Pixel-diff before calling a pass visually safe is **opt-in** and **not** implied by `apply: ['safe']`: `optimize({ apply: ['safe'], visualGate: { capture, fixedViewpoint: true } })`. **Capture must use a fixed viewpoint.** Default `maxChangedRatio` is **0.5%** of pixels. A candidate delta is confirmed with a **second** capture; on a reproduced difference vs control, applied passes are **rolled back** (`visualDelta: true` — do not treat as visually safe). Fixed-clock unit tests are not proof of safe passes; see [`docs/superpowers/acceptance/real-host-followups.md`](docs/superpowers/acceptance/real-host-followups.md).
+Hidden tabs and throttled rAF mark the sample `invalid` (and the report `incomplete`). GPU `measure()` yields `waitGpuMacrotask` (rAF raced against a short timeout) so a background tab cannot hang. For A/B, use `doctor.compareAb({ rounds, poses, applyB, control })` or `compareAbSamples` — **medians**, with a noise band of `max(half-range, 1.4826 × MAD)`. Pass optional `control` A-vs-A rounds (or run A vs A) rather than treating two close A samples as proof. Never claim a win inside the noise band. Pixel-diff before calling a pass visually safe is **opt-in** and **not** implied by `apply: ['safe']`: `optimize({ apply: ['safe'], visualGate: { capture, fixedViewpoint: true } })`. **Capture must use a fixed viewpoint.** Default `maxChangedRatio` is **0.5%** of pixels. A candidate delta is confirmed with a **second** capture; on a reproduced difference vs control, **only that optimize() call’s** applied passes are **rolled back** (`visualDelta: true` — earlier accepted `optimize()` passes stay applied; do not treat as visually safe). Fixed-clock unit tests are not proof of safe passes; see [`docs/superpowers/acceptance/real-host-followups.md`](docs/superpowers/acceptance/real-host-followups.md).
 
 Live ocean attach notes for the unpublished Quality Ladder adapter (this repo does not vendor the demo) are in [`examples/ocean-adapter/README.md`](examples/ocean-adapter/README.md). Pasteable DevTools IIFE: [`examples/live-attach`](examples/live-attach/README.md). Local unpublished hosts (no pelagic) for live-attach discovery: [`examples/acceptance-fixture`](examples/acceptance-fixture/README.md) and the heavier [`examples/acceptance-fixture-game`](examples/acceptance-fixture-game/README.md). How a real game exposes `{ scene, camera, renderer }`: [`docs/superpowers/acceptance/host-integration.md`](docs/superpowers/acceptance/host-integration.md).
 

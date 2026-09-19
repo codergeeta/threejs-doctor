@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Type publish to release 0.1.1 packages to npm'
+        description: 'Type publish to release 0.1.2 packages to npm'
         required: true
         type: string
 

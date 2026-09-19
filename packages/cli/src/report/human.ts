@@ -1,14 +1,27 @@
 import type { DoctorReport } from '@threejs-doctor/runtime'
 
+function locationSuffix(evidence: { file?: unknown; line?: unknown }): string {
+  if (typeof evidence.file === 'string' && typeof evidence.line === 'number') {
+    return ` (${evidence.file}:${evidence.line})`
+  }
+  return ''
+}
+
 export function formatHumanReport(report: DoctorReport): string {
   const lines: string[] = []
   lines.push(`threejs-doctor — profile=${report.profile} mode=${report.mode}`)
-  lines.push(`Doctor Score: ${report.score}`)
+  if (report.staticScan) {
+    lines.push(
+      `Static Doctor Score: ${report.score} (source patterns only; not a runtime speed / FPS score)`,
+    )
+  } else {
+    lines.push(`Doctor Score: ${report.score}`)
+  }
   lines.push('')
   lines.push('Findings:')
   if (report.findings.length === 0) lines.push('  (none)')
   for (const f of report.findings) {
-    lines.push(`  [${f.severity}] ${f.id}: ${f.message}`)
+    lines.push(`  [${f.severity}] ${f.id}: ${f.message}${locationSuffix(f.evidence)}`)
     lines.push(`    fix: ${f.suggestedFix}`)
   }
   lines.push('')
@@ -38,10 +51,12 @@ export function formatHumanReport(report: DoctorReport): string {
         : 'Run incomplete: after metrics unavailable; baseline retained.',
     )
   }
-  if (!report.after && report.mode === 'diagnose') {
+  if (report.staticScan || (!report.after && report.mode === 'diagnose')) {
     lines.push('')
     lines.push(
-      'Static source scan. Runtime metrics (FPS, draw calls, drawn triangles, VRAM, GPU) were omitted.',
+      report.staticScan
+        ? 'Static source scan. Runtime metrics (FPS, draw calls, drawn triangles, VRAM, GPU) were omitted. A score of 100 is not a “fast” claim.'
+        : 'Static source scan. Runtime metrics (FPS, draw calls, drawn triangles, VRAM, GPU) were omitted.',
     )
   }
   if (report.visualDelta) {

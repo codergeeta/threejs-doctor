@@ -2577,13 +2577,45 @@ ${line2}` : line1;
     }
     return void 0;
   }
-  function waitGpuMacrotask() {
+  var DEFAULT_GPU_MACROTASK_TIMEOUT_MS = 100;
+  function documentIsHidden() {
+    try {
+      if (typeof document === "undefined") return false;
+      return document.visibilityState === "hidden" || document.hidden === true;
+    } catch {
+      return false;
+    }
+  }
+  function waitGpuMacrotask(timeoutMs = DEFAULT_GPU_MACROTASK_TIMEOUT_MS) {
     return new Promise((resolve) => {
-      if (typeof requestAnimationFrame === "function") {
-        requestAnimationFrame(() => resolve());
+      let settled = false;
+      const done = (timedOut) => {
+        if (settled) return;
+        settled = true;
+        resolve({ timedOut });
+      };
+      if (documentIsHidden()) {
+        done(true);
         return;
       }
-      setTimeout(resolve, 0);
+      if (typeof requestAnimationFrame !== "function") {
+        setTimeout(() => done(false), 0);
+        return;
+      }
+      let timeoutId;
+      const rafId = requestAnimationFrame(() => {
+        if (timeoutId !== void 0) clearTimeout(timeoutId);
+        done(false);
+      });
+      timeoutId = setTimeout(() => {
+        if (typeof cancelAnimationFrame === "function") {
+          try {
+            cancelAnimationFrame(rafId);
+          } catch {
+          }
+        }
+        done(true);
+      }, timeoutMs);
     });
   }
   function createGpuFrameSampler(renderer) {
@@ -2828,7 +2860,7 @@ ${line2}` : line1;
     lastSnapshot;
     previousSnapshot;
     lastReport;
-    handles = [];
+    applied = [];
     overlay;
     qualityHudGetter;
     frameloop;
@@ -3010,6 +3042,7 @@ ${line2}` : line1;
         hook(composer);
       }
       gpu?.beginMeasure();
+      let gpuWaitHidden = false;
       try {
         for (let i = 0; i < frames; i++) {
           info.reset?.();
@@ -3024,11 +3057,18 @@ ${line2}` : line1;
           collector.endFrame(end);
           callSamples.push(info.render.calls);
           triangleSamples.push(info.render.triangles);
-          if (gpu && !waitFrame && liveClock) await waitGpuMacrotask();
+          if (gpu && !waitFrame && liveClock) {
+            const wait = await waitGpuMacrotask();
+            if (wait.timedOut) gpuWaitHidden = true;
+          }
         }
         if (gpu && liveClock) {
           for (let i = 0; i < 4; i++) {
-            await waitGpuMacrotask();
+            const wait = await waitGpuMacrotask();
+            if (wait.timedOut) {
+              gpuWaitHidden = true;
+              break;
+            }
             gpuTimes.push(...gpu.harvest());
           }
         }
@@ -3050,7 +3090,11 @@ ${line2}` : line1;
         frameTimesMs: [...collector.frameTimes()]
       };
       const visibility = liveClock ? readVisibilityState() : "visible";
-      if (visibility !== void 0) validityInput.visibilityState = visibility;
+      if (gpuWaitHidden && liveClock) {
+        validityInput.visibilityState = "hidden";
+      } else if (visibility !== void 0) {
+        validityInput.visibilityState = visibility;
+      }
       const validity = classifyMeasureValidity(validityInput);
       if (validity.invalid) {
         sample.invalid = true;
@@ -3124,7 +3168,7 @@ ${line2}` : line1;
         try {
           const pass = PASS_REGISTRY[id];
           handle = pass.apply(ctx);
-          this.handles.push(handle);
+          this.applied.push({ id, handle });
           appliedPasses.push(id);
         } catch (err) {
           try {
@@ -3140,13 +3184,17 @@ ${line2}` : line1;
       return { appliedPasses, failedPasses };
     }
     rollbackAll() {
-      for (let i = this.handles.length - 1; i >= 0; i--) {
+      this.rollbackFrom(0);
+    }
+    /** Roll back handles from `start` (inclusive) through the end; keep earlier accepted applies. */
+    rollbackFrom(start) {
+      for (let i = this.applied.length - 1; i >= start; i--) {
         try {
-          this.handles[i].rollback();
+          this.applied[i].handle.rollback();
         } catch {
         }
       }
-      this.handles = [];
+      this.applied.length = Math.max(0, start);
     }
     attachQualityHud(getter) {
       this.qualityHudGetter = getter;
@@ -3235,6 +3283,8 @@ ${line2}` : line1;
         controlChangedRatio = pixelChangedRatio(first, second, options.visualGate.channelThreshold);
       }
       const passIds = resolvePassIds(options.apply ?? ["safe"], diagnosed.profile);
+      const priorAppliedCount = this.applied.length;
+      const priorAppliedIds = this.applied.map((entry) => entry.id);
       const { appliedPasses, failedPasses } = this.applyPassesImmediate(passIds);
       const device = this.device();
       const snapshotBeforeCandidate = this.lastSnapshot;
@@ -3288,9 +3338,12 @@ ${line2}` : line1;
           const confirmOpts = { ...verdictOpts, candidateChangedRatio: confirmRatio };
           const confirmed = classifyVisualSafety(confirmOpts);
           if (confirmed.visualDelta) {
-            this.rollbackAll();
+            this.rollbackFrom(priorAppliedCount);
             report.visualDelta = true;
             report.rolledBackDueToVisual = true;
+            report.appliedPasses = priorAppliedIds;
+            report.after = diagnosed.baseline;
+            delete report.deltas;
             this.baseline = diagnosed.baseline;
             this.lastSnapshot = snapshotBeforeCandidate ?? this.currentSnapshot(diagnosed.baseline);
             snap = this.lastSnapshot;

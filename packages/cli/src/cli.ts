@@ -1,12 +1,13 @@
 import { formatHumanReport } from './report/human.js'
 import { formatJsonReport } from './report/json.js'
+import { formatSarifReport } from './report/sarif.js'
 import type { DoctorReport } from '@threejs-doctor/runtime'
 import type { Profile } from '@threejs-doctor/core'
 
 export interface CliArgs {
   command: 'scan' | 'bench' | 'ci' | 'help'
   path: string
-  format: 'human' | 'json'
+  format: 'human' | 'json' | 'sarif'
   profile: Profile
   budget: 'low' | 'mid' | 'high'
   minScore: number
@@ -37,7 +38,10 @@ export function parseArgs(argv: string[]): CliArgs {
   }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!
-    if (a === '--format') args.format = argv[++i] === 'json' ? 'json' : 'human'
+    if (a === '--format') {
+      const value = argv[++i]
+      args.format = value === 'json' || value === 'sarif' ? value : 'human'
+    }
     if (a === '--profile') args.profile = argv[++i] as Profile
     if (a === '--budget') args.budget = (argv[++i] as CliArgs['budget']) ?? 'low'
     if (a === '--min-score') args.minScore = Number(argv[++i])
@@ -53,7 +57,7 @@ export async function main(
   const write = deps?.write ?? ((t: string) => console.log(t))
   if (args.command === 'help') {
     write(`Usage:
-  npx threejs-doctor scan [path] [--format human|json] [--profile auto|marketing|product|game|cad] [--budget low|mid|high]
+  npx threejs-doctor scan [path] [--format human|json|sarif] [--profile auto|marketing|product|game|cad] [--budget low|mid|high]
   npx threejs-doctor bench --profile <profile> --budget low [--format human|json]
   npx threejs-doctor ci [path] [--min-score 70] [--format human|json] [--profile auto|marketing|product|game|cad] [--budget low|mid|high]
   npx @threejs-doctor/cli scan [path]`)
@@ -86,7 +90,13 @@ export async function main(
     throw err
   }
 
-  write(args.format === 'json' ? formatJsonReport(report) : formatHumanReport(report))
+  write(
+    args.format === 'json'
+      ? formatJsonReport(report)
+      : args.format === 'sarif'
+        ? formatSarifReport(report)
+        : formatHumanReport(report),
+  )
 
   if (args.command === 'ci') {
     const hasError = report.findings.some((f) => f.severity === 'error')

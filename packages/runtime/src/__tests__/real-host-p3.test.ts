@@ -126,7 +126,8 @@ describe('P3: pixel-diff visual gate is opt-in', () => {
     })
     expect(captures).toBeGreaterThanOrEqual(4)
     expect(report.visualDelta).toBe(true)
-    expect(report.appliedPasses.length).toBeGreaterThan(0)
+    expect(report.appliedPasses).toEqual([])
+    expect(report.deltas).toBeUndefined()
     expect(
       classifyVisualSafety({
         controlChangedRatio: pixelChangedRatio(baseline, baseline),

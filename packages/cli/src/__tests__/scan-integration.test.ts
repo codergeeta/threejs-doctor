@@ -66,8 +66,10 @@ describe('runScan static analysis', () => {
       profile: 'auto',
       path: resolve(here, 'fixtures/heavy-static'),
     })
-    expect(report.profile).toBe('marketing')
+    expect(report.profile).toBe('game')
     expect(report.findings.some((f) => f.id === 'shadows/too-many-casters')).toBe(true)
+    expect(report.findings.some((f) => f.id === 'frameloop/continuous-static')).toBe(false)
+    expect(report.findings.some((f) => f.autoFix === 'frameloop-demand')).toBe(false)
     expect(report.score).toBeLessThan(70)
   })
 
@@ -90,6 +92,68 @@ describe('runScan static analysis', () => {
     expect(report.findings.map((f) => f.id)).toEqual(
       expect.arrayContaining(['shadows/too-many-casters', 'frameloop/continuous-static']),
     )
+  })
+
+  it('classifies auto as game for any continuous rAF/render loop even with few mesh constructors', async () => {
+    const report = await runScan({
+      ...baseArgs,
+      profile: 'auto',
+      path: resolve(here, 'fixtures/html-three/index.html'),
+    })
+    expect(report.profile).toBe('game')
+    expect(report.findings.some((f) => f.id === 'frameloop/continuous-static')).toBe(false)
+  })
+
+  it('drops materials/too-unique from static scans', async () => {
+    const report = await runScan({
+      ...baseArgs,
+      profile: 'marketing',
+      path: resolve(here, 'fixtures/unique-materials'),
+    })
+    expect(report.findings.some((f) => f.id === 'materials/too-unique')).toBe(false)
+  })
+
+  it('attaches file:line to findings and labels the score as static', async () => {
+    const report = await runScan({
+      ...baseArgs,
+      path: resolve(here, 'fixtures/heavy-static'),
+    })
+    expect(report.staticScan).toBe(true)
+    const caster = report.findings.find((f) => f.id === 'shadows/too-many-casters')
+    expect(typeof caster?.evidence.file).toBe('string')
+    expect(typeof caster?.evidence.line).toBe('number')
+    expect(String(caster?.evidence.file)).toMatch(/scene\.js$/)
+    expect(Number(caster?.evidence.line)).toBeGreaterThan(0)
+    const frustum = report.findings.find((f) => f.id === 'culling/frustum-disabled')
+    expect(frustum?.evidence.line).toBeDefined()
+  })
+
+  it('emits composer pixel-ratio drift with a location', async () => {
+    const report = await runScan({
+      ...baseArgs,
+      profile: 'game',
+      path: resolve(here, 'fixtures/composer-drift'),
+    })
+    const hit = report.findings.find((f) => f.id === 'renderer/composer-pixel-ratio-drift')
+    expect(hit).toBeDefined()
+    expect(hit?.evidence.file).toMatch(/composer\.js$/)
+    expect(typeof hit?.evidence.line).toBe('number')
+  })
+
+  it('downgrades Points/Line/Sprite frustumCulled=false to info', async () => {
+    const report = await runScan({
+      ...baseArgs,
+      profile: 'game',
+      path: resolve(here, 'fixtures/fx-culling'),
+    })
+    const meshHit = report.findings.find(
+      (f) => f.id === 'culling/frustum-disabled' && f.severity === 'warn',
+    )
+    expect(meshHit).toBeUndefined()
+    const fx = report.findings.filter((f) => f.id === 'culling/frustum-disabled')
+    expect(fx.length).toBeGreaterThan(0)
+    expect(fx.every((f) => f.severity === 'info')).toBe(true)
+    expect(fx[0]?.evidence.file).toBeDefined()
   })
 })
 

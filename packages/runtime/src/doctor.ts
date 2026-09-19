@@ -69,6 +69,8 @@ export interface DoctorReport {
   gpuTimingSkipped?: boolean
   /** Applied passes were rolled back after a confirmed visual delta vs control. */
   rolledBackDueToVisual?: boolean
+  /** True when this report came from `scan` / `ci` (source patterns, not a live measure). */
+  staticScan?: boolean
 }
 
 export interface DoctorOptions {
@@ -89,7 +91,7 @@ export interface DoctorOptions {
    * Awaited between beginFrame and endFrame so live attach can sample real rAF deltas.
    * When set, this is the host render path (do not also call renderer.render).
    */
-  waitFrame?: () => Promise<void>
+  waitFrame?: () => Promise<unknown>
   /**
    * Host render for one frame (`composer.render()` or `renderer.render(scene, camera)`).
    * Used when `waitFrame` is omitted. If omitted, Doctor calls `renderer.render(scene, camera)` when present.
@@ -273,7 +275,7 @@ export class Doctor {
   private lastSnapshot: SceneSnapshot | undefined
   private previousSnapshot: SceneSnapshot | undefined
   private lastReport: DoctorReport | undefined
-  private handles: PassHandle[] = []
+  private applied: Array<{ id: PassId; handle: PassHandle }> = []
   private overlay: OverlayHandle | undefined
   private qualityHudGetter: (() => QualityHudState | undefined) | undefined
   private frameloop: 'always' | 'demand'
@@ -485,6 +487,7 @@ export class Doctor {
       hook(composer as { render?: (...args: never[]) => unknown })
     }
     gpu?.beginMeasure()
+    let gpuWaitHidden = false
     try {
       for (let i = 0; i < frames; i++) {
         info.reset?.()
@@ -502,11 +505,19 @@ export class Doctor {
         // Without waitFrame, a tight await renderFrame() loop never returns to the
         // event loop so QUERY_RESULT_AVAILABLE never flips. Yield a macrotask when
         // a GPU sampler exists so results can complete, or leftovers are discarded.
-        if (gpu && !waitFrame && liveClock) await waitGpuMacrotask()
+        // Race rAF against a short timeout so a background tab cannot hang measure().
+        if (gpu && !waitFrame && liveClock) {
+          const wait = await waitGpuMacrotask()
+          if (wait.timedOut) gpuWaitHidden = true
+        }
       }
       if (gpu && liveClock) {
         for (let i = 0; i < 4; i++) {
-          await waitGpuMacrotask()
+          const wait = await waitGpuMacrotask()
+          if (wait.timedOut) {
+            gpuWaitHidden = true
+            break
+          }
           gpuTimes.push(...gpu.harvest())
         }
       }
@@ -528,7 +539,11 @@ export class Doctor {
       frameTimesMs: [...collector.frameTimes()],
     }
     const visibility = liveClock ? readVisibilityState() : 'visible'
-    if (visibility !== undefined) validityInput.visibilityState = visibility
+    if (gpuWaitHidden && liveClock) {
+      validityInput.visibilityState = 'hidden'
+    } else if (visibility !== undefined) {
+      validityInput.visibilityState = visibility
+    }
     const validity = classifyMeasureValidity(validityInput)
     if (validity.invalid) {
       sample.invalid = true
@@ -612,7 +627,7 @@ export class Doctor {
       try {
         const pass = PASS_REGISTRY[id]
         handle = pass.apply(ctx)
-        this.handles.push(handle)
+        this.applied.push({ id, handle })
         appliedPasses.push(id)
       } catch (err) {
         try {
@@ -630,14 +645,19 @@ export class Doctor {
   }
 
   rollbackAll(): void {
-    for (let i = this.handles.length - 1; i >= 0; i--) {
+    this.rollbackFrom(0)
+  }
+
+  /** Roll back handles from `start` (inclusive) through the end; keep earlier accepted applies. */
+  rollbackFrom(start: number): void {
+    for (let i = this.applied.length - 1; i >= start; i--) {
       try {
-        this.handles[i]!.rollback()
+        this.applied[i]!.handle.rollback()
       } catch {
         // best-effort
       }
     }
-    this.handles = []
+    this.applied.length = Math.max(0, start)
   }
 
   attachQualityHud(getter: () => QualityHudState | undefined): void {
@@ -754,6 +774,8 @@ export class Doctor {
       controlChangedRatio = pixelChangedRatio(first, second, options.visualGate.channelThreshold)
     }
     const passIds = resolvePassIds(options.apply ?? ['safe'], diagnosed.profile)
+    const priorAppliedCount = this.applied.length
+    const priorAppliedIds = this.applied.map((entry) => entry.id)
     const { appliedPasses, failedPasses } = this.applyPassesImmediate(passIds)
     const device = this.device()
 
@@ -813,9 +835,12 @@ export class Doctor {
         const confirmOpts = { ...verdictOpts, candidateChangedRatio: confirmRatio }
         const confirmed = classifyVisualSafety(confirmOpts)
         if (confirmed.visualDelta) {
-          this.rollbackAll()
+          this.rollbackFrom(priorAppliedCount)
           report.visualDelta = true
           report.rolledBackDueToVisual = true
+          report.appliedPasses = priorAppliedIds
+          report.after = diagnosed.baseline
+          delete report.deltas
           this.baseline = diagnosed.baseline
           this.lastSnapshot = snapshotBeforeCandidate ?? this.currentSnapshot(diagnosed.baseline)
           snap = this.lastSnapshot
