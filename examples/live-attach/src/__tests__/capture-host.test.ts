@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { installRendererRenderCapture } from '../capture-host.js'
+import { installRendererRenderCapture, wrapWebGLRendererCtor } from '../capture-host.js'
 
 function fakeScene() {
   return {
@@ -38,6 +38,37 @@ function makeThree() {
   WebGLRenderer.prototype.render = function (this: { draws: number }, scene: unknown, camera: unknown) {
     this.draws += 1
     return { scene, camera }
+  }
+  return { WebGLRenderer }
+}
+
+/** Matches official three.module.js: constructor assigns this.render as an own property. */
+function makeThreeOwnRender() {
+  function WebGLRenderer(this: {
+    isWebGLRenderer: boolean
+    pixelRatio: number
+    info: { render: { calls: number; triangles: number }; memory: { geometries: number; textures: number } }
+    setPixelRatio: (v: number) => void
+    draws: number
+    render: (scene: unknown, camera: unknown) => unknown
+  }) {
+    this.isWebGLRenderer = true
+    this.pixelRatio = 2
+    this.draws = 0
+    this.info = {
+      render: { calls: 1, triangles: 10 },
+      memory: { geometries: 1, textures: 1 },
+    }
+    this.setPixelRatio = (v: number) => {
+      this.pixelRatio = v
+    }
+    this.render = function (scene: unknown, camera: unknown) {
+      this.draws += 1
+      return { scene, camera }
+    }
+  }
+  WebGLRenderer.prototype.render = function () {
+    throw new Error('prototype.render must not run when render is an own property')
   }
   return { WebGLRenderer }
 }
@@ -196,5 +227,74 @@ describe('installRendererRenderCapture', () => {
     renderer.render(scene, camera)
     expect(root.__THREEJS_DOCTOR_HOST__?.scene).toBe(scene)
     installed.uninstall()
+  })
+})
+
+describe('WebGLRenderer own-property render (three.module.js)', () => {
+  it('does not capture via prototype.render when the instance owns render', () => {
+    const THREE = makeThreeOwnRender()
+    const root: {
+      THREE: typeof THREE
+      __THREEJS_DOCTOR_HOST__?: { scene: unknown }
+    } = { THREE }
+    const proto = THREE.WebGLRenderer.prototype as { render: (...args: unknown[]) => unknown }
+    const originalProto = proto.render
+    proto.render = function (this: unknown, scene: unknown, camera: unknown, ...rest: unknown[]) {
+      root.__THREEJS_DOCTOR_HOST__ = { scene: 'from-proto' } as { scene: unknown }
+      return originalProto.apply(this, [scene, camera, ...rest])
+    }
+    const renderer = new (THREE.WebGLRenderer as unknown as new () => {
+      draws: number
+      render: (scene: unknown, camera: unknown) => unknown
+    })()
+    renderer.render(fakeScene(), fakeCamera())
+    expect(root.__THREEJS_DOCTOR_HOST__).toBeUndefined()
+    proto.render = originalProto
+  })
+
+  it('wrapWebGLRendererCtor captures the first render(scene, camera) onto __THREEJS_DOCTOR_HOST__', () => {
+    const THREE = makeThreeOwnRender()
+    const root: {
+      THREE: typeof THREE
+      __THREEJS_DOCTOR_HOST__?: { scene: unknown; camera: unknown; renderer: unknown }
+    } = { THREE }
+    const wrapped = wrapWebGLRendererCtor(THREE.WebGLRenderer, root)
+    expect(wrapped.installed).toBe(true)
+    THREE.WebGLRenderer = wrapped.ctor as typeof THREE.WebGLRenderer
+    const scene = fakeScene()
+    const camera = fakeCamera()
+    const renderer = new (THREE.WebGLRenderer as unknown as new () => {
+      draws: number
+      render: (scene: unknown, camera: unknown) => unknown
+    })()
+    renderer.render(scene, camera)
+    expect(root.__THREEJS_DOCTOR_HOST__?.scene).toBe(scene)
+    expect(root.__THREEJS_DOCTOR_HOST__?.camera).toBe(camera)
+    expect(root.__THREEJS_DOCTOR_HOST__?.renderer).toBe(renderer)
+    expect(renderer.draws).toBe(1)
+    wrapped.uninstall()
+  })
+
+  it('intercept-three-module.js wraps a module WebGLRenderer that assigns own render', () => {
+    const src = readFileSync(
+      resolve(dirname(fileURLToPath(import.meta.url)), '../../../host-shim/intercept-three-module.js'),
+      'utf8',
+    )
+    const THREE = makeThreeOwnRender()
+    const root: {
+      THREE: typeof THREE
+      __THREEJS_DOCTOR_HOST__?: { scene: unknown; renderer: unknown }
+    } = { THREE }
+    const body = src.replace(/\}\)\(typeof window !== 'undefined' \? window : globalThis\)\s*$/, '})(root)')
+    const run = new Function('root', body)
+    run(root)
+    const scene = fakeScene()
+    const camera = fakeCamera()
+    const renderer = new (root.THREE.WebGLRenderer as unknown as new () => {
+      render: (scene: unknown, camera: unknown) => unknown
+    })()
+    renderer.render(scene, camera)
+    expect(root.__THREEJS_DOCTOR_HOST__?.scene).toBe(scene)
+    expect(root.__THREEJS_DOCTOR_HOST__?.renderer).toBe(renderer)
   })
 })

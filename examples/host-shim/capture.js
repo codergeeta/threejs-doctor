@@ -213,6 +213,10 @@
     return
   }
 
+  if (found && typeof found.render === 'function' && Object.prototype.hasOwnProperty.call(found, 'render')) {
+    hook(found)
+    return
+  }
   var instCtor = found.constructor
   if (instCtor && instCtor.prototype && typeof instCtor.prototype.render === 'function') {
     hook(instCtor.prototype)

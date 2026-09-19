@@ -5222,16 +5222,55 @@ ${line2}` : line1;
       }
     };
   }
+  function wrapWebGLRendererCtor(ctor, root = globalThis) {
+    if (typeof ctor !== "function") {
+      return { ...idleCapture, ctor };
+    }
+    const Original = ctor;
+    let active = true;
+    let last = idleCapture;
+    function Wrapped(...args) {
+      const instance = Reflect.construct(Original, args);
+      if (active && isRecord2(instance) && typeof instance.render === "function") {
+        last.uninstall();
+        last = hookRenderMethod(root, instance);
+      }
+      return instance;
+    }
+    Wrapped.prototype = Original.prototype;
+    try {
+      Object.setPrototypeOf(Wrapped, Original);
+    } catch {
+    }
+    try {
+      Object.defineProperty(Wrapped, "name", { value: Original.name });
+    } catch {
+    }
+    return {
+      installed: true,
+      ctor: Wrapped,
+      uninstall() {
+        active = false;
+        last.uninstall();
+      },
+      getCaptured() {
+        return last.getCaptured();
+      }
+    };
+  }
   function installRendererRenderCapture(root = globalThis, options = {}) {
+    if (isRecord2(options.instance) && typeof options.instance.render === "function") {
+      return hookRenderMethod(root, options.instance);
+    }
     const ctor = findThreeWebGLRendererCtor(root);
     if (ctor) return hookRenderMethod(root, ctor.prototype);
-    const instance = isRecord2(options.instance) ? options.instance : options.skipDeepWalk || !isDeepWalkEnabled(root, options.deepWalk) ? void 0 : findRendererDeep(root);
+    const instance = options.skipDeepWalk || !isDeepWalkEnabled(root, options.deepWalk) ? void 0 : findRendererDeep(root);
     if (!isRecord2(instance)) return idleCapture;
-    const fromInstance = instance.constructor;
-    if (isRendererCtor(fromInstance)) return hookRenderMethod(root, fromInstance.prototype);
     if (typeof instance.render === "function") {
       return hookRenderMethod(root, instance);
     }
+    const fromInstance = instance.constructor;
+    if (isRendererCtor(fromInstance)) return hookRenderMethod(root, fromInstance.prototype);
     return idleCapture;
   }
 
@@ -5381,6 +5420,7 @@ ${line2}` : line1;
     attachQualityLadder,
     discoverThreeHandles,
     installRendererRenderCapture,
+    wrapWebGLRendererCtor,
     PHONE_CLASS_PROBE
   };
   var opts = g.__THREEJS_DOCTOR_ATTACH__ ?? {};

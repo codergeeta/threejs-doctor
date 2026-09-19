@@ -174,6 +174,12 @@ will deep-walk the graph (that froze live moonbase). Opt in with
 `window.__THREEJS_DOCTOR_ATTACH__ = { deepWalk: true }` for a bounded BFS, or
 pass `{ scene, camera, renderer }` explicitly from that page’s console.
 
+On official **three.module.js** examples, `this.render` is an instance
+own-property, so **prototype hooks never run**. `window.__THREE__` is often a
+revision string. Use [`expose.js`](../host-shim/expose.js) or intercept the
+module with [`intercept-three-module.js`](../host-shim/intercept-three-module.js)
+**before** `new WebGLRenderer()`. See [host-integration.md](../../docs/superpowers/acceptance/host-integration.md).
+
 ## If discovery cannot find scene / camera / renderer
 
 Bundled apps (Claude-of-Tanks, many Vite/webpack games) often keep Three.js
@@ -201,11 +207,11 @@ objects in module closures, **not** on `window`. The IIFE now tries, in order:
    `constructor.name === 'WebGLRenderer'`, skip cross-origin iframes). Hard caps:
    **5000 nodes**, **depth 8**, **80ms** wall clock; abort returns undefined.
    Default attach skips this step so paste cannot freeze a real game.
-8. If `THREE.WebGLRenderer` (or `three.WebGLRenderer`) is on the page, **or** a
-   renderer instance was found and exposes a constructor prototype: hook
-   `prototype.render` **once**, wait a few frames, and read
-   `__THREEJS_DOCTOR_HOST__` (same helper as
-   [`examples/host-shim`](../host-shim/README.md))
+8. If a renderer **instance** was found: hook that instance's `render` **once**
+   (own-property `render` on official three.module.js). If only
+   `THREE.WebGLRenderer` is on the page, hook `prototype.render` — that is a
+   **known non-starter** when the constructor assigns `this.render`. Intercept
+   the module first: [`examples/host-shim/intercept-three-module.js`](../host-shim/intercept-three-module.js).
 9. If a `WebGLRenderer` is found but scene/camera are missing: renderer
    properties (`scene`, `_scene`, `userData`, …) then a temporary instance
    `render()` hook for a few frames

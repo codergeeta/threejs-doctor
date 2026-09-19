@@ -146,25 +146,79 @@ export interface InstallRendererRenderCaptureOptions {
   deepWalk?: boolean
 }
 
+export interface WrappedRendererCtor extends RendererRenderCapture {
+  /** Replacement constructor. Assign this onto the module (`mod.WebGLRenderer = ctor`). */
+  ctor: unknown
+}
+
+/**
+ * Wrap a `WebGLRenderer` constructor so each `new` instance's own `render`
+ * is hooked once. Official three.module.js assigns `this.render` in the
+ * constructor; patching `prototype.render` never runs.
+ */
+export function wrapWebGLRendererCtor(ctor: unknown, root: unknown = globalThis): WrappedRendererCtor {
+  if (typeof ctor !== 'function') {
+    return { ...idleCapture, ctor }
+  }
+  const Original = ctor as new (...args: unknown[]) => object
+  let active = true
+  let last: RendererRenderCapture = idleCapture
+
+  function Wrapped(this: unknown, ...args: unknown[]) {
+    const instance = Reflect.construct(Original, args) as { render?: unknown }
+    if (active && isRecord(instance) && typeof instance.render === 'function') {
+      last.uninstall()
+      last = hookRenderMethod(root, instance as { render: (...args: unknown[]) => unknown })
+    }
+    return instance
+  }
+  Wrapped.prototype = Original.prototype
+  try {
+    Object.setPrototypeOf(Wrapped, Original)
+  } catch {
+    // frozen constructor
+  }
+  try {
+    Object.defineProperty(Wrapped, 'name', { value: Original.name })
+  } catch {
+    // name may be read-only
+  }
+
+  return {
+    installed: true,
+    ctor: Wrapped,
+    uninstall() {
+      active = false
+      last.uninstall()
+    },
+    getCaptured() {
+      return last.getCaptured()
+    },
+  }
+}
+
 export function installRendererRenderCapture(
   root: unknown = globalThis,
   options: InstallRendererRenderCaptureOptions = {},
 ): RendererRenderCapture {
+  if (isRecord(options.instance) && typeof options.instance.render === 'function') {
+    return hookRenderMethod(root, options.instance as { render: (...args: unknown[]) => unknown })
+  }
+
   const ctor = findThreeWebGLRendererCtor(root)
   if (ctor) return hookRenderMethod(root, ctor.prototype)
 
-  const instance = isRecord(options.instance)
-    ? options.instance
-    : options.skipDeepWalk || !isDeepWalkEnabled(root, options.deepWalk)
-      ? undefined
-      : findRendererDeep(root)
+  const instance = options.skipDeepWalk || !isDeepWalkEnabled(root, options.deepWalk)
+    ? undefined
+    : findRendererDeep(root)
   if (!isRecord(instance)) return idleCapture
-
-  const fromInstance = instance.constructor
-  if (isRendererCtor(fromInstance)) return hookRenderMethod(root, fromInstance.prototype)
 
   if (typeof instance.render === 'function') {
     return hookRenderMethod(root, instance as { render: (...args: unknown[]) => unknown })
   }
+
+  const fromInstance = instance.constructor
+  if (isRendererCtor(fromInstance)) return hookRenderMethod(root, fromInstance.prototype)
+
   return idleCapture
 }

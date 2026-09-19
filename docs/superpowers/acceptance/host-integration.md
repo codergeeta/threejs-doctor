@@ -19,6 +19,26 @@ window.__THREEJS_DOCTOR_HOST__ = { scene, camera, renderer }
 Then paste `attach.iife.js`. Discovery finds this on the **cheap path**. No
 `window.pelagic`. No `deepWalk`. No page-wide BFS.
 
+### three.js official examples (box / SwiftShader)
+
+Official examples (threejs.org) do **not** put `scene` / `camera` / `renderer` on
+`window`. `window.__THREE__` is often a **revision string**, not the library.
+
+`WebGLRenderer` assigns `this.render` as an **instance own-property**. Patching
+`WebGLRenderer.prototype.render` (live-attach capture / `capture.js`) is a
+**known non-starter** on those builds: the prototype hook never runs.
+
+Second path, **before** the example constructs a renderer: intercept
+`three.module.js` (import-map override or Chrome local override) and wrap the
+constructor so the first `render(scene, camera)` writes the host object. Snippet:
+[`examples/host-shim/intercept-three-module.js`](../../../examples/host-shim/intercept-three-module.js).
+Then paste the live-attach IIFE / `attachQualityLadder`.
+
+Box SwiftShader recapture (not spec §3 / not a phone; no invented FPS):
+
+- **Pass A+B with that HOST path:** `webgl_camera.html`, `webgl_lights_hemisphere.html`
+- **Blocked without HOST:** `webgl_animation_skinning_blending.html`, `webgl_lights_physical.html`
+
 That is what the unpublished local hosts do:
 
 - [`examples/acceptance-fixture`](../../../examples/acceptance-fixture/README.md)
@@ -42,10 +62,13 @@ catapult, …), try in this order — **deep walk stays opt-in**:
    (also `__r3f.store` / `__r3f.root`), and a renderer on a cheap bundle root whose
    `domElement` is that canvas. Does **not** BFS `window` or walk a live `scene`
    graph (geometry attributes stay unvisited).
-3. **Prototype capture** — if `window.THREE` / `window.three` / object
-   `window.__THREE__` exists, paste [`examples/host-shim/capture.js`](../../../examples/host-shim/capture.js),
+3. **Prototype capture** — only if `window.THREE` / `window.three` / object
+   `window.__THREE__` exists **and** instances call through
+   `WebGLRenderer.prototype.render`. Paste [`examples/host-shim/capture.js`](../../../examples/host-shim/capture.js),
    wait one rendered frame, confirm `window.__THREEJS_DOCTOR_HOST__`, then paste
-   the IIFE.
+   the IIFE. **Skip this on official three.module.js examples** (own-property
+   `render`; see above). Use [`intercept-three-module.js`](../../../examples/host-shim/intercept-three-module.js)
+   before load instead.
 4. **Opt-in deep walk** — `window.__THREEJS_DOCTOR_ATTACH__ = { deepWalk: true }`
    then paste. Hard-capped (5000 nodes / depth 8 / 80ms). Abort does not freeze
    the tab the way the old 50k walk did. Still cannot invent a fully closed-over
@@ -70,8 +93,12 @@ adapter. **Do not fake `pelagic` on other games.**
 
 - **`deepWalk: true`** is opt-in and hard-capped (5000 nodes / depth 8 / 80ms). It
   must not freeze the tab. It still **cannot invent** a fully closed-over renderer.
-- Prototype `render` capture needs `THREE.WebGLRenderer` on the page (or an
-  instance). A string `window.__THREE__` is not the library.
+- Prototype `render` capture needs `THREE.WebGLRenderer` on the page **and**
+  calls that actually hit `prototype.render`. Official `three.module.js` assigns
+  `this.render` on the instance — proto hooks do not run. A string
+  `window.__THREE__` is not the library. Use the HOST assignment or
+  [`intercept-three-module.js`](../../../examples/host-shim/intercept-three-module.js)
+  before the renderer is constructed.
 - External GitHub games stay **blocked pending a host hook** until one of the
   snippets above exists. Local fixtures are not those games. Box SwiftShader /
   Chrome emulation is not spec §3 / phone-class proof.
