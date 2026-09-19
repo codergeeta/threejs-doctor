@@ -21,6 +21,7 @@ const FINDING_LOCATION_KEY: Partial<Record<string, keyof StaticLocations>> = {
   'shadows/too-many-casters': 'shadowCasters',
   'lights/zero-intensity': 'zeroIntensity',
   'culling/frustum-disabled': 'frustumDisabled',
+  'culling/frustum-disabled-fx': 'frustumDisabledFx',
   'renderer/uncapped-dpr': 'uncappedDpr',
   'frameloop/continuous-static': 'continuousFrameloop',
   'renderer/antialias-postfx-risk': 'antialiasTrue',
@@ -91,9 +92,6 @@ function annotateFindings(
     if (locs.length === 0 && finding.id === 'renderer/uncapped-dpr') {
       locs = locsFor(facts, 'setPixelRatio')
     }
-    if (finding.id === 'culling/frustum-disabled' && finding.severity === 'info') {
-      locs = locsFor(facts, 'frustumDisabledFx')
-    }
     out.push(attachLocations(finding, locs, scanRoot, gitRoot))
   }
   return out
@@ -124,7 +122,7 @@ function composerDriftFinding(): Finding {
 
 function fxFrustumFinding(count: number): Finding {
   return {
-    id: 'culling/frustum-disabled',
+    id: 'culling/frustum-disabled-fx',
     severity: 'info',
     evidence: { frustumCulledDisabledFxCount: count },
     message: `${count} Points/Line/Sprite object(s) have frustumCulled === false (particle/line FX; not a mesh culling error)`,

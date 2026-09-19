@@ -3,8 +3,8 @@
  * Publish order (checklist): unscoped threejs-doctor FIRST, then scoped packages
  * in dependency order. Never publishes example packages.
  *
- *   node scripts/publish.mjs           # dry-run
- *   node scripts/publish.mjs --go      # actually publish (needs OIDC or NPM_TOKEN)
+ *   node scripts/publish.mjs           # dry-run (OK locally)
+ *   node scripts/publish.mjs --go      # actually publish — GitHub Actions only
  */
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -25,11 +25,24 @@ export const PUBLISH_ORDER = [
   'packages/r3f',
 ]
 
+export function assertPublishGoAllowed(doGo, env = process.env) {
+  if (!doGo) return
+  if (env.GITHUB_ACTIONS === 'true') return
+  throw new Error(
+    'Refusing to publish from outside GitHub Actions.\n' +
+      'The next publish must be the "publish" workflow in .github/workflows/publish.yml ' +
+      '(workflow_dispatch — type "publish" to confirm).\n' +
+      'Local dry-run is OK: pnpm publish:dry\n' +
+      'Do not run pnpm publish:npm --go on a laptop or cloud agent VM.',
+  )
+}
+
 function readPkg(dir) {
   return JSON.parse(readFileSync(path.join(root, dir, 'package.json'), 'utf8'))
 }
 
 function main() {
+  assertPublishGoAllowed(go)
   const names = []
   for (const dir of PUBLISH_ORDER) {
     const pkg = readPkg(dir)

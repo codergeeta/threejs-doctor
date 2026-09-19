@@ -1,0 +1,51 @@
+name: Bug report
+description: Report a scan, runtime, or attach problem
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not invent metrics. Attach a JSON report when you have one. Never paste untrusted DevTools scripts — see SECURITY.md.
+  - type: input
+    id: threejs
+    attributes:
+      label: three.js version
+      placeholder: "0.170.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: composer
+    attributes:
+      label: Post-processing composer?
+      options:
+        - none
+        - three.js EffectComposer
+        - pmndrs postprocessing
+        - other / unknown
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser / GPU
+      placeholder: "Safari 18 / iPhone 13 (no EXT_disjoint_timer_query_webgl2) or Chrome 128 / RTX 3060"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Expected vs actual. Quote file:line from the scan when relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: json
+    attributes:
+      label: JSON report
+      description: Paste or attach `scan --format json` / `window.__THREEJS_DOCTOR_LAST_REPORT__`. Redact URLs if needed. Leave empty if you have none — do not fabricate fields.
+      render: json
+  - type: input
+    id: version
+    attributes:
+      label: threejs-doctor version
+      placeholder: "0.1.4 or git SHA"

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="280" viewBox="0 0 880 280" role="img" aria-labelledby="title desc">
+  <title id="title">Arcade racer case study (measured)</title>
+  <desc id="desc">Measured facts only: minus 79 percent triangles with identical visuals via chunkInstancedMesh; composer DPR fix took adaptive GPU downgrade from 0 to minus 41 percent; static Doctor Score 66 to 74. Zero-intensity boost light about 22 percent GPU at Vehicle.js line 189. Composer drift at PostFX.js line 99.</desc>
+  <rect width="880" height="280" fill="#0b1220"/>
+  <text x="24" y="32" fill="#e8eef9" font-family="ui-sans-serif, system-ui, sans-serif" font-size="18" font-weight="700">Arcade racer  measured, not invented</text>
+  <g>
+    <rect x="24" y="52" width="400" height="200" rx="14" fill="#152238" stroke="#2a3d5c"/>
+    <text x="44" y="84" fill="#9db0c9" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">BEFORE</text>
+    <text x="44" y="120" fill="#e8eef9" font-family="ui-sans-serif, system-ui, sans-serif" font-size="16">Full triangle cost</text>
+    <text x="44" y="148" fill="#fb7185" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">Composer drift · PostFX.js:99</text>
+    <text x="44" y="176" fill="#fb7185" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">Zero-intensity boost · Vehicle.js:189</text>
+    <text x="44" y="204" fill="#fbbf24" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">Adaptive GPU downgrade: 0</text>
+    <text x="44" y="232" fill="#e8eef9" font-family="ui-sans-serif, system-ui, sans-serif" font-size="16">Static score 66</text>
+  </g>
+  <polygon points="450,152 478,138 478,166" fill="#7dd3fc"/>
+  <g>
+    <rect x="500" y="52" width="356" height="200" rx="14" fill="#14532d" stroke="#4ade80"/>
+    <text x="520" y="84" fill="#bbf7d0" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13">AFTER</text>
+    <text x="520" y="120" fill="#e8eef9" font-family="ui-sans-serif, system-ui, sans-serif" font-size="16">79% triangles, same visuals</text>
+    <text x="520" y="148" fill="#bbf7d0" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">chunkInstancedMesh-class win</text>
+    <text x="520" y="176" fill="#bbf7d0" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">Composer DPR fix</text>
+    <text x="520" y="204" fill="#4ade80" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14">Adaptive GPU downgrade: 41%</text>
+    <text x="520" y="232" fill="#e8eef9" font-family="ui-sans-serif, system-ui, sans-serif" font-size="16">Static score 74</text>
+  </g>
+</svg>

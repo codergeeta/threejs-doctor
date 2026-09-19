@@ -24,6 +24,8 @@ jobs:
       - name: Smoke scan + ci --min-score gate
         run: |
           node packages/cli/bin/threejs-doctor.js scan packages/cli/src/__tests__/fixtures/healthy-static --profile marketing --budget low --format json
+          node packages/cli/bin/threejs-doctor.js scan packages/cli/src/__tests__/fixtures/healthy-static --profile marketing --budget low --format html > /tmp/doctor-report.html
+          grep -q 'static (source patterns)' /tmp/doctor-report.html
           node packages/cli/bin/threejs-doctor.js ci packages/cli/src/__tests__/fixtures/healthy-static --min-score 70 --profile marketing --budget low
           if node packages/cli/bin/threejs-doctor.js ci packages/cli/src/__tests__/fixtures/heavy-static --min-score 90 --profile marketing --budget low; then
             echo "expected heavy fixture to fail the min-score gate" >&2

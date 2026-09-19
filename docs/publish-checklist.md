@@ -2,12 +2,13 @@
 
 Root `package.json` is `@threejs-doctor/monorepo` (`private: true`). Example packages stay private. This repo **does not store registry tokens**.
 
-**0.1.3 is on npm** — unscoped `threejs-doctor` plus `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`. Org: https://www.npmjs.com/org/threejs-doctor.
+**0.1.3 is on npm.** **0.1.4 is not published from this PR.** The next publish **must** be [`.github/workflows/publish.yml`](../.github/workflows/publish.yml) `workflow_dispatch` (confirm by typing `publish`). `scripts/publish.mjs --go` **refuses** unless `GITHUB_ACTIONS=true`. Do **not** run `pnpm publish:npm --go` locally or from a cloud agent VM. Dry-run is still OK: `pnpm publish:dry`.
+
+Org: https://www.npmjs.com/org/threejs-doctor.
 
 ```bash
 npm i @threejs-doctor/runtime
-npx threejs-doctor@0.1.3
-npx threejs-doctor@0.1.3 scan ./path --format json
+npx threejs-doctor@0.1.4 scan .
 ```
 
 Publish order is enforced by `scripts/publish.mjs`:
@@ -15,54 +16,48 @@ Publish order is enforced by `scripts/publish.mjs`:
 1. **FIRST** unscoped `threejs-doctor` (name reservation + `npx threejs-doctor` → `@threejs-doctor/cli`)
 2. **THEN** scoped `@threejs-doctor/core`, `rules`, `runtime`, `bench`, `cli`, `r3f` with provenance
 
-`workspace:^` rewrites to `^0.1.3` on pack.
+`workspace:^` rewrites to `^0.1.4` on pack.
 
 ```bash
 pnpm build
 pnpm publish:dry    # no registry write; does not check dist.attestations
-# later publishes (optional Trusted Publisher leftover):
-pnpm publish:npm    # or GitHub Action "publish"
+# GitHub → Actions → "publish" → type `publish`  (do not publish from a cloud agent VM)
 ```
 
-Do **not** publish from a cloud agent VM. Do **not** republish 0.1.3.
+Do **not** republish 0.1.3.
 
-Publishable packages set `publishConfig.provenance: true` (npm 9.5+; equivalent to `npm publish --provenance` / `NPM_CONFIG_PROVENANCE=true`). **Provenance attestations still require Trusted Publisher (OIDC)** on GitHub Actions. 0.1.0–0.1.3 were token publishes and may have empty `dist.attestations` despite `publishConfig.provenance`.
+Publishable packages set `publishConfig.provenance: true`. **Provenance does not require Trusted Publisher.** `npm publish --provenance` in GitHub Actions with `id-token: write` can produce attestations **with `NPM_TOKEN`**. Trusted Publisher lets you delete `NPM_TOKEN` later. 0.1.0–0.1.3 were token publishes and may have empty `dist.attestations`.
+
+Weekly CI (`.github/workflows/provenance.yml`) runs `node scripts/check-provenance.mjs --published --latest` against the version currently on npm. `publish.yml` runs the same check against the just-published local version.
 
 ## Kunal — remaining npm / GitHub steps
 
-**0.1.0, 0.1.1, 0.1.2, and 0.1.3 publishes are done** (`pnpm publish:npm` after PR #25). Remaining (optional, not a blocker): attach Trusted Publisher on each package, then delete `NPM_TOKEN`. Token publish was used again; attestations may still be empty.
+**0.1.0–0.1.3 publishes are done.** Remaining for 0.1.4:
 
-### 1. Create the npm org — done
+### 1–5. Historical publishes — done
 
-Org **`@threejs-doctor`**: https://www.npmjs.com/org/threejs-doctor
+See git history. Token publish was used; `npm view threejs-doctor@0.1.3 dist.attestations` may still be empty.
 
-### 2. First publish with `NPM_TOKEN` — done
+### 6. Publish 0.1.4 — via workflow_dispatch only
 
-0.1.0 is on the registry. The first publish used a granular automation token in the `NPM_TOKEN` GitHub secret.
+1. Merge this PR to `main`.
+2. GitHub → **Actions** → **publish** → **Run workflow**.
+3. Confirm input: type `publish`.
+4. The workflow runs `node scripts/publish.mjs --go` (allowed because `GITHUB_ACTIONS=true`) with `NPM_CONFIG_PROVENANCE=true` and `id-token: write`. `NPM_TOKEN` may still be present and **can** produce attestations.
+5. Post-publish: `node scripts/check-provenance.mjs --published` must see non-empty `dist.attestations`.
+6. Optional later: attach Trusted Publisher on each package, then delete `NPM_TOKEN`.
 
-### 3. Publish 0.1.1 — done
+Trusted Publisher clicks in the npm UI are **out of scope** for this agent.
 
-0.1.1 is on the registry (`npm view threejs-doctor` / `npm view @threejs-doctor/runtime`). Changelog: real static scan + `ci --min-score`.
+Exact steps (human):
 
-### 4. Publish 0.1.2 — done
-
-0.1.2 is on the registry (`npm view threejs-doctor` / `npm view @threejs-doctor/runtime`). Changelog: real-host audit (rAF hang, visual rollback, static scan). Token publish was used again. `npm view threejs-doctor@0.1.2 dist.attestations` is empty.
-
-### 5. Publish 0.1.3 — done
-
-0.1.3 is on the registry (`npm view threejs-doctor` / `npm view @threejs-doctor/runtime`). Changelog: real-host audit (slow-device hidden, composer drift, SARIF). Token publish was used again. `npm view threejs-doctor@0.1.3 dist.attestations` may still be empty.
-
-### 6. Trusted Publisher (OIDC, later publishes) — remaining, optional
-
-For **each** of `threejs-doctor` and `@threejs-doctor/*`:
-
-1. npm → package → **Settings** → **Trusted Publisher** → GitHub Actions
-   - Repository: `codergeeta/threejs-doctor`
-   - Workflow filename: `publish.yml`
-   - Environment: leave empty unless you add one
-2. Delete the `NPM_TOKEN` repo secret. Empty `NODE_AUTH_TOKEN` is fine; the workflow unsets it and uses OIDC.
-
-Provenance: the workflow sets `id-token: write` and `NPM_CONFIG_PROVENANCE=true` (`npm publish --provenance` via pnpm). Packages also set `publishConfig.provenance: true`. **OIDC provenance still needs Trusted Publisher clicks in the npm UI** (this checklist does not perform those clicks). `scripts/check-provenance.mjs --published` fails if `dist.attestations` is empty after a future OIDC publish.
+```text
+1. Open https://github.com/codergeeta/threejs-doctor/actions/workflows/publish.yml
+2. Run workflow on branch main
+3. Type: publish
+4. Confirm npm view threejs-doctor@0.1.4
+5. Confirm npm view threejs-doctor@0.1.4 dist.attestations is non-empty
+```
 
 ## Checklist
 
@@ -71,22 +66,18 @@ Provenance: the workflow sets `id-token: write` and `NPM_CONFIG_PROVENANCE=true`
 - [x] GitHub Actions `publish.yml` uses OIDC (`id-token: write`) + optional `NPM_TOKEN`.
 - [x] Create `@threejs-doctor` npm org.
 - [x] Set `NPM_TOKEN` GitHub secret (first publish).
-- [x] `pnpm typecheck` / `pnpm test` / `pnpm build` green on `main`.
-- [x] Run **Publish npm** (confirm `publish`) **or** `pnpm publish:npm` for 0.1.0.
-- [x] Confirm `npm view threejs-doctor` and `npm view @threejs-doctor/runtime` (0.1.0).
-- [x] Bump publishable packages to 0.1.1.
-- [x] Publish 0.1.1 and confirm `npm view` (do not publish from a cloud VM).
-- [x] Bump publishable packages to 0.1.2 + `publishConfig.provenance: true`.
-- [x] Publish 0.1.2 and confirm `npm view` (do not publish from a cloud VM).
-- [x] Bump publishable packages to 0.1.3.
-- [x] Post-publish provenance check script (`scripts/check-provenance.mjs --published`).
-- [x] Publish 0.1.3 and confirm `npm view` (do not publish from a cloud VM).
-- [ ] Attach Trusted Publisher on each package; then delete `NPM_TOKEN`. (optional leftover)
-- [ ] Confirm `npm view <pkg>@0.1.3 dist.attestations` is non-empty. (optional leftover; token publish may still have empty attestations)
-- [ ] Confirm npm 2FA remains on for org owners (org + packages exist).
+- [x] Publish 0.1.0–0.1.3 and confirm `npm view`.
+- [x] `scripts/publish.mjs --go` refuses outside GitHub Actions.
+- [x] Scheduled provenance check (`--published --latest`).
+- [x] Bump publishable packages to 0.1.4.
+- [ ] Publish 0.1.4 via `publish.yml` workflow_dispatch only (do not publish from a cloud VM; do not `pnpm publish:npm --go`).
+- [ ] Confirm `npm view <pkg>@0.1.4 dist.attestations` is non-empty.
+- [ ] (Optional) Attach Trusted Publisher on each package; then delete `NPM_TOKEN`.
+- [ ] Confirm npm 2FA remains on for org owners.
 
 ## This PR does not
 
 - store registry tokens
 - republish 0.1.3 to npm
+- npm-publish 0.1.4 from a cloud agent VM
 - attach Trusted Publisher or delete `NPM_TOKEN`

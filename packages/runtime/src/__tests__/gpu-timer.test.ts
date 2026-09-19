@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { createGpuFrameSampler, waitGpuMacrotask } from '../gpu-timer.js'
+import { createGpuFrameSampler, waitGpuMacrotask, guardWaitFrame } from '../gpu-timer.js'
 import { Doctor } from '../doctor.js'
 import type { DoctorRendererLike } from '../passes/types.js'
 
@@ -431,5 +431,48 @@ describe('waitGpuMacrotask does not hang when rAF is stalled', () => {
     ])
     expect(sample.invalid).toBe(true)
     expect(sample.invalidReason).toBe('hidden')
+  })
+
+  it('marks waitFrame stalled after the stall cap when the host never settles while visible', async () => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
+    const never = () => new Promise(() => {})
+    const start = Date.now()
+    const result = await guardWaitFrame(never, 20, 50)
+    expect(Date.now() - start).toBeLessThan(400)
+    expect(result.stalled).toBe(true)
+  })
+
+  it('does not mark a settling waitFrame as stalled', async () => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
+    const result = await guardWaitFrame(async () => {}, 20, 200)
+    expect(result.stalled).toBe(false)
+  })
+
+  it('marks measure invalid stalled when waitFrame never settles while visible', async () => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
+    const doctor = new Doctor({
+      scene: { children: [], traverse() {} } as never,
+      camera: {},
+      renderer: {
+        info: { render: { calls: 1, triangles: 1 }, memory: { geometries: 0, textures: 0 } },
+        setPixelRatio() {},
+        render() {},
+      } as never,
+      profile: 'game',
+      measureFrames: 2,
+      waitFrame: () => new Promise(() => {}),
+      waitFrameStallMs: 40,
+    })
+    const sample = await Promise.race([
+      doctor.measure(2),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('measure hung on stalled waitFrame')), 800)
+      }),
+    ])
+    expect(sample.invalid).toBe(true)
+    expect(sample.invalidReason).toBe('stalled')
   })
 })

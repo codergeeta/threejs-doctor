@@ -36,8 +36,24 @@ export function shouldCheckPublishedRegistry(argv) {
   return argv.includes('--published') && !argv.includes('--dry-run')
 }
 
+export function shouldUseLatestPublishedVersion(argv) {
+  return argv.includes('--latest')
+}
+
+export function resolvePublishedVersion(localVersion, argv, latestVersion) {
+  return shouldUseLatestPublishedVersion(argv) ? latestVersion : localVersion
+}
+
 function readPkg(dir) {
   return JSON.parse(readFileSync(path.join(root, dir, 'package.json'), 'utf8'))
+}
+
+function npmViewVersion(name) {
+  const out = execFileSync('npm', ['view', name, 'version'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  return out.trim()
 }
 
 function npmViewAttestations(name, version) {
@@ -65,15 +81,21 @@ export function main(argv = process.argv.slice(2)) {
   for (const dir of PUBLISH_ORDER) {
     const pkg = readPkg(dir)
     if (pkg.publishConfig?.provenance !== true) continue
-    const attestations = npmViewAttestations(pkg.name, pkg.version)
+    const version = resolvePublishedVersion(
+      pkg.version,
+      argv,
+      shouldUseLatestPublishedVersion(argv) ? npmViewVersion(pkg.name) : pkg.version,
+    )
+    const attestations = npmViewAttestations(pkg.name, version)
     if (attestationsMissing(attestations)) {
-      failures.push(`${pkg.name}@${pkg.version}`)
+      failures.push(`${pkg.name}@${version}`)
     }
   }
   if (failures.length > 0) {
     throw new Error(
       `Provenance attestations missing for: ${failures.join(', ')}. ` +
-        'Publish via .github/workflows/publish.yml after Trusted Publisher is attached; token publishes leave dist.attestations empty.',
+        'Publish via .github/workflows/publish.yml (`npm publish --provenance` with id-token: write). ' +
+          'Provenance attestations can be produced with NPM_TOKEN; Trusted Publisher lets you delete the token later.',
     )
   }
   console.log('Provenance attestations present for all provenance-claiming packages.')

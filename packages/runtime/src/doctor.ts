@@ -47,7 +47,13 @@ import { mountOverlay as mountOverlayImpl, type OverlayHandle } from './overlay/
 import type { QualityHudState } from './overlay/format-quality-hud.js'
 import { readRendererAntialias, readRendererPixelRatio } from './renderer-read.js'
 import { collectHostSceneStats, applyHostInsights, type CollectHostSceneOptions } from './scene-stats.js'
-import { createGpuFrameSampler, waitGpuMacrotask, guardWaitFrame } from './gpu-timer.js'
+import {
+  createGpuFrameSampler,
+  waitGpuMacrotask,
+  guardWaitFrame,
+  DEFAULT_WAIT_FRAME_STALL_MS,
+  DEFAULT_GPU_MACROTASK_TIMEOUT_MS,
+} from './gpu-timer.js'
 import { findComposer, notifyPixelRatioChange } from './composer.js'
 import { InstanceLeakTracker } from './instance-leak-tracker.js'
 
@@ -94,6 +100,11 @@ export interface DoctorOptions {
    * wraps this hook so a hidden tab cannot hang `measure()`.
    */
   waitFrame?: () => Promise<unknown>
+  /**
+   * Abort a never-settling visible `waitFrame` after this many ms (`invalid: 'stalled'`).
+   * Default 5000. Slow visible frames under this cap are still measured.
+   */
+  waitFrameStallMs?: number
   /**
    * Host render for one frame (`composer.render()` or `renderer.render(scene, camera)`).
    * Used when `waitFrame` is omitted. If omitted, Doctor calls `renderer.render(scene, camera)` when present.
@@ -489,6 +500,7 @@ export class Doctor {
       hook(composer as { render?: (...args: never[]) => unknown })
     }
     gpu?.beginMeasure()
+    let stalled = false
     try {
       for (let i = 0; i < frames; i++) {
         info.reset?.()
@@ -496,8 +508,17 @@ export class Doctor {
         const start = now()
         collector.beginFrame(start)
         gpu?.begin()
-        if (waitFrame) await guardWaitFrame(waitFrame)
-        else if (renderFrame) await renderFrame()
+        if (waitFrame) {
+          const waited = await guardWaitFrame(
+            waitFrame,
+            DEFAULT_GPU_MACROTASK_TIMEOUT_MS,
+            this.opts.waitFrameStallMs ?? DEFAULT_WAIT_FRAME_STALL_MS,
+          )
+          if (waited.stalled) {
+            stalled = true
+            break
+          }
+        } else if (renderFrame) await renderFrame()
         gpuTimes.push(...(gpu?.end() ?? []))
         const end = workMs !== undefined ? start + workMs : now()
         collector.endFrame(end)
@@ -543,7 +564,10 @@ export class Doctor {
       validityInput.visibilityState = visibility
     }
     const validity = classifyMeasureValidity(validityInput)
-    if (validity.invalid) {
+    if (stalled) {
+      sample.invalid = true
+      sample.invalidReason = 'stalled'
+    } else if (validity.invalid) {
       sample.invalid = true
       if (validity.reason) sample.invalidReason = validity.reason
     }

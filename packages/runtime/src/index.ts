@@ -14,8 +14,15 @@ export { materialDowngradePass } from './passes/material-downgrade.js'
 export { readRendererPixelRatio, readRendererAntialias } from './renderer-read.js'
 export { collectHostSceneStats, applyHostInsights, readHostWorldRadius } from './scene-stats.js'
 export type { CollectHostSceneOptions, HostSceneInsights, HostSceneCollection } from './scene-stats.js'
-export { createGpuFrameSampler, waitGpuMacrotask, guardWaitFrame, documentIsHidden } from './gpu-timer.js'
-export type { GpuFrameSampler, GpuMacrotaskWait } from './gpu-timer.js'
+export {
+  createGpuFrameSampler,
+  waitGpuMacrotask,
+  guardWaitFrame,
+  documentIsHidden,
+  DEFAULT_WAIT_FRAME_STALL_MS,
+  DEFAULT_GPU_MACROTASK_TIMEOUT_MS,
+} from './gpu-timer.js'
+export type { GpuFrameSampler, GpuMacrotaskWait, GuardWaitFrameResult } from './gpu-timer.js'
 export { isComposerLike, readComposerSize, findComposer } from './composer.js'
 export { mountOverlay } from './overlay/mount-overlay.js'
 export type { OverlayHandle, MountOverlayOptions } from './overlay/mount-overlay.js'

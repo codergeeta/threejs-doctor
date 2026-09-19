@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   attestationsMissing,
   shouldCheckPublishedRegistry,
+  shouldUseLatestPublishedVersion,
+  resolvePublishedVersion,
 } from '../../../../scripts/check-provenance.mjs'
 
 describe('provenance attestation check', () => {
@@ -18,5 +20,12 @@ describe('provenance attestation check', () => {
     expect(shouldCheckPublishedRegistry([])).toBe(false)
     expect(shouldCheckPublishedRegistry(['--dry-run'])).toBe(false)
     expect(shouldCheckPublishedRegistry(['--published'])).toBe(true)
+  })
+
+  it('uses --latest to check the version currently on npm, not the local package.json', () => {
+    expect(shouldUseLatestPublishedVersion(['--published'])).toBe(false)
+    expect(shouldUseLatestPublishedVersion(['--published', '--latest'])).toBe(true)
+    expect(resolvePublishedVersion('0.1.4', ['--published'], '0.1.3')).toBe('0.1.4')
+    expect(resolvePublishedVersion('0.1.4', ['--published', '--latest'], '0.1.3')).toBe('0.1.3')
   })
 })
