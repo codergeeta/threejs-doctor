@@ -2,14 +2,11 @@
 
 Root `package.json` is `@threejs-doctor/monorepo` (`private: true`). Example packages stay private. This repo **does not store registry tokens**.
 
-**0.1.1 is on npm** — unscoped `threejs-doctor` plus `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`. Org: https://www.npmjs.com/org/threejs-doctor.
-
-**0.1.2 is pending publish** after this merge (packages are bumped in git). Do **not** publish from a cloud agent VM.
+**0.1.2 is on npm** — unscoped `threejs-doctor` plus `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`. Org: https://www.npmjs.com/org/threejs-doctor.
 
 ```bash
 npm i @threejs-doctor/runtime
-npx threejs-doctor@0.1.1
-# after 0.1.2 is published:
+npx threejs-doctor@0.1.2
 npx threejs-doctor@0.1.2 scan ./path --format json
 ```
 
@@ -23,17 +20,17 @@ Publish order is enforced by `scripts/publish.mjs`:
 ```bash
 pnpm build
 pnpm publish:dry    # no registry write
-# later publishes:
+# later publishes (optional Trusted Publisher leftover):
 pnpm publish:npm    # or GitHub Action "publish"
 ```
 
-Do **not** publish from a cloud agent VM. Do **not** republish 0.1.1.
+Do **not** publish from a cloud agent VM. Do **not** republish 0.1.2.
 
-Publishable packages set `publishConfig.provenance: true` (npm 9.5+; equivalent to `npm publish --provenance` / `NPM_CONFIG_PROVENANCE=true`). **Provenance attestations still require Trusted Publisher (OIDC)** on GitHub Actions. 0.1.0 and 0.1.1 were token publishes and do not have OIDC provenance.
+Publishable packages set `publishConfig.provenance: true` (npm 9.5+; equivalent to `npm publish --provenance` / `NPM_CONFIG_PROVENANCE=true`). **Provenance attestations still require Trusted Publisher (OIDC)** on GitHub Actions. 0.1.0, 0.1.1, and 0.1.2 were token publishes and do not have OIDC provenance.
 
 ## Kunal — remaining npm / GitHub steps
 
-**0.1.0 and 0.1.1 publishes are done** (`pnpm publish:npm` after PR #20). **0.1.2 is not published yet.** Remaining: publish 0.1.2 after merge; attach Trusted Publisher on each package, then delete `NPM_TOKEN`.
+**0.1.0, 0.1.1, and 0.1.2 publishes are done** (`pnpm publish:npm` after PR #23). Remaining (optional, not a blocker): attach Trusted Publisher on each package, then delete `NPM_TOKEN`.
 
 ### 1. Create the npm org — done
 
@@ -47,11 +44,11 @@ Org **`@threejs-doctor`**: https://www.npmjs.com/org/threejs-doctor
 
 0.1.1 is on the registry (`npm view threejs-doctor` / `npm view @threejs-doctor/runtime`). Changelog: real static scan + `ci --min-score`.
 
-### 4. Publish 0.1.2 — pending
+### 4. Publish 0.1.2 — done
 
-After this PR merges and CI is green: run **Publish npm** (confirm `publish`) or `pnpm publish:npm`. Do not publish from a cloud VM.
+0.1.2 is on the registry (`npm view threejs-doctor` / `npm view @threejs-doctor/runtime`). Changelog: real-host audit (rAF hang, visual rollback, static scan). Token publish was used again.
 
-### 5. Trusted Publisher (OIDC, later publishes) — remaining
+### 5. Trusted Publisher (OIDC, later publishes) — remaining, optional
 
 For **each** of `threejs-doctor` and `@threejs-doctor/*`:
 
@@ -76,12 +73,12 @@ Provenance: the workflow sets `id-token: write` and `NPM_CONFIG_PROVENANCE=true`
 - [x] Bump publishable packages to 0.1.1.
 - [x] Publish 0.1.1 and confirm `npm view` (do not publish from a cloud VM).
 - [x] Bump publishable packages to 0.1.2 + `publishConfig.provenance: true`.
-- [ ] Publish 0.1.2 and confirm `npm view` (do not publish from a cloud VM).
-- [ ] Attach Trusted Publisher on each package; then delete `NPM_TOKEN`. (still needed for OIDC provenance)
+- [x] Publish 0.1.2 and confirm `npm view` (do not publish from a cloud VM).
+- [ ] Attach Trusted Publisher on each package; then delete `NPM_TOKEN`. (optional leftover)
 - [ ] Confirm npm 2FA remains on for org owners (org + packages exist).
 
 ## This PR does not
 
 - store registry tokens
-- publish 0.1.2 to npm
+- republish 0.1.2 to npm
 - attach Trusted Publisher or delete `NPM_TOKEN`

@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **0.1.2 pending npm publish** after merge. Do not publish from a cloud agent VM. Trusted Publisher (OIDC provenance) is still needed; 0.1.0/0.1.1 were token publishes.
+- Docs: **0.1.2 is on npm**. Trusted Publisher remains optional leftover (not a blocker).
 
 ## 0.1.2
 
