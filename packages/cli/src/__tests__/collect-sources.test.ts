@@ -1,7 +1,8 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { mkdtemp, writeFile, mkdir, rm } from 'node:fs/promises'
+import { mkdtemp, writeFile, mkdir, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { spawnSync } from 'node:child_process'
 import { collectSources } from '../scan/collect-sources.js'
 
@@ -52,5 +53,22 @@ describe('collectSources', () => {
     const files = await collectSources(dir)
     expect(files.some((f) => f.path.endsWith('game.js'))).toBe(true)
     expect(files.some((f) => f.path.endsWith('three.module.js'))).toBe(false)
+  })
+
+  it('batches git check-ignore instead of spawning once per file', async () => {
+    const dir = await scratch()
+    spawnSync('git', ['init'], { cwd: dir, stdio: 'ignore' })
+    await writeFile(join(dir, '.gitignore'), 'skip-*.js\n')
+    for (let i = 0; i < 12; i++) {
+      await writeFile(join(dir, `app-${i}.js`), "import { Mesh } from 'three'\nnew Mesh()\n")
+      await writeFile(join(dir, `skip-${i}.js`), "import { Mesh } from 'three'\nnew Mesh()\n")
+    }
+    const files = await collectSources(dir)
+    expect(files.filter((f) => /app-\d+\.js$/.test(f.path))).toHaveLength(12)
+    expect(files.some((f) => f.path.includes('skip-'))).toBe(false)
+    const src = await readFile(join(dirname(fileURLToPath(import.meta.url)), '../scan/collect-sources.ts'), 'utf8')
+    expect(src).toMatch(/check-ignore',\s*'--stdin',\s*'-z'/)
+    expect(src).toMatch(/function gitIgnoredAbsPaths/)
+    expect(src).not.toMatch(/for \(const file of files\)[\s\S]{0,200}check-ignore', '-q'/)
   })
 })

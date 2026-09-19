@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { dirname, resolve } from 'node:path'
+import { dirname, resolve, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { spawnSync } from 'node:child_process'
 import { main } from '../cli.js'
 import { runScan } from '../commands/scan.js'
 import type { CliArgs } from '../cli.js'
@@ -138,6 +141,49 @@ describe('runScan static analysis', () => {
     expect(hit).toBeDefined()
     expect(hit?.evidence.file).toMatch(/composer\.js$/)
     expect(typeof hit?.evidence.line).toBe('number')
+    expect(hit?.suggestedFix).toMatch(/setPixelRatio/)
+    expect(hit?.suggestedFix).not.toMatch(/setPixelRatio or composer\.setSize/)
+  })
+
+  it('flags vanilla EffectComposer setSize-only as composer pixel-ratio drift', async () => {
+    const report = await runScan({
+      ...baseArgs,
+      profile: 'game',
+      path: resolve(here, 'fixtures/composer-setsize-only'),
+    })
+    expect(report.findings.some((f) => f.id === 'renderer/composer-pixel-ratio-drift')).toBe(true)
+  })
+
+  it('does not flag vanilla EffectComposer when setPixelRatio is synced', async () => {
+    const report = await runScan({
+      ...baseArgs,
+      profile: 'game',
+      path: resolve(here, 'fixtures/composer-setpixelratio'),
+    })
+    expect(report.findings.some((f) => f.id === 'renderer/composer-pixel-ratio-drift')).toBe(false)
+  })
+
+  it('does not flag pmndrs postprocessing setSize-only as drift', async () => {
+    const report = await runScan({
+      ...baseArgs,
+      profile: 'game',
+      path: resolve(here, 'fixtures/composer-pmndrs-setsize'),
+    })
+    expect(report.findings.some((f) => f.id === 'renderer/composer-pixel-ratio-drift')).toBe(false)
+  })
+
+  it('exposes every frustum-disabled location, not only the first file', async () => {
+    const report = await runScan({
+      ...baseArgs,
+      profile: 'game',
+      path: resolve(here, 'fixtures/frustum-multi'),
+    })
+    const hit = report.findings.find((f) => f.id === 'culling/frustum-disabled')
+    expect(hit).toBeDefined()
+    const files = (hit?.locations ?? []).map((l) => String(l.file).replace(/\\/g, '/'))
+    expect(files.some((p) => p.endsWith('Effects.js'))).toBe(true)
+    expect(files.some((p) => p.endsWith('Environment.js'))).toBe(true)
+    expect(hit?.locations?.length).toBeGreaterThanOrEqual(3)
   })
 
   it('downgrades Points/Line/Sprite frustumCulled=false to info', async () => {
@@ -154,6 +200,27 @@ describe('runScan static analysis', () => {
     expect(fx.length).toBeGreaterThan(0)
     expect(fx.every((f) => f.severity === 'info')).toBe(true)
     expect(fx[0]?.evidence.file).toBeDefined()
+  })
+
+  it('reports finding paths relative to the git root, not only the scan subdirectory', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'doctor-gitpath-'))
+    try {
+      spawnSync('git', ['init'], { cwd: dir, stdio: 'ignore' })
+      await mkdir(join(dir, 'src', 'game'), { recursive: true })
+      await writeFile(
+        join(dir, 'src', 'game', 'Environment.js'),
+        "import { Mesh } from 'three'\nconst forest = new Mesh()\nforest.frustumCulled = false\n",
+      )
+      const report = await runScan({
+        ...baseArgs,
+        profile: 'game',
+        path: join(dir, 'src', 'game'),
+      })
+      const hit = report.findings.find((f) => f.id === 'culling/frustum-disabled')
+      expect(String(hit?.evidence.file).replace(/\\/g, '/')).toBe('src/game/Environment.js')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })
 

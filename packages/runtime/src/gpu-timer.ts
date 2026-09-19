@@ -77,13 +77,13 @@ function readDisjointExt(renderer: DoctorRendererLike, gl: Webgl2TimerContext | 
 }
 
 export interface GpuMacrotaskWait {
-  /** True when rAF did not fire in time, or the document is hidden. */
+  /** True when rAF did not fire in time, or the document is already hidden. */
   timedOut: boolean
 }
 
 const DEFAULT_GPU_MACROTASK_TIMEOUT_MS = 100
 
-function documentIsHidden(): boolean {
+export function documentIsHidden(): boolean {
   try {
     if (typeof document === 'undefined') return false
     return document.visibilityState === 'hidden' || document.hidden === true
@@ -93,8 +93,42 @@ function documentIsHidden(): boolean {
 }
 
 /**
+ * Host `waitFrame` can be `() => new Promise(requestAnimationFrame)`, which hangs in
+ * background tabs. Abort when the document is hidden; if rAF is merely slow while
+ * visible, keep waiting so <10 FPS devices are not cut off.
+ */
+export async function guardWaitFrame(
+  waitFrame: () => Promise<unknown>,
+  timeoutMs = DEFAULT_GPU_MACROTASK_TIMEOUT_MS,
+): Promise<void> {
+  if (documentIsHidden()) return
+  let frameSettled = false
+  const frame = Promise.resolve()
+    .then(() => waitFrame())
+    .finally(() => {
+      frameSettled = true
+    })
+  await Promise.race([frame, waitGpuMacrotask(timeoutMs)])
+  if (frameSettled || documentIsHidden()) return
+  await Promise.race([
+    frame,
+    new Promise<void>((resolve) => {
+      if (typeof document === 'undefined' || typeof document.addEventListener !== 'function') return
+      const onVis = () => {
+        if (documentIsHidden()) {
+          document.removeEventListener('visibilitychange', onVis)
+          resolve()
+        }
+      }
+      document.addEventListener('visibilitychange', onVis)
+    }),
+  ])
+}
+
+/**
  * Yield a macrotask so QUERY_RESULT_AVAILABLE can flip.
  * rAF is raced against a short timeout because browsers pause rAF in background tabs.
+ * A timeout is not "hidden" — callers must read `document.visibilityState`.
  */
 export function waitGpuMacrotask(timeoutMs = DEFAULT_GPU_MACROTASK_TIMEOUT_MS): Promise<GpuMacrotaskWait> {
   return new Promise((resolve) => {

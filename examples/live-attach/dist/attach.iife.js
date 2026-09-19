@@ -1232,7 +1232,7 @@
           severity: "warn",
           evidence,
           message: "EffectComposer internal size/pixel ratio is stale vs the renderer drawing buffer",
-          suggestedFix: "Call composer.setSize / setPixelRatio whenever the renderer resizes or DPR changes"
+          suggestedFix: "For three.js EffectComposer, call composer.setPixelRatio when the renderer DPR changes; setSize alone reuses the construction pixel ratio. pmndrs postprocessing may use setSize only."
         });
       }
       return findings;
@@ -2586,6 +2586,28 @@ ${line2}` : line1;
       return false;
     }
   }
+  async function guardWaitFrame(waitFrame, timeoutMs = DEFAULT_GPU_MACROTASK_TIMEOUT_MS) {
+    if (documentIsHidden()) return;
+    let frameSettled = false;
+    const frame = Promise.resolve().then(() => waitFrame()).finally(() => {
+      frameSettled = true;
+    });
+    await Promise.race([frame, waitGpuMacrotask(timeoutMs)]);
+    if (frameSettled || documentIsHidden()) return;
+    await Promise.race([
+      frame,
+      new Promise((resolve) => {
+        if (typeof document === "undefined" || typeof document.addEventListener !== "function") return;
+        const onVis = () => {
+          if (documentIsHidden()) {
+            document.removeEventListener("visibilitychange", onVis);
+            resolve();
+          }
+        };
+        document.addEventListener("visibilitychange", onVis);
+      })
+    ]);
+  }
   function waitGpuMacrotask(timeoutMs = DEFAULT_GPU_MACROTASK_TIMEOUT_MS) {
     return new Promise((resolve) => {
       let settled = false;
@@ -3042,7 +3064,6 @@ ${line2}` : line1;
         hook(composer);
       }
       gpu?.beginMeasure();
-      let gpuWaitHidden = false;
       try {
         for (let i = 0; i < frames; i++) {
           info.reset?.();
@@ -3050,7 +3071,7 @@ ${line2}` : line1;
           const start = now();
           collector.beginFrame(start);
           gpu?.begin();
-          if (waitFrame) await waitFrame();
+          if (waitFrame) await guardWaitFrame(waitFrame);
           else if (renderFrame) await renderFrame();
           gpuTimes.push(...gpu?.end() ?? []);
           const end = workMs !== void 0 ? start + workMs : now();
@@ -3058,15 +3079,13 @@ ${line2}` : line1;
           callSamples.push(info.render.calls);
           triangleSamples.push(info.render.triangles);
           if (gpu && !waitFrame && liveClock) {
-            const wait = await waitGpuMacrotask();
-            if (wait.timedOut) gpuWaitHidden = true;
+            await waitGpuMacrotask();
           }
         }
         if (gpu && liveClock) {
           for (let i = 0; i < 4; i++) {
             const wait = await waitGpuMacrotask();
             if (wait.timedOut) {
-              gpuWaitHidden = true;
               break;
             }
             gpuTimes.push(...gpu.harvest());
@@ -3090,9 +3109,7 @@ ${line2}` : line1;
         frameTimesMs: [...collector.frameTimes()]
       };
       const visibility = liveClock ? readVisibilityState() : "visible";
-      if (gpuWaitHidden && liveClock) {
-        validityInput.visibilityState = "hidden";
-      } else if (visibility !== void 0) {
+      if (visibility !== void 0) {
         validityInput.visibilityState = visibility;
       }
       const validity = classifyMeasureValidity(validityInput);

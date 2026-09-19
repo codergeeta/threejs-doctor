@@ -3,7 +3,7 @@ import type { DeviceCapabilities, MetricsSample, Profile } from '@threejs-doctor
 import { computeDoctorScore, runRules } from '@threejs-doctor/rules'
 import type { DoctorReport } from '@threejs-doctor/runtime'
 import type { CliArgs } from '../cli.js'
-import { collectSources } from '../scan/collect-sources.js'
+import { collectSources, gitTopLevel } from '../scan/collect-sources.js'
 import { deviceFromBudget } from '../scan/device-from-budget.js'
 import {
   extractStaticFacts,
@@ -12,7 +12,7 @@ import {
   type StaticFacts,
   type StaticLocations,
 } from '../scan/extract-snapshot.js'
-import { relative, resolve, sep } from 'node:path'
+import { relative, resolve, sep, dirname } from 'node:path'
 
 const STATIC_DROP_IDS = new Set(['materials/too-unique'])
 
@@ -37,41 +37,64 @@ export function resolveStaticProfile(profile: Profile, facts: StaticFacts): Conc
   return 'marketing'
 }
 
-function displayPath(file: string, scanRoot: string): string {
-  const root = resolve(scanRoot)
+function displayPath(file: string, scanRoot: string, gitRoot?: string): string {
   const abs = resolve(file)
-  if (abs === root) return abs.split(sep).pop() ?? abs
-  if (abs.startsWith(root + sep)) return relative(root, abs)
-  return file
+  const base = gitRoot ? resolve(gitRoot) : resolve(scanRoot)
+  if (abs === base) return (abs.split(sep).pop() ?? abs).replace(/\\/g, '/')
+  if (abs.startsWith(base + sep)) return relative(base, abs).replace(/\\/g, '/')
+  const root = resolve(scanRoot)
+  if (abs.startsWith(root + sep)) return relative(root, abs).replace(/\\/g, '/')
+  return file.replace(/\\/g, '/')
 }
 
-function attachLocation(finding: Finding, loc: SourceLocation | undefined, scanRoot: string): Finding {
-  if (!loc) return finding
+function attachLocations(
+  finding: Finding,
+  locs: SourceLocation[],
+  scanRoot: string,
+  gitRoot: string | undefined,
+): Finding {
+  if (locs.length === 0) return finding
+  const displayed = locs.map((loc) => ({
+    file: displayPath(loc.file, scanRoot, gitRoot),
+    line: loc.line,
+  }))
+  const primary = displayed[0]!
   return {
     ...finding,
     evidence: {
       ...finding.evidence,
-      file: displayPath(loc.file, scanRoot),
-      line: loc.line,
+      file: primary.file,
+      line: primary.line,
     },
+    locations: displayed,
   }
 }
 
-function firstLoc(facts: StaticFacts, key: keyof StaticLocations | undefined): SourceLocation | undefined {
-  if (!key) return undefined
-  return facts.locations[key][0]
+function locsFor(facts: StaticFacts, key: keyof StaticLocations | undefined): SourceLocation[] {
+  if (!key) return []
+  return facts.locations[key]
 }
 
-function annotateFindings(findings: Finding[], facts: StaticFacts, scanRoot: string, profileWasAuto: boolean): Finding[] {
+function annotateFindings(
+  findings: Finding[],
+  facts: StaticFacts,
+  scanRoot: string,
+  profileWasAuto: boolean,
+  gitRoot: string | undefined,
+): Finding[] {
   const out: Finding[] = []
   for (const finding of findings) {
     if (STATIC_DROP_IDS.has(finding.id)) continue
     if (profileWasAuto && finding.id === 'frameloop/continuous-static') continue
     const key = FINDING_LOCATION_KEY[finding.id]
-    const loc =
-      firstLoc(facts, key) ??
-      (finding.id === 'renderer/uncapped-dpr' ? firstLoc(facts, 'setPixelRatio') : undefined)
-    out.push(attachLocation(finding, loc, scanRoot))
+    let locs = locsFor(facts, key)
+    if (locs.length === 0 && finding.id === 'renderer/uncapped-dpr') {
+      locs = locsFor(facts, 'setPixelRatio')
+    }
+    if (finding.id === 'culling/frustum-disabled' && finding.severity === 'info') {
+      locs = locsFor(facts, 'frustumDisabledFx')
+    }
+    out.push(attachLocations(finding, locs, scanRoot, gitRoot))
   }
   return out
 }
@@ -93,8 +116,9 @@ function composerDriftFinding(): Finding {
     severity: 'warn',
     evidence: { sourcePattern: 'EffectComposer+setPixelRatio' },
     message:
-      'EffectComposer is constructed and the renderer calls setPixelRatio, but composer.setPixelRatio / composer.setSize is missing',
-    suggestedFix: 'Call composer.setPixelRatio or composer.setSize whenever the renderer DPR or size changes',
+      'EffectComposer is constructed and the renderer calls setPixelRatio, but composer.setPixelRatio is missing (three.js setSize does not pick up renderer DPR)',
+    suggestedFix:
+      'For three.js EffectComposer, call composer.setPixelRatio when the renderer DPR changes; setSize alone reuses the construction pixel ratio. pmndrs postprocessing may use setSize only.',
   }
 }
 
@@ -151,6 +175,8 @@ export async function runScan(args: CliArgs): Promise<DoctorReport> {
   const profile = resolveStaticProfile(args.profile, facts)
   const baseline = staticBaseline(facts)
   const scanRoot = args.path
+  const absScan = resolve(scanRoot)
+  const gitRoot = gitTopLevel(absScan) ?? gitTopLevel(dirname(absScan))
 
   if (!facts.sawThree) {
     const findings = [noThreeFinding(sources.length)]
@@ -176,15 +202,7 @@ export async function runScan(args: CliArgs): Promise<DoctorReport> {
   if (facts.frustumCulledDisabledFxCount > 0) {
     findings.push(fxFrustumFinding(facts.frustumCulledDisabledFxCount))
   }
-  findings = annotateFindings(findings, facts, scanRoot, profileWasAuto)
-  if (facts.frustumCulledDisabledFxCount > 0) {
-    const fx = findings.find((f) => f.id === 'culling/frustum-disabled' && f.severity === 'info')
-    if (fx && !fx.evidence.file) {
-      const loc = facts.locations.frustumDisabledFx[0]
-      const idx = findings.indexOf(fx)
-      if (idx >= 0) findings[idx] = attachLocation(fx, loc, scanRoot)
-    }
-  }
+  findings = annotateFindings(findings, facts, scanRoot, profileWasAuto, gitRoot)
 
   return staticReport({
     profile,

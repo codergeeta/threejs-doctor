@@ -6,6 +6,11 @@ import type {
   Severity,
 } from '@threejs-doctor/core'
 
+export interface FindingLocation {
+  file: string
+  line: number
+}
+
 export interface Finding {
   id: string
   severity: Severity
@@ -13,6 +18,8 @@ export interface Finding {
   message: string
   suggestedFix: string
   autoFix?: PassId
+  /** Every source site for this finding (scan). Primary is also evidence.file/line. */
+  locations?: FindingLocation[]
 }
 
 export interface RuleContext {

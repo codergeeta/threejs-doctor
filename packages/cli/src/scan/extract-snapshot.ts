@@ -423,6 +423,17 @@ function countFrustumDisabled(
   return { mesh, fx }
 }
 
+function composerKind(source: string): 'three' | 'pmndrs' {
+  if (
+    /\bfrom\s+['"]postprocessing(?:\/[^'"]*)?['"]/.test(source) ||
+    /\brequire\(\s*['"]postprocessing(?:\/[^'"]*)?['"]\s*\)/.test(source) ||
+    /@react-three\/postprocessing/.test(source)
+  ) {
+    return 'pmndrs'
+  }
+  return 'three'
+}
+
 function composerFacts(
   source: string,
   file: string,
@@ -435,10 +446,18 @@ function composerFacts(
   const ctor = countCtorHits(source, 'EffectComposer', file, lineOffset)
   const ids = new Set(objectBindings(source, 'EffectComposer'))
   if (ctor.length > 0 && ids.size === 0) ids.add('composer')
+  const kind = composerKind(source)
   let synced = false
   for (const id of ids) {
-    const re = new RegExp(`(?:\\bthis\\.)?\\b${id}\\.set(?:PixelRatio|Size)\\s*\\(`)
-    if (re.test(source)) synced = true
+    const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    if (new RegExp(`(?:\\bthis\\.)?\\b${escaped}\\.setPixelRatio\\s*\\(`).test(source)) {
+      synced = true
+      break
+    }
+    if (kind === 'pmndrs' && new RegExp(`(?:\\bthis\\.)?\\b${escaped}\\.setSize\\s*\\(`).test(source)) {
+      synced = true
+      break
+    }
   }
   return { ctor, ids, synced }
 }
