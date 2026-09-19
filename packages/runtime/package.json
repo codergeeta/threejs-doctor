@@ -1,6 +1,6 @@
 {
   "name": "@threejs-doctor/runtime",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Doctor API, overlay, and safe runtime passes for Three.js",
   "license": "MIT",
   "author": "codergeeta",
@@ -13,7 +13,9 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
@@ -54,6 +56,7 @@
         "types": "./dist/index.d.ts",
         "import": "./dist/index.js"
       }
-    }
+    },
+    "provenance": true
   }
 }

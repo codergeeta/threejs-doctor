@@ -100,4 +100,26 @@ describe('reports', () => {
     expect(text).toMatch(/rolled back/i)
     expect(text).toMatch(/fixed viewpoint/i)
   })
+
+  it('labels a static scan score as not a runtime speed claim and prints file:line', () => {
+    const text = formatHumanReport({
+      ...report,
+      mode: 'diagnose',
+      staticScan: true,
+      after: undefined,
+      deltas: undefined,
+      findings: [
+        {
+          id: 'lights/too-many',
+          severity: 'warn',
+          evidence: { lightCount: 9, file: 'src/lights.js', line: 42 },
+          message: 'Active lights 9 exceed budget 3',
+          suggestedFix: 'Bake lighting',
+        },
+      ],
+    })
+    expect(text).toMatch(/Static Doctor Score/i)
+    expect(text).toMatch(/not a runtime speed/i)
+    expect(text).toContain('src/lights.js:42')
+  })
 })

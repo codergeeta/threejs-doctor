@@ -2,6 +2,34 @@
 
 P0 from the real-host report (dpr-cap NaN, distance-cull hiding nested meshes, honest scan/ci, unpublished npm name) is handled in the runtime/CLI.
 
+## Round 4 — audit of published 0.1.1 vs arcade racer (fixes in 0.1.2)
+
+Round-3 GPU isolation, visual gate, and 0.1.1 publish remain the baseline. **0.1.2 is pending npm publish** after merge. Trusted Publisher is still needed for OIDC provenance (0.1.0/0.1.1 were token publishes).
+
+| Item | Status |
+|------|--------|
+| P0 `measure()` hang in a background tab | **Fixed.** `waitGpuMacrotask` races `requestAnimationFrame` against `setTimeout(100)`. Timeout or hidden document bails with `invalid: 'hidden'`. Unit tests stub stalled rAF. |
+| P0 visual rollback undoes earlier accepted passes | **Fixed.** `optimize()` rolls back only handles added by **that** call. Report after/deltas/appliedPasses reflect the restored accepted state. Test: optimize A accepted → optimize B fails visual gate → A still applied. |
+| P1 `auto` → marketing + demand | **Fixed.** Any continuous loop (`requestAnimationFrame` + render, `setAnimationLoop`, R3F `<Canvas>`) classifies as **game**. Static scan never recommends `frameloop-demand` from auto facts. |
+| P1 missed vanilla lights / shadows | **Fixed.** Positional intensity `0` on PointLight/SpotLight/etc. Non-literal-false `castShadow =` (e.g. `this.quality !== 'low'`). |
+| P1 `materials/too-unique` | **Dropped from static scan** (call-site Mesh+Material is almost always 1:1). Runtime rule unchanged. |
+| P1 `culling/frustum-disabled` on FX | **Info** (not warn/error) for Points/Line/Sprite; mesh still warns. Locations include file:line. |
+| P1 collectSources | Honours `.gitignore`; skips minified (long first line / high avg line length); skips vendored three `REVISION` banner. |
+| P1 finding locations | Findings carry `file:line`. `--format sarif` available. |
+| P1 static score label | Human/JSON report marks **Static Doctor Score**; 100 is not a runtime speed claim. |
+| P1 composer pixel-ratio drift | `new EffectComposer` + renderer `setPixelRatio` without `composer.setPixelRatio` / `composer.setSize` → `renderer/composer-pixel-ratio-drift`. |
+
+`distance-cull` and `frameloop-demand` stay **out** of default game `SAFE_PASSES`. Scan still does not invent runtime metrics.
+
+### Residual (not this PR / backlog)
+
+- Runtime Playwright CI vs baseline JSON
+- GPU time per composer pass
+- Export helpers (`chunkInstancedMesh`, `syncComposerPixelRatio`, light pool)
+- First-use shader-hitch / `compileAsync` detection
+- npm publish of 0.1.2 / Trusted Publisher clicks in npm UI
+- **Phone ocean** — still a follow-up capture
+
 ## Round 3 — audit of arcade racer @16976c9 (fixes in this PR)
 
 Round-2 GPU timer (57/60 frames, median 1.39ms on waitFrame), drawn triangles, composer, instance bounds, leaks, measure wrap, and 0.5% visual gate remain **verified good on a real RTX 3050**. This PR lands the still-open correctness from that audit. **Do not merge until the user re-audits.**
@@ -9,12 +37,12 @@ Round-2 GPU timer (57/60 frames, median 1.39ms on waitFrame), drawn triangles, c
 | Item | Status |
 |------|--------|
 | 2 GPU query carry-over | **Fixed.** Each `measure()` calls `beginMeasure` (new measure id, delete pending/active) and `endMeasure` (discard leftovers). Harvest collects **every** available result, not one. Tagged mismatches are dropped. Unit test: measure A enqueues; measure B with no work does not report A's times. Never invent `gpuFrameTimeMs`. |
-| 3 Default path without waitFrame | **Fixed.** Live clock + GPU sampler + no `waitFrame`: yield `waitGpuMacrotask` (rAF / `setTimeout(0)`) between frames and drain a few reads, then discard leftovers. Tight `renderFrame` loops set `gpuTimingSkipped` when no result arrived and cannot poison the next measure. r3f `DoctorCanvas` always passes `waitFrame`. |
+| 3 Default path without waitFrame | **Fixed.** Live clock + GPU sampler + no `waitFrame`: yield `waitGpuMacrotask` (rAF raced against a short timeout) between frames and drain a few reads, then discard leftovers. Tight `renderFrame` loops set `gpuTimingSkipped` when no result arrived and cannot poison the next measure. r3f `DoctorCanvas` always passes `waitFrame`. |
 | 4 Delayed GPU unit tests | **Fixed.** Fake WebGL2 context with results N frames late covers carry-over and no-waitFrame. Do not rely on SwiftShader EXT in e2e alone. |
 | 5 Light advice | **Fixed.** `lights/zero-intensity` no longer recommends `visible=false` / `intensity=0`. Advise: keep visible light **count** fixed and move/reassign a small pool; if count must change, pre-compile both variants with `renderer.compile` / `compileAsync`. (intensity=0 still costs; visible=false recompiles — 1.3s freeze measured by the reporter.) |
-| 6 Visual gate acts | **Fixed.** Candidate delta vs control requires a **second** capture to confirm. On reproduced difference: `rollbackAll()`, `visualDelta: true` (does not leave passes applied; does not block as “safe”). `VisualGate.fixedViewpoint` documents that capture must use a fixed camera pose. |
+| 6 Visual gate acts | **Fixed.** Candidate delta vs control requires a **second** capture to confirm. On reproduced difference: roll back **current** `optimize()` handles, `visualDelta: true` (does not leave that attempt applied; does not block as “safe”). `VisualGate.fixedViewpoint` documents that capture must use a fixed camera pose. |
 | 7 Smaller | **Fixed.** Sum top-level wrapped `render()` workMs in a frame (HUD/minimap). Leak tracker: WeakRef + `added` clears; two-scan grace so pooling remove/re-add is not a leak. README: pass `composer` explicitly (shallow auto-discovery). A/B noise = `max(half-range, 1.4826 × MAD)` + optional `control` A-vs-A series. |
-| 1 npm | **Published 0.1.1** (`threejs-doctor` + `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`). Remaining (optional, not a blocker): Trusted Publisher on each package, then delete `NPM_TOKEN`. See [`docs/publish-checklist.md`](../../publish-checklist.md). |
+| 1 npm | **Published 0.1.1.** **0.1.2 pending publish.** Remaining: Trusted Publisher on each package, then delete `NPM_TOKEN`. See [`docs/publish-checklist.md`](../../publish-checklist.md). |
 
 ### Residual (not this PR)
 

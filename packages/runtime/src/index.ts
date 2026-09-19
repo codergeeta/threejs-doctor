@@ -15,7 +15,7 @@ export { readRendererPixelRatio, readRendererAntialias } from './renderer-read.j
 export { collectHostSceneStats, applyHostInsights, readHostWorldRadius } from './scene-stats.js'
 export type { CollectHostSceneOptions, HostSceneInsights, HostSceneCollection } from './scene-stats.js'
 export { createGpuFrameSampler, waitGpuMacrotask } from './gpu-timer.js'
-export type { GpuFrameSampler } from './gpu-timer.js'
+export type { GpuFrameSampler, GpuMacrotaskWait } from './gpu-timer.js'
 export { isComposerLike, readComposerSize, findComposer } from './composer.js'
 export { mountOverlay } from './overlay/mount-overlay.js'
 export type { OverlayHandle, MountOverlayOptions } from './overlay/mount-overlay.js'

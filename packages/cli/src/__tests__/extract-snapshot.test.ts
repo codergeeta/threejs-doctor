@@ -157,6 +157,104 @@ describe('extractStaticFacts', () => {
     expect(facts.shadowCastingLightCount).toBe(0)
     expect(facts.meshCount).toBe(1)
   })
+
+  it('counts positional intensity 0 on PointLight/SpotLight constructors', () => {
+    const facts = extractStaticFacts([
+      {
+        path: 'fx.ts',
+        source: `
+          import { PointLight, SpotLight, AmbientLight } from 'three'
+          new PointLight(0x66ccff, 0, 22, 2)
+          new SpotLight(0xffffff, 0, 12, Math.PI / 6)
+          new AmbientLight(0x404040)
+        `,
+      },
+    ])
+    expect(facts.lightCount).toBe(3)
+    expect(facts.zeroIntensityLightCount).toBe(2)
+  })
+
+  it('counts non-literal-false castShadow assignments on lights', () => {
+    const facts = extractStaticFacts([
+      {
+        path: 'sun.ts',
+        source: `
+          import { DirectionalLight } from 'three'
+          const sun = new DirectionalLight()
+          sun.castShadow = this.quality !== 'low'
+          const fill = new DirectionalLight()
+          fill.castShadow = false
+        `,
+      },
+    ])
+    expect(facts.lightCount).toBe(2)
+    expect(facts.shadowCastingLightCount).toBe(1)
+  })
+
+  it('does not count Points/Line/Sprite frustumCulled=false as mesh culling errors', () => {
+    const facts = extractStaticFacts([
+      {
+        path: 'fx.ts',
+        source: `
+          import { Points, Line, Sprite, Mesh, BufferGeometry, PointsMaterial } from 'three'
+          const sparks = new Points(new BufferGeometry(), new PointsMaterial())
+          sparks.frustumCulled = false
+          const trail = new Line()
+          trail.frustumCulled = false
+          const glow = new Sprite()
+          glow.frustumCulled = false
+          const car = new Mesh()
+          car.frustumCulled = false
+        `,
+      },
+    ])
+    expect(facts.frustumCulledDisabledCount).toBe(1)
+    expect(facts.frustumCulledDisabledFxCount).toBe(3)
+  })
+
+  it('records file:line for constructors and flags EffectComposer pixel-ratio drift', () => {
+    const source = [
+      "import { WebGLRenderer } from 'three'",
+      "import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js'",
+      'const renderer = new WebGLRenderer()',
+      'const composer = new EffectComposer(renderer)',
+      'renderer.setPixelRatio(window.devicePixelRatio)',
+    ].join('\n')
+    const facts = extractStaticFacts([{ path: 'post.js', source }])
+    expect(facts.composerCtorCount).toBe(1)
+    expect(facts.composerPixelRatioSynced).toBe(false)
+    expect(facts.locations.effectComposer[0]).toMatchObject({ file: 'post.js', line: 4 })
+    expect(facts.locations.setPixelRatio[0]).toMatchObject({ file: 'post.js', line: 5 })
+    expect(facts.locations.rendererCtor[0]?.line).toBe(3)
+  })
+
+  it('treats composer.setPixelRatio or composer.setSize as synced', () => {
+    const synced = extractStaticFacts([
+      {
+        path: 'ok.js',
+        source: `
+          import { EffectComposer } from 'postprocessing'
+          const composer = new EffectComposer(renderer)
+          renderer.setPixelRatio(dpr)
+          composer.setPixelRatio(dpr)
+        `,
+      },
+    ])
+    expect(synced.composerCtorCount).toBe(1)
+    expect(synced.composerPixelRatioSynced).toBe(true)
+
+    const sized = extractStaticFacts([
+      {
+        path: 'ok2.js',
+        source: `
+          const composer = new EffectComposer(gl)
+          renderer.setPixelRatio(2)
+          composer.setSize(w, h)
+        `,
+      },
+    ])
+    expect(sized.composerPixelRatioSynced).toBe(true)
+  })
 })
 
 describe('factsToSnapshot', () => {

@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { createGpuFrameSampler } from '../gpu-timer.js'
+import { describe, it, expect, afterEach } from 'vitest'
+import { createGpuFrameSampler, waitGpuMacrotask } from '../gpu-timer.js'
 import { Doctor } from '../doctor.js'
 import type { DoctorRendererLike } from '../passes/types.js'
 
@@ -294,5 +294,68 @@ describe('GPU timer uses WebGL2RenderingContext methods, not the EXT object', ()
     const second = await doctor.measure(6)
     expect(second.gpuFrameTimeMs).toBeUndefined()
     expect(gl.liveQueries()).toHaveLength(0)
+  })
+})
+
+describe('waitGpuMacrotask does not hang when rAF is stalled', () => {
+  const originalRaf = globalThis.requestAnimationFrame
+  const originalCancel = globalThis.cancelAnimationFrame
+
+  afterEach(() => {
+    globalThis.requestAnimationFrame = originalRaf
+    if (originalCancel) globalThis.cancelAnimationFrame = originalCancel
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
+  })
+
+  it('resolves via timeout when requestAnimationFrame never fires', async () => {
+    globalThis.requestAnimationFrame = (() => 1) as typeof requestAnimationFrame
+    const start = Date.now()
+    const result = await waitGpuMacrotask(30)
+    expect(Date.now() - start).toBeLessThan(400)
+    expect(result.timedOut).toBe(true)
+  })
+
+  it('resolves immediately as hidden when the document is hidden', async () => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+    let rafScheduled = 0
+    globalThis.requestAnimationFrame = (() => {
+      rafScheduled += 1
+      return 1
+    }) as typeof requestAnimationFrame
+    const result = await waitGpuMacrotask(500)
+    expect(result.timedOut).toBe(true)
+    expect(rafScheduled).toBe(0)
+  })
+
+  it('resolves without timeout when rAF fires first', async () => {
+    globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => {
+      cb(0)
+      return 1
+    }) as typeof requestAnimationFrame
+    const result = await waitGpuMacrotask(200)
+    expect(result.timedOut).toBe(false)
+  })
+
+  it('marks a live-clock GPU measure invalid/hidden instead of hanging on stalled rAF', async () => {
+    globalThis.requestAnimationFrame = (() => 1) as typeof requestAnimationFrame
+    const { gl, ext } = webgl2TimerGl({ delayFrames: 1, ns: 2_000_000 })
+    const renderer = rendererFor(gl, { ext })
+    const doctor = new Doctor({
+      scene: { children: [], traverse() {} } as never,
+      camera: {},
+      renderer: renderer as never,
+      profile: 'game',
+      measureFrames: 2,
+    })
+    const sample = await Promise.race([
+      doctor.measure(2),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('measure hung on stalled rAF')), 800)
+      }),
+    ])
+    expect(sample.invalid).toBe(true)
+    expect(sample.invalidReason).toBe('hidden')
   })
 })

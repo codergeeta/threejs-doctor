@@ -76,14 +76,60 @@ function readDisjointExt(renderer: DoctorRendererLike, gl: Webgl2TimerContext | 
   return undefined
 }
 
-/** Yield a macrotask so QUERY_RESULT_AVAILABLE can flip (rAF, else setTimeout(0)). */
-export function waitGpuMacrotask(): Promise<void> {
+export interface GpuMacrotaskWait {
+  /** True when rAF did not fire in time, or the document is hidden. */
+  timedOut: boolean
+}
+
+const DEFAULT_GPU_MACROTASK_TIMEOUT_MS = 100
+
+function documentIsHidden(): boolean {
+  try {
+    if (typeof document === 'undefined') return false
+    return document.visibilityState === 'hidden' || document.hidden === true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Yield a macrotask so QUERY_RESULT_AVAILABLE can flip.
+ * rAF is raced against a short timeout because browsers pause rAF in background tabs.
+ */
+export function waitGpuMacrotask(timeoutMs = DEFAULT_GPU_MACROTASK_TIMEOUT_MS): Promise<GpuMacrotaskWait> {
   return new Promise((resolve) => {
-    if (typeof requestAnimationFrame === 'function') {
-      requestAnimationFrame(() => resolve())
+    let settled = false
+    const done = (timedOut: boolean) => {
+      if (settled) return
+      settled = true
+      resolve({ timedOut })
+    }
+
+    if (documentIsHidden()) {
+      done(true)
       return
     }
-    setTimeout(resolve, 0)
+
+    if (typeof requestAnimationFrame !== 'function') {
+      setTimeout(() => done(false), 0)
+      return
+    }
+
+    let timeoutId: ReturnType<typeof setTimeout> | undefined
+    const rafId = requestAnimationFrame(() => {
+      if (timeoutId !== undefined) clearTimeout(timeoutId)
+      done(false)
+    })
+    timeoutId = setTimeout(() => {
+      if (typeof cancelAnimationFrame === 'function') {
+        try {
+          cancelAnimationFrame(rafId)
+        } catch {
+          // best-effort
+        }
+      }
+      done(true)
+    }, timeoutMs)
   })
 }
 
