@@ -11,6 +11,7 @@ const GEOMETRY_NAMES =
 const TEXTURE_NAMES =
   'TextureLoader|CubeTextureLoader|Texture|VideoTexture|CanvasTexture|DataTexture|CompressedTexture'
 
+const LIGHT_NAME_LIST = LIGHT_NAMES.split('|')
 const R3F_LIGHTS = 'ambientLight|directionalLight|pointLight|spotLight|hemisphereLight|rectAreaLight'
 const R3F_MESHES = 'mesh|instancedMesh|skinnedMesh'
 
@@ -69,23 +70,44 @@ function countR3fTags(source: string, names: string): { total: number; withCastS
   return { total, withCastShadow }
 }
 
-function lightBindings(source: string): string[] {
+function importAliases(source: string, canonical: readonly string[]): string[] {
+  const aliases: string[] = []
+  const re = /import\s*\{([^}]+)\}\s*from\s*['"]three(?:\/[^'"]*)?['"]/g
+  let match: RegExpExecArray | null
+  while ((match = re.exec(source))) {
+    for (const part of (match[1] ?? '').split(',')) {
+      const renamed = part.match(/(\w+)\s+as\s+(\w+)/)
+      if (renamed && canonical.includes(renamed[1]!)) aliases.push(renamed[2]!)
+    }
+  }
+  return aliases
+}
+
+function ctorNames(source: string, canonical: string, extras: string[]): string {
+  return extras.length > 0 ? `${canonical}|${extras.join('|')}` : canonical
+}
+
+function lightBindings(source: string, lightCtors: string): string[] {
   const re = new RegExp(
-    `\\b(?:const|let|var)\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*new\\s+(?:THREE\\.)?(?:${LIGHT_NAMES})\\s*\\(`,
+    `(?:\\b(?:const|let|var)\\s+)?(?:this\\.)?([A-Za-z_$][\\w$]*)\\s*(?::\\s*[A-Za-z_$][\\w$.|<>\\s,]*)?=\\s*new\\s+(?:THREE\\.)?(?:${lightCtors})\\s*\\(`,
     'g',
   )
   return [...source.matchAll(re)].map((m) => m[1]!).filter((id): id is string => Boolean(id))
 }
 
-function countShadowCastingLights(source: string, r3fShadowLights: number): number {
-  const ids = new Set(lightBindings(source))
+function countShadowCastingLights(
+  source: string,
+  lightCtors: string,
+  r3fShadowLights: number,
+): number {
+  const ids = new Set(lightBindings(source, lightCtors))
   let count = r3fShadowLights
   for (const id of ids) {
-    const assigned = new RegExp(`\\b${id}\\.castShadow\\s*=\\s*true\\b`)
+    const assigned = new RegExp(`(?:\\bthis\\.)?\\b${id}\\.castShadow\\s*=\\s*true\\b`)
     if (assigned.test(source)) count += 1
   }
   const ctorWithFlag = new RegExp(
-    `\\bnew\\s+(?:THREE\\.)?(?:${LIGHT_NAMES})\\s*\\(([^)]*)\\)`,
+    `\\bnew\\s+(?:THREE\\.)?(?:${lightCtors})\\s*\\(([^)]*)\\)`,
     'g',
   )
   let match: RegExpExecArray | null
@@ -95,15 +117,15 @@ function countShadowCastingLights(source: string, r3fShadowLights: number): numb
   return count
 }
 
-function countZeroIntensity(source: string): number {
+function countZeroIntensity(source: string, lightCtors: string): number {
   let count = 0
-  const ctor = new RegExp(`\\bnew\\s+(?:THREE\\.)?(?:${LIGHT_NAMES})\\s*\\(([^)]*)\\)`, 'g')
+  const ctor = new RegExp(`\\bnew\\s+(?:THREE\\.)?(?:${lightCtors})\\s*\\(([^)]*)\\)`, 'g')
   let match: RegExpExecArray | null
   while ((match = ctor.exec(source))) {
     if (/\bintensity\s*:\s*0\b/.test(match[1] ?? '')) count += 1
   }
-  for (const id of lightBindings(source)) {
-    if (new RegExp(`\\b${id}\\.intensity\\s*=\\s*0\\b`).test(source)) count += 1
+  for (const id of lightBindings(source, lightCtors)) {
+    if (new RegExp(`(?:\\bthis\\.)?\\b${id}\\.intensity\\s*=\\s*0\\b`).test(source)) count += 1
   }
   return count
 }
@@ -125,7 +147,7 @@ function parsePixelRatio(source: string): { uncapped: boolean; cap: number | und
     }
     if (/^(?:window\.)?devicePixelRatio$/.test(arg)) uncapped = true
   }
-  if (cap !== undefined) uncapped = false
+  if (uncapped) cap = undefined
   return { uncapped, cap }
 }
 
@@ -138,13 +160,20 @@ function parseAntialias(source: string): boolean | undefined {
 function hasContinuousFrameloop(source: string): boolean {
   if (/\bsetAnimationLoop\s*\(\s*(?!null\b|undefined\b)/.test(source)) return true
   if (/\bframeloop\s*[=:]\s*['"]always['"]/.test(source)) return true
-  if (/<Canvas\b/.test(source) && !/\bframeloop\s*=\s*\{?\s*['"]demand['"]/.test(source)) return true
-  const rafCalls = [...source.matchAll(/requestAnimationFrame\(\s*([A-Za-z_$][\w$]*)\s*\)/g)]
+  if (
+    /\bfrom\s+['"]@react-three\/fiber['"]/.test(source) &&
+    /<Canvas\b/.test(source) &&
+    !/\bframeloop\s*=\s*\{?\s*['"](?:demand|never)['"]/.test(source)
+  ) {
+    return true
+  }
+  if (/requestAnimationFrame\s*\(/.test(source) && /\.render\s*\(/.test(source)) return true
+  const rafCalls = [...source.matchAll(/requestAnimationFrame\(\s*(?:this\.)?([A-Za-z_$][\w$]*)\s*\)/g)]
   for (const call of rafCalls) {
     const id = call[1]
     if (!id) continue
     const named = new RegExp(
-      `(?:function\\s+${id}|${id}\\s*=\\s*(?:function|\\([^)]*\\)\\s*=>))[\\s\\S]{0,400}requestAnimationFrame\\(\\s*${id}\\s*\\)`,
+      `(?:function\\s+${id}|${id}\\s*=\\s*(?:function|\\([^)]*\\)\\s*=>))[\\s\\S]{0,400}requestAnimationFrame\\(\\s*(?:this\\.)?${id}\\s*\\)`,
     )
     if (named.test(source)) return true
   }
@@ -194,21 +223,25 @@ function mergeFacts(into: StaticFacts, next: StaticFacts): void {
   into.matrixAutoUpdateDisabledCount += next.matrixAutoUpdateDisabledCount
   into.zeroIntensityLightCount += next.zeroIntensityLightCount
   if (next.antialias !== undefined) into.antialias = next.antialias
-  if (next.pixelRatioCap !== undefined) {
+  if (next.uncappedDevicePixelRatio) {
+    into.uncappedDevicePixelRatio = true
+    into.pixelRatioCap = undefined
+  } else if (next.pixelRatioCap !== undefined && !into.uncappedDevicePixelRatio) {
     into.pixelRatioCap = next.pixelRatioCap
-    into.uncappedDevicePixelRatio = false
   }
 }
 
 function factsFromSource(source: string): StaticFacts {
   const code = stripComments(source)
+  const lightAliases = importAliases(code, LIGHT_NAME_LIST)
+  const lightCtors = ctorNames(code, LIGHT_NAMES, lightAliases)
   const r3fLights = countR3fTags(code, R3F_LIGHTS)
   const r3fMeshes = countR3fTags(code, R3F_MESHES)
   const pixel = parsePixelRatio(code)
   return {
-    sawThree: sawThreeJs(code) || r3fLights.total > 0 || r3fMeshes.total > 0,
-    lightCount: countCtor(code, LIGHT_NAMES) + r3fLights.total,
-    shadowCastingLightCount: countShadowCastingLights(code, r3fLights.withCastShadow),
+    sawThree: sawThreeJs(code) || r3fLights.total > 0 || r3fMeshes.total > 0 || lightAliases.length > 0,
+    lightCount: countCtor(code, lightCtors) + r3fLights.total,
+    shadowCastingLightCount: countShadowCastingLights(code, lightCtors, r3fLights.withCastShadow),
     meshCount: countCtor(code, MESH_NAMES) + r3fMeshes.total,
     materialCount: countCtor(code, MATERIAL_NAMES),
     geometryCount: countCtor(code, GEOMETRY_NAMES),
@@ -219,7 +252,7 @@ function factsFromSource(source: string): StaticFacts {
     pixelRatioCap: pixel.cap,
     frustumCulledDisabledCount: code.match(/\bfrustumCulled\s*=\s*false\b/g)?.length ?? 0,
     matrixAutoUpdateDisabledCount: code.match(/\bmatrixAutoUpdate\s*=\s*false\b/g)?.length ?? 0,
-    zeroIntensityLightCount: countZeroIntensity(code),
+    zeroIntensityLightCount: countZeroIntensity(code, lightCtors),
   }
 }
 
@@ -235,7 +268,7 @@ export function extractStaticFacts(files: SourceFile[]): StaticFacts {
 
 export function factsToSnapshot(
   facts: StaticFacts,
-  opts: { assumedDevicePixelRatio: number },
+  _opts?: { assumedDevicePixelRatio: number },
 ): SceneSnapshot {
   const matrixAutoUpdateCount = Math.max(0, facts.meshCount - facts.matrixAutoUpdateDisabledCount)
   const snap: SceneSnapshot = {
@@ -254,7 +287,6 @@ export function factsToSnapshot(
     matrixAutoUpdateCount,
   }
   if (facts.pixelRatioCap !== undefined) snap.rendererPixelRatio = facts.pixelRatioCap
-  else if (facts.uncappedDevicePixelRatio) snap.rendererPixelRatio = opts.assumedDevicePixelRatio
   if (facts.antialias !== undefined) snap.antialias = facts.antialias
   if (facts.frustumCulledDisabledCount > 0) {
     snap.frustumCulledDisabledCount = facts.frustumCulledDisabledCount

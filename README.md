@@ -49,10 +49,10 @@ npx threejs-doctor ci ./path --min-score 70 --profile marketing --budget low
 After `pnpm build` (or `npx threejs-doctor` from npm):
 
 ```yaml
-- run: npx threejs-doctor ci ./ --min-score 70 --profile marketing --budget low
+- run: npx threejs-doctor ci ./src --min-score 70 --profile marketing --budget low
 ```
 
-`--budget` is the assumed device tier for rules that need one (DPR cap, antialias-on-low). `--profile auto` classifies from static facts. Point `path` at the app that imports `three`, not a monorepo root that mixes fixtures. A project with no Three.js patterns is **incomplete** and fails `ci` even at `--min-score 0`.
+`--budget` is the assumed device tier for rules that need one (DPR cap, antialias-on-low). `--profile auto` classifies from static facts only (not omitted draw calls) and defaults to `marketing`. Point `path` at the app that imports `three`, not a monorepo root that mixes fixtures. A project with no Three.js patterns is **incomplete** and fails `ci` even at `--min-score 0`. Static scan does not unroll `for` loops or resolve `require('three')` unless a Three.js constructor is present.
 
 ## Monorepo scripts
 

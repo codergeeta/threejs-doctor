@@ -31,7 +31,12 @@ export function formatHumanReport(report: DoctorReport): string {
     for (const p of report.failedPasses) lines.push(`  ${p.id}: ${p.error}`)
   }
   if (report.incomplete) {
-    lines.push('Run incomplete: after metrics unavailable; baseline retained.')
+    const noThree = report.findings.some((f) => f.id === 'scan/no-threejs-detected')
+    lines.push(
+      noThree
+        ? 'Run incomplete: no Three.js patterns found in scanned files.'
+        : 'Run incomplete: after metrics unavailable; baseline retained.',
+    )
   }
   if (!report.after && report.mode === 'diagnose') {
     lines.push('')

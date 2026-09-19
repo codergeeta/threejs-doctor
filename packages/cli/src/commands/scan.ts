@@ -1,11 +1,31 @@
-import type { MetricsSample } from '@threejs-doctor/core'
-import { computeDoctorScore, resolveProfile, runRules } from '@threejs-doctor/rules'
-import type { Finding } from '@threejs-doctor/rules'
+import type { ConcreteProfile, Finding } from '@threejs-doctor/rules'
+import type { DeviceCapabilities, MetricsSample, Profile } from '@threejs-doctor/core'
+import { computeDoctorScore, runRules } from '@threejs-doctor/rules'
 import type { DoctorReport } from '@threejs-doctor/runtime'
 import type { CliArgs } from '../cli.js'
 import { collectSources } from '../scan/collect-sources.js'
 import { deviceFromBudget } from '../scan/device-from-budget.js'
-import { extractStaticFacts, factsToSnapshot } from '../scan/extract-snapshot.js'
+import { extractStaticFacts, factsToSnapshot, type StaticFacts } from '../scan/extract-snapshot.js'
+
+/** Classify without treating omitted drawCalls/triangles as a small product scene. */
+export function resolveStaticProfile(profile: Profile, facts: StaticFacts): ConcreteProfile {
+  if (profile !== 'auto') return profile
+  if (facts.continuousFrameloop && facts.meshCount >= 50) return 'game'
+  if (facts.lightCount >= 4 && facts.meshCount > 50) return 'game'
+  if (!facts.continuousFrameloop && facts.lightCount < 4 && facts.meshCount > 200) return 'cad'
+  return 'marketing'
+}
+
+function uncappedDprFinding(device: DeviceCapabilities): Finding {
+  return {
+    id: 'renderer/uncapped-dpr',
+    severity: device.tier === 'low' ? 'error' : 'warn',
+    evidence: { sourcePattern: 'devicePixelRatio', capped: false, tier: device.tier },
+    message: 'setPixelRatio uses devicePixelRatio without a numeric cap',
+    suggestedFix: 'Cap setPixelRatio for the active device tier',
+    autoFix: 'dpr-cap',
+  }
+}
 
 function staticBaseline(facts: {
   lightCount: number
@@ -41,8 +61,8 @@ export async function runScan(args: CliArgs): Promise<DoctorReport> {
   const sources = await collectSources(args.path)
   const facts = extractStaticFacts(sources)
   const device = deviceFromBudget(args.budget)
-  const snapshot = factsToSnapshot(facts, { assumedDevicePixelRatio: device.devicePixelRatio })
-  const profile = resolveProfile(args.profile, snapshot)
+  const snapshot = factsToSnapshot(facts)
+  const profile = resolveStaticProfile(args.profile, facts)
   const baseline = staticBaseline(facts)
 
   if (!facts.sawThree) {
@@ -60,6 +80,9 @@ export async function runScan(args: CliArgs): Promise<DoctorReport> {
   }
 
   const findings = runRules({ snapshot, device, profile })
+  if (facts.uncappedDevicePixelRatio && !findings.some((f) => f.id === 'renderer/uncapped-dpr')) {
+    findings.push(uncappedDprFinding(device))
+  }
   return {
     profile,
     mode: 'diagnose',

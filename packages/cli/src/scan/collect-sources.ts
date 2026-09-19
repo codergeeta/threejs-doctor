@@ -25,6 +25,9 @@ const SKIP_DIR = new Set([
   'vendor',
   '__tests__',
   '__mocks__',
+  'test',
+  'tests',
+  'spec',
 ])
 
 const MAX_FILE_BYTES = 1_000_000
@@ -65,10 +68,11 @@ export async function collectSources(root: string): Promise<SourceFile[]> {
   const out: SourceFile[] = []
   for (const file of files) {
     if (!SOURCE_EXT.has(extname(file).toLowerCase())) continue
-    if (/\.test\.[cm]?[jt]sx?$/.test(file)) continue
+    if (/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(file)) continue
     if (/\.d\.ts$/.test(file)) continue
+    const size = (await stat(file)).size
+    if (size > MAX_FILE_BYTES) continue
     const source = await readFile(file, 'utf8')
-    if (source.length > MAX_FILE_BYTES) continue
     out.push({ path: file, source })
   }
   return out

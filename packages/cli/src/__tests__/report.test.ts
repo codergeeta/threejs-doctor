@@ -59,6 +59,28 @@ describe('reports', () => {
     expect(text).not.toContain('avgFps: 30 →')
   })
 
+  it('says no Three.js was found on a static incomplete scan', () => {
+    const { after: _after, deltas: _deltas, ...rest } = report
+    void _after
+    void _deltas
+    const text = formatHumanReport({
+      ...rest,
+      mode: 'diagnose',
+      incomplete: true,
+      findings: [
+        {
+          id: 'scan/no-threejs-detected',
+          severity: 'warn',
+          evidence: { files: 0 },
+          message: 'No Three.js imports',
+          suggestedFix: 'Point scan at a three project',
+        },
+      ],
+    })
+    expect(text).toContain('no Three.js patterns found')
+    expect(text).not.toContain('after metrics unavailable')
+  })
+
   it('lists failed passes', () => {
     const text = formatHumanReport({
       ...report,

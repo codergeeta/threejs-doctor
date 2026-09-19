@@ -65,6 +65,82 @@ describe('extractStaticFacts', () => {
     expect(facts.lightCount).toBe(1)
   })
 
+  it('counts TypeScript-typed and this-bound lights that enable castShadow', () => {
+    const facts = extractStaticFacts([
+      {
+        path: 'typed.ts',
+        source: `
+          import { DirectionalLight, PointLight } from 'three'
+          const sun: DirectionalLight = new DirectionalLight()
+          sun.castShadow = true
+          class Scene {
+            fill = new PointLight()
+            setup() {
+              this.spot = new SpotLight()
+              this.spot.castShadow = true
+              this.fill.castShadow = true
+            }
+          }
+        `,
+      },
+    ])
+    expect(facts.lightCount).toBe(3)
+    expect(facts.shadowCastingLightCount).toBe(3)
+  })
+
+  it('counts import aliases of Three.js light constructors', () => {
+    const facts = extractStaticFacts([
+      {
+        path: 'alias.ts',
+        source: `
+          import { DirectionalLight as Sun, PointLight as Fill } from 'three'
+          const a = new Sun()
+          a.castShadow = true
+          new Fill()
+        `,
+      },
+    ])
+    expect(facts.lightCount).toBe(2)
+    expect(facts.shadowCastingLightCount).toBe(1)
+  })
+
+  it('treats any uncapped setPixelRatio as uncapped even if another file caps', () => {
+    const facts = extractStaticFacts([
+      {
+        path: 'helper.ts',
+        source: `renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5))`,
+      },
+      {
+        path: 'demo.ts',
+        source: `import { WebGLRenderer } from 'three'\nconst r = new WebGLRenderer()\nr.setPixelRatio(window.devicePixelRatio)`,
+      },
+    ])
+    expect(facts.uncappedDevicePixelRatio).toBe(true)
+  })
+
+  it('detects anonymous rAF + render loops and ignores non-R3F Canvas tags', () => {
+    const loop = extractStaticFacts([
+      {
+        path: 'loop.ts',
+        source: `
+          import { WebGLRenderer } from 'three'
+          const renderer = new WebGLRenderer()
+          requestAnimationFrame(() => { renderer.render(scene, camera) })
+        `,
+      },
+    ])
+    expect(loop.continuousFrameloop).toBe(true)
+
+    const canvas = extractStaticFacts([
+      {
+        path: 'ui.tsx',
+        source: `export function App() { return <Canvas width={100} /> }`,
+      },
+    ])
+    expect(canvas.continuousFrameloop).toBe(false)
+    expect(canvas.sawThree).toBe(false)
+  })
+
   it('does not treat mesh.castShadow as a shadow-casting light', () => {
     const facts = extractStaticFacts([
       {
@@ -94,7 +170,7 @@ describe('factsToSnapshot', () => {
     expect(snap.drawCalls).toBe(0)
     expect(snap.triangles).toBe(0)
     expect(snap.estimatedVramBytes).toBe(0)
-    expect(snap.rendererPixelRatio).toBe(2)
+    expect(snap.rendererPixelRatio).toBeUndefined()
     expect(snap.antialias).toBe(true)
   })
 

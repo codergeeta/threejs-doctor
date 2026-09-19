@@ -60,6 +60,27 @@ describe('runScan static analysis', () => {
     expect(report.findings.some((f) => f.id === 'scan/no-threejs-detected')).toBe(true)
   })
 
+  it('does not classify a small static scene as product just because draw calls are unknown', async () => {
+    const report = await runScan({
+      ...baseArgs,
+      profile: 'auto',
+      path: resolve(here, 'fixtures/heavy-static'),
+    })
+    expect(report.profile).toBe('marketing')
+    expect(report.findings.some((f) => f.id === 'shadows/too-many-casters')).toBe(true)
+    expect(report.score).toBeLessThan(70)
+  })
+
+  it('flags uncapped devicePixelRatio on product/mid instead of treating assumed DPR 2 as in-budget', async () => {
+    const report = await runScan({
+      ...baseArgs,
+      profile: 'product',
+      budget: 'mid',
+      path: resolve(here, 'fixtures/html-three'),
+    })
+    expect(report.findings.some((f) => f.id === 'renderer/uncapped-dpr')).toBe(true)
+  })
+
   it('scans a single HTML entry', async () => {
     const report = await runScan({
       ...baseArgs,

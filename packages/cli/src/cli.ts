@@ -79,6 +79,10 @@ export async function main(
       write(message)
       return 1
     }
+    if (/^scan path (not found|is not a file)/i.test(message)) {
+      write(`error: ${message}`)
+      return 1
+    }
     throw err
   }
 

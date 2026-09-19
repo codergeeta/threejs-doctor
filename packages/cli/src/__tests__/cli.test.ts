@@ -1,9 +1,13 @@
 import { describe, it, expect } from 'vitest'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { parseArgs, main } from '../cli.js'
 import { runScan } from '../commands/scan.js'
 import { runBench } from '../commands/bench.js'
 import type { DoctorReport } from '@threejs-doctor/runtime'
 import type { CliArgs } from '../cli.js'
+
+const fixtures = resolve(dirname(fileURLToPath(import.meta.url)), 'fixtures/healthy-static')
 
 const fakeReport: DoctorReport = {
   profile: 'marketing',
@@ -171,15 +175,16 @@ describe('cli', () => {
   })
 
   it('runScan returns a diagnose report instead of throwing not-implemented', async () => {
-    const report = await runScan({ ...defaultArgs, profile: 'product', path: '.' })
+    const report = await runScan({ ...defaultArgs, profile: 'product', path: fixtures })
     expect(report.mode).toBe('diagnose')
+    expect(report.incomplete).toBe(false)
     expect(report.score).toBeGreaterThanOrEqual(0)
     expect(report.score).toBeLessThanOrEqual(100)
   })
 
   it('default scan exits 0 after printing a real report', async () => {
     const chunks: string[] = []
-    const code = await main(['scan', '.'], {
+    const code = await main(['scan', fixtures], {
       runScan,
       runBench: async () => fakeReport,
       write: (text) => {
