@@ -1,7 +1,9 @@
 {
   "name": "@threejs-doctor/core",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Probe, snapshot, and metrics for threejs-doctor",
+  "license": "MIT",
+  "author": "codergeeta",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./src/index.ts",
@@ -25,5 +27,28 @@
     "@types/three": "^0.172.0",
     "typescript": "^5.7.3",
     "vitest": "^3.0.5"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codergeeta/threejs-doctor.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/codergeeta/threejs-doctor#readme",
+  "bugs": {
+    "url": "https://github.com/codergeeta/threejs-doctor/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
   }
 }

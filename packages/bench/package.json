@@ -1,7 +1,9 @@
 {
   "name": "@threejs-doctor/bench",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Headless bench fixtures and low-end budgets for threejs-doctor",
+  "license": "MIT",
+  "author": "codergeeta",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./src/index.ts",
@@ -18,8 +20,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@threejs-doctor/core": "workspace:*",
-    "@threejs-doctor/runtime": "workspace:*"
+    "@threejs-doctor/core": "workspace:^",
+    "@threejs-doctor/runtime": "workspace:^"
   },
   "peerDependencies": {
     "three": ">=0.160.0"
@@ -29,5 +31,28 @@
     "@types/three": "^0.172.0",
     "typescript": "^5.7.3",
     "vitest": "^3.0.5"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codergeeta/threejs-doctor.git",
+    "directory": "packages/bench"
+  },
+  "homepage": "https://github.com/codergeeta/threejs-doctor#readme",
+  "bugs": {
+    "url": "https://github.com/codergeeta/threejs-doctor/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
   }
 }

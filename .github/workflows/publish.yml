@@ -1,0 +1,47 @@
+# Publishes unscoped `threejs-doctor` FIRST, then @threejs-doctor/*.
+# Manual only. First publish needs repo secret NPM_TOKEN (Trusted Publisher
+# cannot be attached until the packages exist). Later publishes can drop the
+# token and use OIDC (id-token: write + NPM_CONFIG_PROVENANCE).
+# See docs/publish-checklist.md.
+name: publish
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type publish to release 0.1.0 packages to npm'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    if: ${{ github.event.inputs.confirm == 'publish' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - name: Publish (unscoped first, then scoped) with provenance
+        env:
+          NPM_CONFIG_PROVENANCE: 'true'
+          # Leave NPM_TOKEN unset when using Trusted Publisher / OIDC.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            unset NODE_AUTH_TOKEN
+          fi
+          node scripts/publish.mjs --go
