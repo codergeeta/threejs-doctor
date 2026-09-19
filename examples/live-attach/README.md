@@ -268,6 +268,6 @@ if the IIFE cannot find handles.
 
 ## Notes
 
-- `threejs-doctor scan` / `ci` are not implemented (exit 1) and are not this path.
+- `threejs-doctor scan` / `ci` are a **static** source gate, not this live-attach path.
 - Headless CI does not gate live TTFI/FPS.
 - Incomplete runs: keep baseline, set `incomplete: true`, do not paste fixture numbers.
