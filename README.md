@@ -6,20 +6,18 @@ Inspired by [react-doctor](https://github.com/millionco/react-doctor). Design: [
 
 ## Install / run
 
-After npm publish (see [`docs/publish-checklist.md`](docs/publish-checklist.md) — needs the `@threejs-doctor` org or `NPM_TOKEN` once):
+Published **0.1.0** on npm (`threejs-doctor` + `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`):
 
 ```bash
 npm i @threejs-doctor/runtime
-npx threejs-doctor bench --profile product --budget low
-# same CLI:
-npx @threejs-doctor/cli bench --profile product --budget low
+npx threejs-doctor
 ```
 
 ```ts
 import { Doctor } from '@threejs-doctor/runtime'
 ```
 
-Unscoped `threejs-doctor` is a **name reservation + alias** that depends on `@threejs-doctor/cli`. Until the first publish completes, `npx threejs-doctor` could still hit a squat — install from this repo instead.
+Unscoped `threejs-doctor` is a **name reservation + alias** that depends on `@threejs-doctor/cli` (`npx threejs-doctor bench --profile product --budget low`, or `npx @threejs-doctor/cli …`). Later publishes: attach Trusted Publisher, then delete `NPM_TOKEN` — see [`docs/publish-checklist.md`](docs/publish-checklist.md).
 
 ### Git install (monorepo)
 
