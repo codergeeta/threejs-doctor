@@ -6,11 +6,11 @@ Inspired by [react-doctor](https://github.com/millionco/react-doctor). Design: [
 
 ## Install / run
 
-**0.1.2 is pending npm publish** after merge (do not publish from a cloud agent VM). **0.1.1 is currently on npm** (`threejs-doctor` + `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`). 0.1.0/0.1.1 were token publishes — Trusted Publisher (OIDC provenance) is still needed for later releases.
+**0.1.2 is on npm** (`threejs-doctor` + `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`):
 
 ```bash
 npm i @threejs-doctor/runtime
-npx threejs-doctor@0.1.1
+npx threejs-doctor@0.1.2
 npx threejs-doctor@0.1.2 scan ./path --format json --profile auto --budget low
 npx threejs-doctor@0.1.2 ci ./path --min-score 70 --profile marketing --budget low
 ```
@@ -19,7 +19,7 @@ npx threejs-doctor@0.1.2 ci ./path --min-score 70 --profile marketing --budget l
 import { Doctor } from '@threejs-doctor/runtime'
 ```
 
-Unscoped `threejs-doctor` is a **name reservation + alias** that depends on `@threejs-doctor/cli` (`npx threejs-doctor@0.1.2 bench --profile product --budget low`, or `npx @threejs-doctor/cli@0.1.2 …`). Trusted Publisher (OIDC, then delete `NPM_TOKEN`) is still required for provenance on 0.1.2+ — 0.1.0/0.1.1 were token publishes. See [`docs/publish-checklist.md`](docs/publish-checklist.md).
+Unscoped `threejs-doctor` is a **name reservation + alias** that depends on `@threejs-doctor/cli` (`npx threejs-doctor@0.1.2 bench --profile product --budget low`, or `npx @threejs-doctor/cli@0.1.2 …`). Trusted Publisher (OIDC, then delete `NPM_TOKEN`) remains optional leftover — see [`docs/publish-checklist.md`](docs/publish-checklist.md).
 
 ### Git install (monorepo)
 
@@ -49,7 +49,7 @@ npx threejs-doctor@0.1.2 ci ./path --min-score 70 --profile marketing --budget l
 
 ### Use in CI
 
-After `pnpm build` (or `npx threejs-doctor@0.1.2` once published; until then `npx threejs-doctor@0.1.1`):
+After `pnpm build` (or `npx threejs-doctor@0.1.2` from npm):
 
 ```yaml
 - run: npx threejs-doctor@0.1.2 ci ./src --min-score 70 --profile marketing --budget low
@@ -74,7 +74,7 @@ pnpm test
 pnpm build
 ```
 
-CI (`.github/workflows/ci.yml`) runs `typecheck`, `test`, `build`, a **live-attach IIFE checksum** (`pnpm check:iife` rebuilds `examples/live-attach/dist/attach.iife.js` and fails if the committed file drifted), and a **scan/ci smoke** against the CLI fixtures (`ci --min-score` must pass on the healthy fixture and fail on the heavy one). A second job runs Playwright against a real Three.js + EffectComposer + InstancedMesh fixture (SwiftShader is fine; GPU times are still omitted when the timer query has no result). npm **0.1.1 is published**; **0.1.2 is pending publish** after merge. Later publishes remain a **manual** workflow (`.github/workflows/publish.yml`) after Trusted Publisher or `NPM_TOKEN` — see [`docs/publish-checklist.md`](docs/publish-checklist.md).
+CI (`.github/workflows/ci.yml`) runs `typecheck`, `test`, `build`, a **live-attach IIFE checksum** (`pnpm check:iife` rebuilds `examples/live-attach/dist/attach.iife.js` and fails if the committed file drifted), and a **scan/ci smoke** against the CLI fixtures (`ci --min-score` must pass on the healthy fixture and fail on the heavy one). A second job runs Playwright against a real Three.js + EffectComposer + InstancedMesh fixture (SwiftShader is fine; GPU times are still omitted when the timer query has no result). npm **0.1.2 is already published**. Later publishes remain a **manual** workflow (`.github/workflows/publish.yml`) after Trusted Publisher or `NPM_TOKEN` — see [`docs/publish-checklist.md`](docs/publish-checklist.md).
 
 ## Runtime (vanilla Three.js)
 
