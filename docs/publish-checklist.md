@@ -2,7 +2,7 @@
 
 Root `package.json` is `@threejs-doctor/monorepo` (`private: true`). Example packages stay private. This repo **does not store registry tokens**.
 
-**0.1.0 is published** — unscoped `threejs-doctor` plus `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`. Org: https://www.npmjs.com/org/threejs-doctor.
+**0.1.0 is on npm.** Repo packages are **0.1.1** — unscoped `threejs-doctor` plus `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`. Org: https://www.npmjs.com/org/threejs-doctor.
 
 ```bash
 npm i @threejs-doctor/runtime
@@ -14,6 +14,8 @@ Publish order is enforced by `scripts/publish.mjs`:
 1. **FIRST** unscoped `threejs-doctor` (name reservation + `npx threejs-doctor` → `@threejs-doctor/cli`)
 2. **THEN** scoped `@threejs-doctor/core`, `rules`, `runtime`, `bench`, `cli`, `r3f` with provenance
 
+`workspace:^` rewrites to `^0.1.1` on pack.
+
 ```bash
 pnpm build
 pnpm publish:dry    # no registry write
@@ -21,11 +23,11 @@ pnpm publish:dry    # no registry write
 pnpm publish:npm    # or GitHub Action "publish"
 ```
 
-Do **not** bump versions or republish from this docs update.
+Do **not** publish from a cloud agent VM. Run the manual **Publish npm** workflow on `main` after this bump merges.
 
 ## Kunal — remaining npm / GitHub steps
 
-Org create, first publish, and `npm view` are **done**. Remaining: attach Trusted Publisher on each package, then delete `NPM_TOKEN`.
+Org create and first **0.1.0** publish are **done**. Remaining: attach Trusted Publisher on each package, then delete `NPM_TOKEN`. Then publish **0.1.1**.
 
 ### 1. Create the npm org — done
 
@@ -47,6 +49,10 @@ For **each** of `threejs-doctor` and `@threejs-doctor/*`:
 
 Provenance: the workflow sets `id-token: write` and `NPM_CONFIG_PROVENANCE=true` (`npm publish --provenance` via pnpm).
 
+### 4. Publish 0.1.1 — remaining
+
+After this bump is on `main`, run **Publish npm** (confirm `publish`) or `pnpm publish:npm`. Changelog: real static scan + `ci --min-score`.
+
 ## Checklist
 
 - [x] Scoped packages have `publishConfig.access: public` and are not `private`.
@@ -55,13 +61,15 @@ Provenance: the workflow sets `id-token: write` and `NPM_CONFIG_PROVENANCE=true`
 - [x] Create `@threejs-doctor` npm org.
 - [x] Set `NPM_TOKEN` GitHub secret (first publish).
 - [x] `pnpm typecheck` / `pnpm test` / `pnpm build` green on `main`.
-- [x] Run **Publish npm** (confirm `publish`) **or** `pnpm publish:npm`.
+- [x] Run **Publish npm** (confirm `publish`) **or** `pnpm publish:npm` for 0.1.0.
 - [x] Confirm `npm view threejs-doctor` and `npm view @threejs-doctor/runtime` (0.1.0).
+- [x] Bump publishable packages to 0.1.1.
 - [ ] Attach Trusted Publisher on each package; then delete `NPM_TOKEN`.
 - [ ] Confirm npm 2FA remains on for org owners (org + packages exist).
+- [ ] Publish 0.1.1 and confirm `npm view` (do not publish from a cloud VM).
 
 ## This PR does not
 
 - store registry tokens
-- bump versions or republish
+- publish 0.1.1 to npm
 - attach Trusted Publisher or delete `NPM_TOKEN`

@@ -1,6 +1,6 @@
 {
   "name": "@threejs-doctor/rules",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Findings and Doctor Score rules for threejs-doctor",
   "license": "MIT",
   "author": "codergeeta",

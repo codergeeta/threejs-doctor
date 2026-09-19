@@ -1,6 +1,6 @@
 {
   "name": "@threejs-doctor/core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Probe, snapshot, and metrics for threejs-doctor",
   "license": "MIT",
   "author": "codergeeta",
