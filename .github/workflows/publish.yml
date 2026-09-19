@@ -1,13 +1,13 @@
 # Publishes unscoped `threejs-doctor` FIRST, then @threejs-doctor/*.
-# Manual only. Publish 0.1.3 only after Trusted Publisher is attached, then
-# delete NPM_TOKEN. Token publishes leave dist.attestations empty and the
-# post-publish check fails. See docs/publish-checklist.md.
+# Manual only (workflow_dispatch). Do not run scripts/publish.mjs --go outside
+# this workflow — the script refuses unless GITHUB_ACTIONS=true.
+# See docs/publish-checklist.md.
 name: publish
 on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Type publish to release 0.1.3 packages to npm'
+        description: 'Type publish to release packages to npm'
         required: true
         type: string
 
@@ -30,6 +30,8 @@ jobs:
           node-version: 22
           cache: pnpm
           registry-url: https://registry.npmjs.org
+      - name: Confirm packed version
+        run: node -e "console.log('publishing', require('./packages/cli/package.json').version)"
       - run: pnpm install
       - run: pnpm typecheck
       - run: pnpm test
@@ -37,7 +39,8 @@ jobs:
       - name: Publish (unscoped first, then scoped) with provenance
         env:
           NPM_CONFIG_PROVENANCE: 'true'
-          # Leave NPM_TOKEN unset when using Trusted Publisher / OIDC.
+          # NPM_TOKEN can produce provenance attestations together with id-token: write.
+          # Trusted Publisher lets you delete NPM_TOKEN later.
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           if [ -z "$NODE_AUTH_TOKEN" ]; then

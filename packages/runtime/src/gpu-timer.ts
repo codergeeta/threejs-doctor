@@ -81,7 +81,14 @@ export interface GpuMacrotaskWait {
   timedOut: boolean
 }
 
-const DEFAULT_GPU_MACROTASK_TIMEOUT_MS = 100
+export const DEFAULT_GPU_MACROTASK_TIMEOUT_MS = 100
+/** Visible host waitFrame that never settles is aborted after this many ms. */
+export const DEFAULT_WAIT_FRAME_STALL_MS = 5000
+
+export interface GuardWaitFrameResult {
+  /** True when waitFrame did not settle while the document stayed visible. */
+  stalled: boolean
+}
 
 export function documentIsHidden(): boolean {
   try {
@@ -95,34 +102,41 @@ export function documentIsHidden(): boolean {
 /**
  * Host `waitFrame` can be `() => new Promise(requestAnimationFrame)`, which hangs in
  * background tabs. Abort when the document is hidden; if rAF is merely slow while
- * visible, keep waiting so <10 FPS devices are not cut off.
+ * visible, keep waiting so <10 FPS devices are not cut off — but cap at ~5s so a
+ * never-settling waitFrame cannot stall `measure()` forever.
  */
 export async function guardWaitFrame(
   waitFrame: () => Promise<unknown>,
   timeoutMs = DEFAULT_GPU_MACROTASK_TIMEOUT_MS,
-): Promise<void> {
-  if (documentIsHidden()) return
+  stallMs = DEFAULT_WAIT_FRAME_STALL_MS,
+): Promise<GuardWaitFrameResult> {
+  if (documentIsHidden()) return { stalled: false }
   let frameSettled = false
   const frame = Promise.resolve()
     .then(() => waitFrame())
     .finally(() => {
       frameSettled = true
     })
-  await Promise.race([frame, waitGpuMacrotask(timeoutMs)])
-  if (frameSettled || documentIsHidden()) return
-  await Promise.race([
-    frame,
-    new Promise<void>((resolve) => {
-      if (typeof document === 'undefined' || typeof document.addEventListener !== 'function') return
-      const onVis = () => {
-        if (documentIsHidden()) {
-          document.removeEventListener('visibilitychange', onVis)
-          resolve()
-        }
+  const stall = new Promise<'stalled'>((resolve) => {
+    setTimeout(() => resolve('stalled'), stallMs)
+  })
+  const hidden = new Promise<'hidden'>((resolve) => {
+    if (typeof document === 'undefined' || typeof document.addEventListener !== 'function') return
+    const onVis = () => {
+      if (documentIsHidden()) {
+        document.removeEventListener('visibilitychange', onVis)
+        resolve('hidden')
       }
-      document.addEventListener('visibilitychange', onVis)
-    }),
-  ])
+    }
+    document.addEventListener('visibilitychange', onVis)
+  })
+  await Promise.race([frame, waitGpuMacrotask(timeoutMs)])
+  if (frameSettled || documentIsHidden()) return { stalled: false }
+  const winner = await Promise.race([frame.then(() => 'settled' as const), stall, hidden])
+  if (winner === 'stalled' && !frameSettled && !documentIsHidden()) {
+    return { stalled: true }
+  }
+  return { stalled: false }
 }
 
 /**

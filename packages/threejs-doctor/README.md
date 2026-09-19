@@ -3,8 +3,9 @@
 Unscoped name reservation + CLI alias for [`@threejs-doctor/cli`](https://www.npmjs.com/package/@threejs-doctor/cli).
 
 ```bash
-npx threejs-doctor@0.1.3 bench --profile product --budget low
-npm i @threejs-doctor/runtime@0.1.3
+npx threejs-doctor@0.1.4 scan .
+npx threejs-doctor@0.1.4 bench --profile product --budget low
+npm i @threejs-doctor/runtime@0.1.4
 ```
 
 Do not use a third-party squat of this name. Source: [github.com/codergeeta/threejs-doctor](https://github.com/codergeeta/threejs-doctor).

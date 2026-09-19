@@ -2578,6 +2578,7 @@ ${line2}` : line1;
     return void 0;
   }
   var DEFAULT_GPU_MACROTASK_TIMEOUT_MS = 100;
+  var DEFAULT_WAIT_FRAME_STALL_MS = 5e3;
   function documentIsHidden() {
     try {
       if (typeof document === "undefined") return false;
@@ -2586,27 +2587,32 @@ ${line2}` : line1;
       return false;
     }
   }
-  async function guardWaitFrame(waitFrame, timeoutMs = DEFAULT_GPU_MACROTASK_TIMEOUT_MS) {
-    if (documentIsHidden()) return;
+  async function guardWaitFrame(waitFrame, timeoutMs = DEFAULT_GPU_MACROTASK_TIMEOUT_MS, stallMs = DEFAULT_WAIT_FRAME_STALL_MS) {
+    if (documentIsHidden()) return { stalled: false };
     let frameSettled = false;
     const frame = Promise.resolve().then(() => waitFrame()).finally(() => {
       frameSettled = true;
     });
+    const stall = new Promise((resolve) => {
+      setTimeout(() => resolve("stalled"), stallMs);
+    });
+    const hidden = new Promise((resolve) => {
+      if (typeof document === "undefined" || typeof document.addEventListener !== "function") return;
+      const onVis = () => {
+        if (documentIsHidden()) {
+          document.removeEventListener("visibilitychange", onVis);
+          resolve("hidden");
+        }
+      };
+      document.addEventListener("visibilitychange", onVis);
+    });
     await Promise.race([frame, waitGpuMacrotask(timeoutMs)]);
-    if (frameSettled || documentIsHidden()) return;
-    await Promise.race([
-      frame,
-      new Promise((resolve) => {
-        if (typeof document === "undefined" || typeof document.addEventListener !== "function") return;
-        const onVis = () => {
-          if (documentIsHidden()) {
-            document.removeEventListener("visibilitychange", onVis);
-            resolve();
-          }
-        };
-        document.addEventListener("visibilitychange", onVis);
-      })
-    ]);
+    if (frameSettled || documentIsHidden()) return { stalled: false };
+    const winner = await Promise.race([frame.then(() => "settled"), stall, hidden]);
+    if (winner === "stalled" && !frameSettled && !documentIsHidden()) {
+      return { stalled: true };
+    }
+    return { stalled: false };
   }
   function waitGpuMacrotask(timeoutMs = DEFAULT_GPU_MACROTASK_TIMEOUT_MS) {
     return new Promise((resolve) => {
@@ -3064,6 +3070,7 @@ ${line2}` : line1;
         hook(composer);
       }
       gpu?.beginMeasure();
+      let stalled = false;
       try {
         for (let i = 0; i < frames; i++) {
           info.reset?.();
@@ -3071,8 +3078,17 @@ ${line2}` : line1;
           const start = now();
           collector.beginFrame(start);
           gpu?.begin();
-          if (waitFrame) await guardWaitFrame(waitFrame);
-          else if (renderFrame) await renderFrame();
+          if (waitFrame) {
+            const waited = await guardWaitFrame(
+              waitFrame,
+              DEFAULT_GPU_MACROTASK_TIMEOUT_MS,
+              this.opts.waitFrameStallMs ?? DEFAULT_WAIT_FRAME_STALL_MS
+            );
+            if (waited.stalled) {
+              stalled = true;
+              break;
+            }
+          } else if (renderFrame) await renderFrame();
           gpuTimes.push(...gpu?.end() ?? []);
           const end = workMs !== void 0 ? start + workMs : now();
           collector.endFrame(end);
@@ -3113,7 +3129,10 @@ ${line2}` : line1;
         validityInput.visibilityState = visibility;
       }
       const validity = classifyMeasureValidity(validityInput);
-      if (validity.invalid) {
+      if (stalled) {
+        sample.invalid = true;
+        sample.invalidReason = "stalled";
+      } else if (validity.invalid) {
         sample.invalid = true;
         if (validity.reason) sample.invalidReason = validity.reason;
       }

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { PUBLISH_ORDER } from '../../../../scripts/publish.mjs'
+import { PUBLISH_ORDER, assertPublishGoAllowed } from '../../../../scripts/publish.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..')
 
@@ -20,5 +20,12 @@ describe('publish order', () => {
     expect(names.indexOf('@threejs-doctor/rules')).toBeLessThan(names.indexOf('@threejs-doctor/runtime'))
     expect(names.indexOf('@threejs-doctor/runtime')).toBeLessThan(names.indexOf('@threejs-doctor/cli'))
     expect(names.indexOf('@threejs-doctor/cli')).toBeLessThan(names.indexOf('@threejs-doctor/r3f'))
+  })
+
+  it('refuses --go outside GitHub Actions and allows it in GHA', () => {
+    expect(() => assertPublishGoAllowed(false, {})).not.toThrow()
+    expect(() => assertPublishGoAllowed(true, { GITHUB_ACTIONS: 'true' })).not.toThrow()
+    expect(() => assertPublishGoAllowed(true, {})).toThrow(/publish\.yml/)
+    expect(() => assertPublishGoAllowed(true, { GITHUB_ACTIONS: 'false' })).toThrow(/workflow_dispatch/)
   })
 })

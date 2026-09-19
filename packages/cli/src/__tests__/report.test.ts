@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { formatHumanReport } from '../report/human.js'
 import { formatJsonReport } from '../report/json.js'
 import { formatSarifReport } from '../report/sarif.js'
+import { formatHtmlReport } from '../report/html.js'
 import type { DoctorReport } from '@threejs-doctor/runtime'
 
 const report: DoctorReport = {
@@ -149,7 +150,7 @@ describe('reports', () => {
     expect(text).toContain('src/game/Environment.js:88')
   })
 
-  it('emits SARIF relatedLocations, git-root URIs, and driver rules from suggestedFix', () => {
+  it('emits one SARIF result per site for per-site rules with generic rule metadata', () => {
     const sarif = JSON.parse(
       formatSarifReport({
         ...report,
@@ -174,19 +175,62 @@ describe('reports', () => {
         tool: { driver: { rules: Array<{ id: string; shortDescription?: { text: string }; help?: { text: string } }> } }
         results: Array<{
           ruleId: string
-          locations?: Array<{ physicalLocation: { artifactLocation: { uri: string } } }>
-          relatedLocations?: Array<{ physicalLocation: { artifactLocation: { uri: string } } }>
+          message?: { text: string }
+          locations?: Array<{ physicalLocation: { artifactLocation: { uri: string }; region?: { startLine?: number } } }>
+          relatedLocations?: unknown
         }>
       }>
     }
     const run = sarif.runs[0]!
-    const result = run.results[0]!
-    expect(result.locations?.[0]?.physicalLocation.artifactLocation.uri).toBe('src/game/Effects.js')
-    expect(result.relatedLocations?.some((l) => l.physicalLocation.artifactLocation.uri === 'src/game/Environment.js')).toBe(
-      true,
+    expect(run.results).toHaveLength(2)
+    expect(run.results[0]?.locations?.[0]?.physicalLocation.artifactLocation.uri).toBe('src/game/Effects.js')
+    expect(run.results[0]?.locations?.[0]?.physicalLocation.region?.startLine).toBe(12)
+    expect(run.results[1]?.locations?.[0]?.physicalLocation.artifactLocation.uri).toBe(
+      'src/game/Environment.js',
     )
+    expect(run.results.every((r) => r.relatedLocations === undefined)).toBe(true)
+    expect(run.results[0]?.message?.text).toContain('src/game/Effects.js:12')
     const rule = run.tool.driver.rules.find((r) => r.id === 'culling/frustum-disabled')
-    expect(rule?.shortDescription?.text).toMatch(/frustumCulled/)
+    expect(rule?.shortDescription?.text).toBe('Mesh has frustumCulled disabled')
+    expect(rule?.shortDescription?.text).not.toMatch(/2 meshes/)
     expect(rule?.help?.text).toMatch(/Enable frustumCulled/)
   })
+
+  it('keeps aggregate rules as a single SARIF result', () => {
+    const sarif = JSON.parse(
+      formatSarifReport({
+        ...report,
+        mode: 'diagnose',
+        staticScan: true,
+        findings: [
+          {
+            id: 'lights/too-many',
+            severity: 'warn',
+            evidence: { lightCount: 9 },
+            message: 'Active lights 9 exceed budget 3',
+            suggestedFix: 'Bake lighting',
+            locations: [
+              { file: 'src/a.js', line: 1 },
+              { file: 'src/b.js', line: 2 },
+            ],
+          },
+        ],
+      }),
+    ) as {
+      runs: Array<{
+        tool: { driver: { rules: Array<{ id: string; shortDescription?: { text: string } }> } }
+        results: Array<{
+          ruleId: string
+          relatedLocations?: unknown[]
+        }>
+      }>
+    }
+    const run = sarif.runs[0]!
+    expect(run.results).toHaveLength(1)
+    expect(run.results[0]?.relatedLocations?.length).toBe(1)
+    const rule = run.tool.driver.rules.find((r) => r.id === 'lights/too-many')
+    expect(rule?.shortDescription?.text).toBe('Active light count exceeds the profile budget')
+    expect(rule?.shortDescription?.text).not.toMatch(/9/)
+  })
 })
+

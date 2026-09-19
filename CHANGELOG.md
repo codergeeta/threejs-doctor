@@ -2,7 +2,16 @@
 
 ## Unreleased
 
-- Docs: **0.1.3 is on npm**. Trusted Publisher remains optional leftover (token publish again; attestations may still be empty).
+## 0.1.4
+
+- Publish: `scripts/publish.mjs --go` refuses unless `GITHUB_ACTIONS=true`. Dry-run (`pnpm publish:dry`) still works locally. Next publish must be `publish.yml` workflow_dispatch (generic “Type publish to release packages to npm”).
+- Docs: provenance can be produced by `npm publish --provenance` in GHA with `id-token: write` **and** `NPM_TOKEN`; Trusted Publisher lets you delete the token later. Weekly `.github/workflows/provenance.yml` runs `check-provenance.mjs --published --latest`.
+- README first screen: three-line quick start, measured arcade-racer case study, limitations (GPU timer often missing on iOS Safari / mobile; static scan is pattern-based), schematic in `docs/assets/`.
+- CLI: `scan --format html` and `threejs-doctor report` write a single offline HTML file (no telemetry, no invented metrics).
+- SARIF: one result per site for per-site rules (GitHub annotates primary location). Aggregate rules such as `lights/too-many` stay one result. Rule `shortDescription` is generic; FX culling is `culling/frustum-disabled-fx`.
+- Runtime: visible `waitFrame` that never settles is aborted after ~5s with `invalid: 'stalled'`.
+- Community: `SECURITY.md`, `CONTRIBUTING.md`, issue templates.
+- Packages bumped to 0.1.4.
 
 ## 0.1.3
 

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security report
+    url: https://github.com/codergeeta/threejs-doctor/security/advisories/new
+    about: Do not file public issues for vulnerabilities. See SECURITY.md.
+  - name: Discussions (enable on the repo if missing)
+    url: https://github.com/codergeeta/threejs-doctor/discussions
+    about: Q&A and show-and-tell once GitHub Discussions is enabled.

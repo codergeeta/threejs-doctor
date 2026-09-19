@@ -1,7 +1,7 @@
 {
   "name": "@threejs-doctor/cli",
-  "version": "0.1.3",
-  "description": "threejs-doctor CLI (scan, bench, ci)",
+  "version": "0.1.4",
+  "description": "threejs-doctor CLI (scan, bench, ci, report)",
   "license": "MIT",
   "author": "codergeeta",
   "type": "module",

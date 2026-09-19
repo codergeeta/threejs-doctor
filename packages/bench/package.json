@@ -1,6 +1,6 @@
 {
   "name": "@threejs-doctor/bench",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Headless bench fixtures and low-end budgets for threejs-doctor",
   "license": "MIT",
   "author": "codergeeta",

@@ -196,10 +196,11 @@ describe('runScan static analysis', () => {
       (f) => f.id === 'culling/frustum-disabled' && f.severity === 'warn',
     )
     expect(meshHit).toBeUndefined()
-    const fx = report.findings.filter((f) => f.id === 'culling/frustum-disabled')
+    const fx = report.findings.filter((f) => f.id === 'culling/frustum-disabled-fx')
     expect(fx.length).toBeGreaterThan(0)
     expect(fx.every((f) => f.severity === 'info')).toBe(true)
     expect(fx[0]?.evidence.file).toBeDefined()
+    expect(report.findings.some((f) => f.id === 'culling/frustum-disabled')).toBe(false)
   })
 
   it('reports finding paths relative to the git root, not only the scan subdirectory', async () => {

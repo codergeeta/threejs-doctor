@@ -51,8 +51,10 @@ describe('cli', () => {
     })
   })
 
-  it('parses --format sarif', () => {
-    expect(parseArgs(['scan', './demo', '--format', 'sarif']).format).toBe('sarif')
+  it('parses --format html and the report subcommand', () => {
+    expect(parseArgs(['scan', './demo', '--format', 'html']).format).toBe('html')
+    expect(parseArgs(['report', 'a.json']).command).toBe('report')
+    expect(parseArgs(['report', 'a.json']).path).toBe('a.json')
   })
 
   it('writes SARIF when --format sarif is set', async () => {
