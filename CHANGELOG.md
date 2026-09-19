@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Docs: **0.1.3 is on npm**. Trusted Publisher remains optional leftover (token publish again; attestations may still be empty).
+
 ## 0.1.3
 
 - Runtime: `invalid: 'hidden'` is decided only from `document.visibilityState` (and `document.hidden`). A GPU wait timeout skips harvest for that frame and does **not** mark a visible slow device (e.g. 120ms rAF) hidden. Throttling stays with existing validity thresholds.
@@ -10,7 +12,7 @@
 - Scan: every finding site is exposed (`locations[]` in JSON, all `file:line` in human output, SARIF `relatedLocations`).
 - SARIF: artifact URIs are git-root relative; `tool.driver.rules` is filled from message / suggestedFix.
 - Scan: `git check-ignore --stdin -z` is batched (one git process per scan, not per file).
-- Publish: `scripts/check-provenance.mjs --published` fails if `npm view <pkg>@<version> dist.attestations` is empty. Dry-runs skip the registry. Docs: publish 0.1.3 only via `publish.yml` after Trusted Publisher; delete `NPM_TOKEN`. Trusted Publisher is **not** claimed attached.
+- Publish: `scripts/check-provenance.mjs --published` fails if `npm view <pkg>@<version> dist.attestations` is empty. Dry-runs skip the registry. **0.1.3 is on npm** (token publish again; attestations may still be empty). Trusted Publisher remains optional leftover (not a blocker).
 - Docs: static Doctor Score often does not move when the real wins are runtime (triangle chunking, composer DPR sync, dispose).
 
 ## 0.1.2

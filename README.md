@@ -6,20 +6,20 @@ Inspired by [react-doctor](https://github.com/millionco/react-doctor). Design: [
 
 ## Install / run
 
-**0.1.3 is pending npm publish** after merge (do not publish from a cloud agent VM). **0.1.2 is currently on npm** (`threejs-doctor` + `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`). 0.1.0–0.1.2 were token publishes and have empty `dist.attestations`. Do not claim Trusted Publisher is attached until it is. Publish **0.1.3 only** via [`.github/workflows/publish.yml`](.github/workflows/publish.yml) after Trusted Publisher, then delete `NPM_TOKEN` — see [`docs/publish-checklist.md`](docs/publish-checklist.md).
+**0.1.3 is on npm** (`threejs-doctor` + `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`):
 
 ```bash
 npm i @threejs-doctor/runtime
-npx threejs-doctor@0.1.2
-npx threejs-doctor@0.1.2 scan ./path --format json --profile auto --budget low
-npx threejs-doctor@0.1.2 ci ./path --min-score 70 --profile marketing --budget low
+npx threejs-doctor@0.1.3
+npx threejs-doctor@0.1.3 scan ./path --format json --profile auto --budget low
+npx threejs-doctor@0.1.3 ci ./path --min-score 70 --profile marketing --budget low
 ```
 
 ```ts
 import { Doctor } from '@threejs-doctor/runtime'
 ```
 
-Unscoped `threejs-doctor` is a **name reservation + alias** that depends on `@threejs-doctor/cli` (`npx threejs-doctor@0.1.2 bench --profile product --budget low`, or `npx @threejs-doctor/cli@0.1.2 …`). Trusted Publisher is **not** attached yet; 0.1.3 should be published only from `publish.yml` after it is — see [`docs/publish-checklist.md`](docs/publish-checklist.md).
+Unscoped `threejs-doctor` is a **name reservation + alias** that depends on `@threejs-doctor/cli` (`npx threejs-doctor@0.1.3 bench --profile product --budget low`, or `npx @threejs-doctor/cli@0.1.3 …`). Trusted Publisher (OIDC, then delete `NPM_TOKEN`) remains optional leftover — token publish was used again; attestations may still be empty. See [`docs/publish-checklist.md`](docs/publish-checklist.md).
 
 ### Git install (monorepo)
 
@@ -40,19 +40,19 @@ node packages/cli/bin/threejs-doctor.js bench --profile product --budget low
 | `ci` | Same scan path; exits non-zero when score `< --min-score` (default 70), on error-severity findings, or when no Three.js is found |
 
 ```bash
-npx threejs-doctor@0.1.2 scan ./path --format json --profile auto --budget low
-npx threejs-doctor@0.1.2 scan ./path --format sarif
-npx threejs-doctor@0.1.2 ci ./path --min-score 70 --profile marketing --budget low
+npx threejs-doctor@0.1.3 scan ./path --format json --profile auto --budget low
+npx threejs-doctor@0.1.3 scan ./path --format sarif
+npx threejs-doctor@0.1.3 ci ./path --min-score 70 --profile marketing --budget low
 ```
 
 `scan` / `ci` count constructors and setup in source (lights, shadow casters, `setPixelRatio`, `antialias`, rAF / `setAnimationLoop`, `frustumCulled = false`). They honour `.gitignore` (one batched `git check-ignore --stdin`), skip minified bundles and vendored `three` (`REVISION` banner), and do **not** invent draw-call or triangle totals. `--profile auto` treats a continuous loop (`requestAnimationFrame` + render, `setAnimationLoop`, R3F `<Canvas>`) as **game** and never recommends `frameloop-demand` from static facts alone. For three.js `EffectComposer`, `setSize` alone is **not** DPR sync (`setPixelRatio` is required); pmndrs `postprocessing` may use `setSize` only. For a live scene score, attach the runtime `Doctor`.
 
 ### Use in CI
 
-After `pnpm build` (or `npx threejs-doctor@0.1.2` from npm):
+After `pnpm build` (or `npx threejs-doctor@0.1.3` from npm):
 
 ```yaml
-- run: npx threejs-doctor@0.1.2 ci ./src --min-score 70 --profile marketing --budget low
+- run: npx threejs-doctor@0.1.3 ci ./src --min-score 70 --profile marketing --budget low
 ```
 
 `--budget` is the assumed device tier for rules that need one (DPR cap, antialias-on-low). `--profile auto` classifies from static facts only (not omitted draw calls): a continuous loop is `game`; otherwise it may still default to `marketing`. Point `path` at the app that imports `three`, not a monorepo root that mixes fixtures. A project with no Three.js patterns is **incomplete** and fails `ci` even at `--min-score 0`. Static scan does not unroll `for` loops or resolve `require('three')` unless a Three.js constructor is present.
@@ -74,7 +74,7 @@ pnpm test
 pnpm build
 ```
 
-CI (`.github/workflows/ci.yml`) runs `typecheck`, `test`, `build`, a **live-attach IIFE checksum** (`pnpm check:iife` rebuilds `examples/live-attach/dist/attach.iife.js` and fails if the committed file drifted), and a **scan/ci smoke** against the CLI fixtures (`ci --min-score` must pass on the healthy fixture and fail on the heavy one). A second job runs Playwright against a real Three.js + EffectComposer + InstancedMesh fixture (SwiftShader is fine; GPU times are still omitted when the timer query has no result). npm **0.1.2 is already published**. **0.1.3** publishes only via the **manual** workflow (`.github/workflows/publish.yml`) **after Trusted Publisher is attached**, then delete `NPM_TOKEN` — see [`docs/publish-checklist.md`](docs/publish-checklist.md).
+CI (`.github/workflows/ci.yml`) runs `typecheck`, `test`, `build`, a **live-attach IIFE checksum** (`pnpm check:iife` rebuilds `examples/live-attach/dist/attach.iife.js` and fails if the committed file drifted), and a **scan/ci smoke** against the CLI fixtures (`ci --min-score` must pass on the healthy fixture and fail on the heavy one). A second job runs Playwright against a real Three.js + EffectComposer + InstancedMesh fixture (SwiftShader is fine; GPU times are still omitted when the timer query has no result). npm **0.1.3 is already published**. Later publishes remain a **manual** workflow (`.github/workflows/publish.yml`) after Trusted Publisher or `NPM_TOKEN` — see [`docs/publish-checklist.md`](docs/publish-checklist.md).
 
 ## Runtime (vanilla Three.js)
 
