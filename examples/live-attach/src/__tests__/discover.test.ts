@@ -631,4 +631,115 @@ describe('cheap bundled-host discovery (no deep walk)', () => {
     expect(found?.renderer).toBe(renderer)
     expect(found?.composer).toBe(composer)
   })
+
+  it('does not walk into a window.scene graph with huge geometry attributes', () => {
+    let keysTouched = 0
+    const huge: Record<string, unknown> = {}
+    for (let i = 0; i < 8000; i += 1) {
+      Object.defineProperty(huge, `k${i}`, {
+        enumerable: true,
+        get() {
+          keysTouched += 1
+          return 0
+        },
+      })
+    }
+    const scene = {
+      name: 'heavy-scene',
+      isScene: true,
+      children: [
+        {
+          geometry: {
+            attributes: {
+              position: { array: huge },
+            },
+          },
+        },
+      ],
+      traverse() {},
+    }
+    const camera = fakeCamera()
+    const renderer = fakeRenderer('heavy-scene')
+    const found = discoverThreeHandles({ scene, camera, renderer })
+    expect(found?.scene).toBe(scene)
+    expect(found?.renderer).toBe(renderer)
+    expect(keysTouched).toBe(0)
+  })
+
+  it('inspects at most MAX_INSPECT_CANVASES WebGL canvases and prefers the largest', () => {
+    const hidden = {
+      scene: fakeScene('tiny'),
+      camera: fakeCamera(),
+      renderer: fakeRenderer('tiny'),
+    }
+    const visible = {
+      scene: fakeScene('large'),
+      camera: fakeCamera(),
+      renderer: fakeRenderer('large'),
+    }
+    const canvases = Array.from({ length: 9 }, (_, i) => {
+      const size = i === 0 ? 4 : 32 + i
+      const handles = i === 0 ? hidden : i === 8 ? visible : undefined
+      return {
+        nodeType: 1,
+        tagName: 'CANVAS',
+        __THREE__: handles,
+        getContext(type: string) {
+          if (type === 'webgl2' || type === 'webgl') return { drawingBufferWidth: size, drawingBufferHeight: size }
+          return null
+        },
+      }
+    })
+    const found = discoverThreeHandles({
+      document: {
+        querySelectorAll(sel: string) {
+          return sel === 'canvas' ? canvases : []
+        },
+      },
+    })
+    expect(found?.source).toBe('canvas')
+    expect(found?.scene).toBe(visible.scene)
+    expect(found?.renderer).toBe(visible.renderer)
+  })
+
+  it('reads canvas.__r3f.store.getState() when getState is not on the bag itself', () => {
+    const scene = fakeScene('r3f-store')
+    const camera = fakeCamera()
+    const renderer = fakeRenderer('r3f-store')
+    const canvas = {
+      nodeType: 1,
+      tagName: 'CANVAS',
+      __r3f: {
+        store: {
+          getState() {
+            return { scene, camera, gl: renderer }
+          },
+        },
+      },
+      getContext(type: string) {
+        if (type === 'webgl' || type === 'webgl2') return { drawingBufferWidth: 8, drawingBufferHeight: 8 }
+        return null
+      },
+    }
+    const found = discoverThreeHandles({
+      document: {
+        querySelectorAll(sel: string) {
+          return sel === 'canvas' ? [canvas] : []
+        },
+      },
+    })
+    expect(found?.source).toBe('canvas')
+    expect(found?.scene).toBe(scene)
+    expect(found?.renderer).toBe(renderer)
+  })
+
+  it('keeps an explicit composer on discoverThreeHandles', () => {
+    const scene = fakeScene('explicit-composer')
+    const camera = fakeCamera()
+    const renderer = fakeRenderer('explicit-composer')
+    const composer = fakeComposer()
+    const found = discoverThreeHandles({ leftover: true }, { scene, camera, renderer, composer })
+    expect(found?.source).toBe('explicit')
+    expect(found?.composer).toBe(composer)
+  })
 })

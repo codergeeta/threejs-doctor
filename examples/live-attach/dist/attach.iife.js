@@ -4073,6 +4073,14 @@ ${line2}` : line1;
     "external",
     "css"
   ]);
+  var CHEAP_SKIP_KEYS = /* @__PURE__ */ new Set([
+    ...SKIP_KEYS,
+    "geometry",
+    "attributes",
+    "morphAttributes",
+    "index",
+    "children"
+  ]);
   var CANVAS_SKIP_KEYS = /* @__PURE__ */ new Set([
     ...SKIP_KEYS,
     "parentNode",
@@ -4112,11 +4120,11 @@ ${line2}` : line1;
     "Application",
     "instance",
     "singleton",
-    "scene",
-    "camera",
     "renderer",
     "composer",
     "effectComposer",
+    "camera",
+    "scene",
     "__game",
     "threeApp",
     "gameApp",
@@ -4296,17 +4304,32 @@ ${line2}` : line1;
       const { value, depth } = next;
       if (!isRecord(value) || seen.has(value) || depth > limits.maxDepth) continue;
       if (typeof value.nodeType === "number") continue;
+      if (isTypedArrayOrBuffer(value)) continue;
       seen.add(value);
       visits += 1;
+      let skipExpand = false;
       try {
-        if (!found.renderer && isRenderer(value)) found.renderer = value;
-        if (!found.scene && isScene(value)) found.scene = value;
-        if (!found.camera && isCamera(value)) found.camera = value;
-        if (!found.composer && isComposerLike2(value)) found.composer = value;
+        if (isRenderer(value)) {
+          found.renderer ??= value;
+          skipExpand = true;
+        }
+        if (isScene(value)) {
+          found.scene ??= value;
+          skipExpand = true;
+        }
+        if (isCamera(value)) {
+          found.camera ??= value;
+          skipExpand = true;
+        }
+        if (isComposerLike2(value)) {
+          found.composer ??= value;
+          skipExpand = true;
+        }
       } catch {
         continue;
       }
       if (found.scene && found.renderer && found.camera) break;
+      if (skipExpand) continue;
       enqueueModuleLike(value, queue, depth, seen);
       let keys = [];
       try {
@@ -4315,10 +4338,11 @@ ${line2}` : line1;
         continue;
       }
       for (const key of keys) {
-        if (SKIP_KEYS.has(key)) continue;
+        if (CHEAP_SKIP_KEYS.has(key)) continue;
         try {
           const child = value[key];
           if (!isRecord(child) || seen.has(child)) continue;
+          if (isTypedArrayOrBuffer(child)) continue;
           queue.push({ value: child, depth: depth + 1 });
         } catch {
           continue;
@@ -4525,10 +4549,23 @@ ${line2}` : line1;
   }
   function considerValue(into, value, limits) {
     if (value == null) return;
-    if (isRenderer(value)) into.renderer ??= value;
-    if (isScene(value)) into.scene ??= value;
-    if (isCamera(value)) into.camera ??= value;
-    if (isComposerLike2(value)) into.composer ??= value;
+    if (isRenderer(value)) {
+      into.renderer ??= value;
+      mergeHandles(into, fillFromRenderer(value));
+      return;
+    }
+    if (isScene(value)) {
+      into.scene ??= value;
+      return;
+    }
+    if (isCamera(value)) {
+      into.camera ??= value;
+      return;
+    }
+    if (isComposerLike2(value)) {
+      into.composer ??= value;
+      return;
+    }
     if (isRecord(value) && typeof value.nodeType !== "number") {
       mergeHandles(into, walk(value, limits));
     }
@@ -4555,13 +4592,12 @@ ${line2}` : line1;
   function rendererOwnsCanvas(renderer, canvas) {
     return isRenderer(renderer) && readKey(renderer, "domElement") === canvas;
   }
-  function readR3fState(canvas) {
-    const r3f = readKey(canvas, "__r3f");
-    if (!isRecord(r3f)) return void 0;
-    let state = r3f;
-    if (typeof r3f.getState === "function") {
+  function handlesFromR3fBag(bag) {
+    if (!isRecord(bag)) return void 0;
+    let state = bag;
+    if (typeof bag.getState === "function") {
       try {
-        state = r3f.getState();
+        state = bag.getState();
       } catch {
         return void 0;
       }
@@ -4575,6 +4611,19 @@ ${line2}` : line1;
     if (isComposerLike2(state.composer)) out.composer = state.composer;
     if (out.scene == null && out.renderer == null) return void 0;
     return out;
+  }
+  function readR3fState(canvas) {
+    const r3f = readKey(canvas, "__r3f");
+    if (!isRecord(r3f)) return void 0;
+    const bags = [r3f, r3f.store, r3f.root, r3f.fiber];
+    let partial;
+    for (const bag of bags) {
+      const out = handlesFromR3fBag(bag);
+      if (!out) continue;
+      if (out.scene != null && out.renderer != null) return out;
+      partial ??= out;
+    }
+    return partial;
   }
   function reverseLookupRendererForCanvas(root, canvas) {
     if (!isRecord(root)) return void 0;
@@ -4726,7 +4775,12 @@ ${line2}` : line1;
       probe.tried.push("deep walk skipped (set __THREEJS_DOCTOR_ATTACH__.deepWalk)");
     }
     if (explicit.scene != null && explicit.camera != null && explicit.renderer != null) {
-      const found2 = { scene: explicit.scene, camera: explicit.camera, renderer: explicit.renderer };
+      const found2 = {
+        scene: explicit.scene,
+        camera: explicit.camera,
+        renderer: explicit.renderer,
+        composer: explicit.composer
+      };
       refreshProbe(probe, found2);
       return { ...found2, source: "explicit", probe };
     }

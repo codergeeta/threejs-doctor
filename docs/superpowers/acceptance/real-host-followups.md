@@ -38,7 +38,7 @@ Landed in this PR (must-fix 2–10 + CI partial):
 | 8 `measure()` | **Fixed.** Prefer wrapping host `render` for CPU work (not vsync). Median drawCalls / drawn triangles across sampled frames. |
 | 9 A/B + visual gate | **Fixed.** `compareAbSamples` uses **medians**; A-vs-A control is inside-noise. Default visual `maxChangedRatio` is **0.5%** (was 2% / ~18k px at 720p). `apply: ['safe']` is **not** a visual-safety claim — opt in with `visualGate` (control capture required). Honest README. |
 | 10 Zero-intensity lights | **Fixed.** Copy prefers a fixed-size pool + `intensity`/`visible`; warns that **removing** lights recompiles materials. |
-| 1 / CI (partial) | **This PR:** CI rebuilds the live-attach IIFE and fails on dist drift; Playwright + headless Chromium fixture (real three + EffectComposer + InstancedMesh). **Not this PR:** npm publish (needs tokens) — see [`docs/publish-checklist.md`](../../publish-checklist.md). Reserve unscoped `threejs-doctor`. |
+| 1 / CI (partial) | **Landed.** CI rebuilds the live-attach IIFE and fails on dist drift; Playwright + headless Chromium fixture (real three + EffectComposer + InstancedMesh). **npm 0.1.1 is published.** Remaining (optional): Trusted Publisher — see [`docs/publish-checklist.md`](../../publish-checklist.md). |
 
 ## P1 — measurements that reflect a live scene (done)
 

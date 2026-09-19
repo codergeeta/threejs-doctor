@@ -78,6 +78,15 @@ const SKIP_KEYS = new Set([
   'css',
 ])
 
+const CHEAP_SKIP_KEYS = new Set([
+  ...SKIP_KEYS,
+  'geometry',
+  'attributes',
+  'morphAttributes',
+  'index',
+  'children',
+])
+
 const CANVAS_SKIP_KEYS = new Set([
   ...SKIP_KEYS,
   'parentNode',
@@ -118,11 +127,11 @@ const BUNDLE_ROOT_KEYS = [
   'Application',
   'instance',
   'singleton',
-  'scene',
-  'camera',
   'renderer',
   'composer',
   'effectComposer',
+  'camera',
+  'scene',
   '__game',
   'threeApp',
   'gameApp',
@@ -344,18 +353,33 @@ function walk(root: unknown, limits: WalkLimits): PartialHandles | undefined {
     const { value, depth } = next
     if (!isRecord(value) || seen.has(value) || depth > limits.maxDepth) continue
     if (typeof (value as { nodeType?: unknown }).nodeType === 'number') continue
+    if (isTypedArrayOrBuffer(value)) continue
     seen.add(value)
     visits += 1
 
+    let skipExpand = false
     try {
-      if (!found.renderer && isRenderer(value)) found.renderer = value
-      if (!found.scene && isScene(value)) found.scene = value
-      if (!found.camera && isCamera(value)) found.camera = value
-      if (!found.composer && isComposerLike(value)) found.composer = value
+      if (isRenderer(value)) {
+        found.renderer ??= value
+        skipExpand = true
+      }
+      if (isScene(value)) {
+        found.scene ??= value
+        skipExpand = true
+      }
+      if (isCamera(value)) {
+        found.camera ??= value
+        skipExpand = true
+      }
+      if (isComposerLike(value)) {
+        found.composer ??= value
+        skipExpand = true
+      }
     } catch {
       continue
     }
     if (found.scene && found.renderer && found.camera) break
+    if (skipExpand) continue
 
     enqueueModuleLike(value, queue, depth, seen)
 
@@ -366,10 +390,11 @@ function walk(root: unknown, limits: WalkLimits): PartialHandles | undefined {
       continue
     }
     for (const key of keys) {
-      if (SKIP_KEYS.has(key)) continue
+      if (CHEAP_SKIP_KEYS.has(key)) continue
       try {
         const child = value[key]
         if (!isRecord(child) || seen.has(child)) continue
+        if (isTypedArrayOrBuffer(child)) continue
         queue.push({ value: child, depth: depth + 1 })
       } catch {
         continue
@@ -612,10 +637,23 @@ function peekWebGLContext(canvas: unknown): unknown {
 
 function considerValue(into: PartialHandles, value: unknown, limits: WalkLimits): void {
   if (value == null) return
-  if (isRenderer(value)) into.renderer ??= value
-  if (isScene(value)) into.scene ??= value
-  if (isCamera(value)) into.camera ??= value
-  if (isComposerLike(value)) into.composer ??= value
+  if (isRenderer(value)) {
+    into.renderer ??= value
+    mergeHandles(into, fillFromRenderer(value))
+    return
+  }
+  if (isScene(value)) {
+    into.scene ??= value
+    return
+  }
+  if (isCamera(value)) {
+    into.camera ??= value
+    return
+  }
+  if (isComposerLike(value)) {
+    into.composer ??= value
+    return
+  }
   if (isRecord(value) && typeof (value as { nodeType?: unknown }).nodeType !== 'number') {
     mergeHandles(into, walk(value, limits))
   }
@@ -646,13 +684,12 @@ function rendererOwnsCanvas(renderer: unknown, canvas: unknown): boolean {
   return isRenderer(renderer) && readKey(renderer, 'domElement') === canvas
 }
 
-function readR3fState(canvas: unknown): PartialHandles | undefined {
-  const r3f = readKey(canvas, '__r3f')
-  if (!isRecord(r3f)) return undefined
-  let state: unknown = r3f
-  if (typeof r3f.getState === 'function') {
+function handlesFromR3fBag(bag: unknown): PartialHandles | undefined {
+  if (!isRecord(bag)) return undefined
+  let state: unknown = bag
+  if (typeof bag.getState === 'function') {
     try {
-      state = r3f.getState()
+      state = bag.getState()
     } catch {
       return undefined
     }
@@ -666,6 +703,20 @@ function readR3fState(canvas: unknown): PartialHandles | undefined {
   if (isComposerLike(state.composer)) out.composer = state.composer
   if (out.scene == null && out.renderer == null) return undefined
   return out
+}
+
+function readR3fState(canvas: unknown): PartialHandles | undefined {
+  const r3f = readKey(canvas, '__r3f')
+  if (!isRecord(r3f)) return undefined
+  const bags = [r3f, r3f.store, r3f.root, r3f.fiber]
+  let partial: PartialHandles | undefined
+  for (const bag of bags) {
+    const out = handlesFromR3fBag(bag)
+    if (!out) continue
+    if (out.scene != null && out.renderer != null) return out
+    partial ??= out
+  }
+  return partial
 }
 
 function reverseLookupRendererForCanvas(root: unknown, canvas: unknown): PartialHandles | undefined {
@@ -836,7 +887,12 @@ export function attemptDiscovery(
   }
 
   if (explicit.scene != null && explicit.camera != null && explicit.renderer != null) {
-    const found = { scene: explicit.scene, camera: explicit.camera, renderer: explicit.renderer }
+    const found: PartialHandles = {
+      scene: explicit.scene,
+      camera: explicit.camera,
+      renderer: explicit.renderer,
+      composer: explicit.composer,
+    }
     refreshProbe(probe, found)
     return { ...found, source: 'explicit', probe }
   }

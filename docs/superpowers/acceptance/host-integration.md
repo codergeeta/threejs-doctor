@@ -36,10 +36,12 @@ If `scene` / `camera` / `renderer` are closed over (Parking Master, tanks, kinem
 catapult, …), try in this order — **deep walk stays opt-in**:
 
 1. **Author hook** — the assignment above. Best. Does not freeze the page.
-2. **Canvas reverse lookup** — WebGL canvases only (at most 8, largest first).
+2. **Canvas reverse lookup** — WebGL canvases first, at most 8, largest drawing
+   buffer first (if none peek as WebGL, still inspect up to 8 canvases).
    Looks at `canvas.__THREE__`, `userData`, `_renderer`, `canvas.__r3f.getState()`
-   (R3F `{ scene, camera, gl }`), and a renderer on a cheap bundle root whose
-   `domElement` is that canvas. Does **not** BFS `window`.
+   (also `__r3f.store` / `__r3f.root`), and a renderer on a cheap bundle root whose
+   `domElement` is that canvas. Does **not** BFS `window` or walk a live `scene`
+   graph (geometry attributes stay unvisited).
 3. **Prototype capture** — if `window.THREE` / `window.three` / object
    `window.__THREE__` exists, paste [`examples/host-shim/capture.js`](../../../examples/host-shim/capture.js),
    wait one rendered frame, confirm `window.__THREEJS_DOCTOR_HOST__`, then paste
