@@ -6,7 +6,7 @@ Inspired by [react-doctor](https://github.com/millionco/react-doctor). Design: [
 
 ## Install / run
 
-Published **0.1.0** on npm (`threejs-doctor` + `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`):
+Repo packages are **0.1.1** (`threejs-doctor` + `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`). **0.1.0** is on npm; **0.1.1** is the next publish (real static scan + `ci --min-score`):
 
 ```bash
 npm i @threejs-doctor/runtime
