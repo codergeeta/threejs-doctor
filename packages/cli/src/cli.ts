@@ -32,7 +32,9 @@ export function parseArgs(argv: string[]): CliArgs {
   if (cmd === 'scan' || cmd === 'bench' || cmd === 'ci' || cmd === 'help') {
     args.command = cmd
   }
-  if (cmd === 'scan' && argv[1] && !argv[1].startsWith('-')) args.path = argv[1]!
+  if ((cmd === 'scan' || cmd === 'ci') && argv[1] && !argv[1].startsWith('-')) {
+    args.path = argv[1]!
+  }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!
     if (a === '--format') args.format = argv[++i] === 'json' ? 'json' : 'human'
@@ -51,9 +53,10 @@ export async function main(
   const write = deps?.write ?? ((t: string) => console.log(t))
   if (args.command === 'help') {
     write(`Usage:
+  npx threejs-doctor scan [path] [--format human|json] [--profile auto|marketing|product|game|cad] [--budget low|mid|high]
   npx threejs-doctor bench --profile <profile> --budget low [--format human|json]
-  npx @threejs-doctor/cli bench --profile <profile> --budget low
-  # scan / ci are not implemented (exit 1)`)
+  npx threejs-doctor ci [path] [--min-score 70] [--format human|json] [--profile auto|marketing|product|game|cad] [--budget low|mid|high]
+  npx @threejs-doctor/cli scan [path]`)
     return 0
   }
 
@@ -83,7 +86,16 @@ export async function main(
 
   if (args.command === 'ci') {
     const hasError = report.findings.some((f) => f.severity === 'error')
-    if (report.score < args.minScore || hasError || report.incomplete) return 1
+    if (report.score < args.minScore || hasError || report.incomplete) {
+      const reasons: string[] = []
+      if (report.score < args.minScore) {
+        reasons.push(`score ${report.score} < --min-score ${args.minScore}`)
+      }
+      if (hasError) reasons.push('error-severity finding(s)')
+      if (report.incomplete) reasons.push('report incomplete')
+      write(`CI gate failed: ${reasons.join('; ')}`)
+      return 1
+    }
   }
   return 0
 }

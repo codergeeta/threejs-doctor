@@ -97,7 +97,7 @@ Deltas must come from the same sample windows on the same camera path. Do not ty
 
 ## 6. Incomplete runs
 
-If after-measure fails or WebGL is missing: keep baseline, set `incomplete: true`, **do not paste fixture or guessed numbers** into notes. Mark the run skipped. `threejs-doctor scan` is not implemented (exits 1) and is not a substitute.
+If after-measure fails or WebGL is missing: keep baseline, set `incomplete: true`, **do not paste fixture or guessed numbers** into notes. Mark the run skipped. `threejs-doctor scan` is a static source gate and is not a substitute for live measure.
 
 ## 7. Validate
 
@@ -105,7 +105,7 @@ Paste the saved JSON into a JSON Schema validator against `quality-ladder-report
 
 ## 8. CI
 
-GitHub Actions does not run this. `threejs-doctor scan` / `ci` are not implemented (exit 1) and are not score gates. `bench` stays a headless fixture command. No Playwright live job. No GPU job.
+GitHub Actions does not run this live capture. `threejs-doctor scan` / `ci` are a static source gate (not a live-ocean score). `bench` stays a headless fixture command. No Playwright live job. No GPU job.
 
 ## Additional heavy demos
 

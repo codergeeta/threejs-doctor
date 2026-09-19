@@ -34,13 +34,25 @@ node packages/cli/bin/threejs-doctor.js bench --profile product --budget low
 | Command | Status |
 |---------|--------|
 | `bench` | Works after `pnpm build` (headless fixtures) |
-| `scan` | **Not implemented** — exits 1 with a clear message |
-| `ci` | **Not implemented** — exits 1; **not** a working `--min-score` gate |
+| `scan` | Static JS/TS/HTML scan — findings + Doctor Score from `@threejs-doctor/rules`. Runtime metrics (FPS, draw calls, drawn triangles, VRAM, GPU) are **omitted** |
+| `ci` | Same scan path; exits non-zero when score `< --min-score` (default 70), on error-severity findings, or when no Three.js is found |
 
 ```bash
-npx threejs-doctor scan ./path --format json   # exits 1
-npx threejs-doctor ci --min-score 70           # exits 1
+npx threejs-doctor scan ./path --format json --profile auto --budget low
+npx threejs-doctor ci ./path --min-score 70 --profile marketing --budget low
 ```
+
+`scan` / `ci` count constructors and setup in source (lights, shadow casters, `setPixelRatio`, `antialias`, rAF / `setAnimationLoop`, `frustumCulled = false`). They do **not** invent draw-call or triangle totals. For a live scene score, attach the runtime `Doctor`.
+
+### Use in CI
+
+After `pnpm build` (or `npx threejs-doctor` from npm):
+
+```yaml
+- run: npx threejs-doctor ci ./ --min-score 70 --profile marketing --budget low
+```
+
+`--budget` is the assumed device tier for rules that need one (DPR cap, antialias-on-low). `--profile auto` classifies from static facts. Point `path` at the app that imports `three`, not a monorepo root that mixes fixtures. A project with no Three.js patterns is **incomplete** and fails `ci` even at `--min-score 0`.
 
 ## Monorepo scripts
 
@@ -59,7 +71,7 @@ pnpm test
 pnpm build
 ```
 
-CI (`.github/workflows/ci.yml`) runs `typecheck`, `test`, `build`, and a **live-attach IIFE checksum** (`pnpm check:iife` rebuilds `examples/live-attach/dist/attach.iife.js` and fails if the committed file drifted). A second job runs Playwright against a real Three.js + EffectComposer + InstancedMesh fixture (SwiftShader is fine; GPU times are still omitted when the timer query has no result). It does **not** run `threejs-doctor ci` (that command is not implemented). npm publish is a **manual** workflow (`.github/workflows/publish.yml`) after Trusted Publisher or `NPM_TOKEN` — see [`docs/publish-checklist.md`](docs/publish-checklist.md).
+CI (`.github/workflows/ci.yml`) runs `typecheck`, `test`, `build`, a **live-attach IIFE checksum** (`pnpm check:iife` rebuilds `examples/live-attach/dist/attach.iife.js` and fails if the committed file drifted), and a **scan/ci smoke** against the CLI fixtures (`ci --min-score` must pass on the healthy fixture and fail on the heavy one). A second job runs Playwright against a real Three.js + EffectComposer + InstancedMesh fixture (SwiftShader is fine; GPU times are still omitted when the timer query has no result). npm publish is a **manual** workflow (`.github/workflows/publish.yml`) after Trusted Publisher or `NPM_TOKEN` — see [`docs/publish-checklist.md`](docs/publish-checklist.md).
 
 ## Runtime (vanilla Three.js)
 

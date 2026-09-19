@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+  <body>
+    <script type="module">
+      import * as THREE from 'three'
+      const renderer = new THREE.WebGLRenderer({ antialias: true })
+      renderer.setPixelRatio(window.devicePixelRatio)
+      const light = new THREE.DirectionalLight()
+      light.castShadow = true
+      const extra = new THREE.PointLight()
+      extra.castShadow = true
+      const spot = new THREE.SpotLight()
+      spot.castShadow = true
+      new THREE.AmbientLight()
+      function tick() {
+        requestAnimationFrame(tick)
+      }
+      requestAnimationFrame(tick)
+    </script>
+  </body>
+</html>

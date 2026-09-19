@@ -33,6 +33,12 @@ export function formatHumanReport(report: DoctorReport): string {
   if (report.incomplete) {
     lines.push('Run incomplete: after metrics unavailable; baseline retained.')
   }
+  if (!report.after && report.mode === 'diagnose') {
+    lines.push('')
+    lines.push(
+      'Static source scan. Runtime metrics (FPS, draw calls, drawn triangles, VRAM, GPU) were omitted.',
+    )
+  }
   if (report.visualDelta) {
     lines.push(
       report.rolledBackDueToVisual

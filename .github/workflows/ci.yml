@@ -21,7 +21,14 @@ jobs:
       # Rebuild the pasteable IIFE and fail if the committed dist drifted.
       - name: Verify committed live-attach IIFE
         run: pnpm check:iife
-      # `threejs-doctor scan` / `ci` are not implemented (exit 1). Do not use them as a score gate.
+      - name: Smoke scan + ci --min-score gate
+        run: |
+          node packages/cli/bin/threejs-doctor.js scan packages/cli/src/__tests__/fixtures/healthy-static --profile marketing --budget low --format json
+          node packages/cli/bin/threejs-doctor.js ci packages/cli/src/__tests__/fixtures/healthy-static --min-score 70 --profile marketing --budget low
+          if node packages/cli/bin/threejs-doctor.js ci packages/cli/src/__tests__/fixtures/heavy-static --min-score 90 --profile marketing --budget low; then
+            echo "expected heavy fixture to fail the min-score gate" >&2
+            exit 1
+          fi
       # npm publish is documented in docs/publish-checklist.md and is not run here (no tokens).
 
   real-host-e2e:

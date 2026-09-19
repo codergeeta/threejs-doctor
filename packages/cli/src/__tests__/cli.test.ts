@@ -47,6 +47,17 @@ describe('cli', () => {
     })
   })
 
+  it('parses ci path and min-score', () => {
+    expect(parseArgs(['ci', './demo', '--min-score', '85'])).toEqual({
+      command: 'ci',
+      path: './demo',
+      format: 'human',
+      profile: 'auto',
+      budget: 'low',
+      minScore: 85,
+    })
+  })
+
   it('parses bench profile and budget flags', () => {
     expect(parseArgs(['bench', '--profile', 'product', '--budget', 'mid'])).toEqual({
       command: 'bench',
@@ -154,43 +165,30 @@ describe('cli', () => {
       },
     })
     expect(code).toBe(0)
-    expect(chunks.join('')).toContain('not implemented')
+    expect(chunks.join('')).toContain('scan [path]')
+    expect(chunks.join('')).toContain('ci [path]')
+    expect(chunks.join('').toLowerCase()).not.toContain('not implemented')
   })
 
-  it('runScan throws not-implemented instead of a fake score-100 report', async () => {
-    await expect(runScan({ ...defaultArgs, profile: 'product' })).rejects.toThrow(/not implemented/i)
+  it('runScan returns a diagnose report instead of throwing not-implemented', async () => {
+    const report = await runScan({ ...defaultArgs, profile: 'product', path: '.' })
+    expect(report.mode).toBe('diagnose')
+    expect(report.score).toBeGreaterThanOrEqual(0)
+    expect(report.score).toBeLessThanOrEqual(100)
   })
 
-  it('runScan is not a working gate (never returns a passing stub report)', async () => {
-    await expect(runScan({ ...defaultArgs, profile: 'game' })).rejects.toMatchObject({
-      code: 'SCAN_NOT_IMPLEMENTED',
-    })
-  })
-
-  it('default scan exits non-zero with a not-implemented message', async () => {
+  it('default scan exits 0 after printing a real report', async () => {
     const chunks: string[] = []
-    const code = await main(['scan', './demo'], {
+    const code = await main(['scan', '.'], {
       runScan,
       runBench: async () => fakeReport,
       write: (text) => {
         chunks.push(text)
       },
     })
-    expect(code).toBe(1)
-    expect(chunks.join('').toLowerCase()).toContain('not implemented')
-  })
-
-  it('default ci exits non-zero with a not-implemented message and is not a working score gate', async () => {
-    const chunks: string[] = []
-    const code = await main(['ci', '--min-score', '0'], {
-      runScan,
-      runBench: async () => fakeReport,
-      write: (text) => {
-        chunks.push(text)
-      },
-    })
-    expect(code).toBe(1)
-    expect(chunks.join('').toLowerCase()).toContain('not implemented')
+    expect(code).toBe(0)
+    expect(chunks.join('')).toContain('Doctor Score:')
+    expect(chunks.join('').toLowerCase()).not.toContain('not implemented')
   })
 
   it('runBench returns a benchmark report from the harness', async () => {
