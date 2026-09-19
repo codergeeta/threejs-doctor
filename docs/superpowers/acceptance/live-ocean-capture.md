@@ -3,8 +3,22 @@
 How to capture a `QualityLadderReport` JSON on a real device. **Do not check capture JSON into this repo.** Store schema only (`quality-ladder-report.schema.json`). Never invent `avgFps`, `ttfiMs`, `after`, or `deltas`.
 
 Headless CI does not gate TTFI or 30 FPS. This runbook is the live proof path.
+**§3 is not passed** until a **real phone** ocean Pass A/B exists. Box SwiftShader /
+Chrome emulation is not proof.
 
 Box-desktop ocean notes (not this phone-class bar, not §3 proof): [box-desktop-evidence.md](./box-desktop-evidence.md).
+
+## Phone checklist (turnkey)
+
+On a **real phone** (device class in §1). No invented metrics. JSON stays off-repo.
+
+1. **Open** the live ocean URL: [ocean-simulation](https://iamtechartist.github.io/ocean-simulation/). Wait until WebGL is visible.
+2. **Paste attach** — remote-debug (Safari Web Inspector / `chrome://inspect`) and paste the entire [`examples/live-attach/dist/attach.iife.js`](../../../examples/live-attach/dist/attach.iife.js). Default mode is Pass A `advise`. If `scene`/`camera`/`renderer` are not globals, set `window.__THREEJS_DOCTOR_HOST__ = { scene, camera, renderer }` first ([host-integration.md](./host-integration.md)).
+3. **Pass A advise** — wait for `console.log` JSON (or `copy(JSON.stringify(window.__THREEJS_DOCTOR_LAST_REPORT__))`). Overlay is read-only. Save the file off-repo.
+4. **Reload.** Pass B: `window.__THREEJS_DOCTOR_ATTACH__ = { mode: 'safe-auto' }`, paste the IIFE again. Save JSON off-repo.
+5. **Validate** against `quality-ladder-report.schema.json`. Do not fill omitted keys.
+
+CLI/runtime for static scan is **`npx threejs-doctor@0.1.1`** (already on npm). The live-attach IIFE is still this repo file — it is not published. Scan/ci is **not** a substitute for this phone capture.
 
 ## 1. Device class for the bar
 
@@ -31,7 +45,7 @@ Acceptance is **not** complete with ocean-simulation alone. After the ocean capt
 
 Use the unpublished IIFE in [`examples/live-attach`](../../../examples/live-attach/README.md): paste `examples/live-attach/dist/attach.iife.js` into DevTools on the live URL. It constructs `Doctor` + `QualityController` (`profile: 'game'`), registers `createOceanAdapter` only when `window.pelagic.debug` exists, then `boot()` + `runLadder()`. Default mode is `advise`. For Pass B, reload and set `window.__THREEJS_DOCTOR_ATTACH__ = { mode: 'safe-auto' }` before pasting again.
 
-A real game should expose `{ scene, camera, renderer }` (or `window.__THREEJS_DOCTOR_HOST__`) in one assignment — see [host-integration.md](./host-integration.md). Local unpublished hosts that already do this: [`acceptance-fixture`](../../../examples/acceptance-fixture/README.md) and heavier [`acceptance-fixture-game`](../../../examples/acceptance-fixture-game/README.md). Those are not the §1 phone bar.
+A real game should expose `{ scene, camera, renderer, composer? }` as `window.__THREEJS_DOCTOR_HOST__` in one assignment — see [host-integration.md](./host-integration.md). Copy-paste: [`examples/host-shim/expose.js`](../../../examples/host-shim/expose.js). Local unpublished hosts that already do this: [`acceptance-fixture`](../../../examples/acceptance-fixture/README.md) and heavier [`acceptance-fixture-game`](../../../examples/acceptance-fixture-game/README.md). Those are not the §1 phone bar. `npx threejs-doctor@0.1.1` is the published CLI; it does not replace this IIFE.
 
 On a **box / DevTools emulator** that does not expose phone-class
 `maxTouchPoints` / coarse pointer / `deviceMemory ≤ 4` / high DPR, overlay those

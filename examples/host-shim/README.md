@@ -1,10 +1,27 @@
 # Unpublished host-shim (bookmarklet)
 
-Tiny paste-first helper for bundled Three.js games (Claude-of-Tanks, catapult)
-that keep `scene` / `camera` / `renderer` in closures. It hooks
-`WebGLRenderer.prototype.render` **once** (or a discovered instance `render`),
-writes `window.__THREEJS_DOCTOR_HOST__ = { scene, camera, renderer }`, then
-restores the original method.
+Tiny paste-first helpers for bundled Three.js games (Claude-of-Tanks, catapult)
+that keep `scene` / `camera` / `renderer` in closures.
+
+## Preferred: one assignment (game authors / auditors)
+
+Drop [`expose.js`](./expose.js) next to where the renderer is constructed:
+
+```js
+window.__THREEJS_DOCTOR_HOST__ = { scene, camera, renderer }
+// optional: composer
+```
+
+Then paste [`examples/live-attach/dist/attach.iife.js`](../live-attach/dist/attach.iife.js).
+No `deepWalk`. No prototype hook. This is the path live-attach prefers.
+
+## Capture bookmarklet (when THREE is on the page)
+
+[`capture.js`](./capture.js) hooks `WebGLRenderer.prototype.render` **once**
+(or a discovered instance `render`), writes
+`window.__THREEJS_DOCTOR_HOST__ = { scene, camera, renderer }`, then restores
+the original method. If `__THREEJS_DOCTOR_HOST__` is already complete, the shim
+does nothing.
 
 This folder is **not** a workspace package and is **not** published. The
 unit-tested implementation lives in
@@ -15,15 +32,18 @@ discovery misses handles.
 
 ## Paste before the live-attach IIFE
 
-1. For bundled hosts (no `window.THREE`), set
-   `window.__THREEJS_DOCTOR_ATTACH__ = { deepWalk: true }` first.
-2. Paste [`capture.js`](./capture.js) into DevTools. Wait one rendered frame.
-3. Confirm `window.__THREEJS_DOCTOR_HOST__` has `scene`, `camera`, `renderer`.
-4. Optionally set `mode` / `device: 'phone'` on `__THREEJS_DOCTOR_ATTACH__`.
-5. Paste `examples/live-attach/dist/attach.iife.js`.
+1. Prefer [`expose.js`](./expose.js) if you can edit the game.
+2. For bundled hosts (no `window.THREE`), set
+   `window.__THREEJS_DOCTOR_ATTACH__ = { deepWalk: true }` first only if you need
+   the bounded instance walk.
+3. Paste [`capture.js`](./capture.js) into DevTools. Wait one rendered frame.
+4. Confirm `window.__THREEJS_DOCTOR_HOST__` has `scene`, `camera`, `renderer`.
+5. Optionally set `mode` / `device: 'phone'` on `__THREEJS_DOCTOR_ATTACH__`.
+6. Paste `examples/live-attach/dist/attach.iife.js`.
 
 Lookup order:
 
+- Existing `window.__THREEJS_DOCTOR_HOST__` (already complete → skip)
 - `window.THREE` / `window.three` / object `window.__THREE__` / `window.WebGLRenderer`
 - else, **only if** `window.__THREEJS_DOCTOR_ATTACH__.deepWalk === true`, a
   **bounded BFS** from `window`, `document`, and each canvas (non-enumerable

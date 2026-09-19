@@ -4049,6 +4049,7 @@ ${line2}` : line1;
   var DEEP_WALK_MAX_NODES = 5e3;
   var DEEP_WALK_MAX_DEPTH = 8;
   var DEEP_WALK_MAX_MS = 80;
+  var MAX_INSPECT_CANVASES = 8;
   var SKIP_KEYS = /* @__PURE__ */ new Set([
     "document",
     "location",
@@ -4071,6 +4072,14 @@ ${line2}` : line1;
     "chrome",
     "external",
     "css"
+  ]);
+  var CHEAP_SKIP_KEYS = /* @__PURE__ */ new Set([
+    ...SKIP_KEYS,
+    "geometry",
+    "attributes",
+    "morphAttributes",
+    "index",
+    "children"
   ]);
   var CANVAS_SKIP_KEYS = /* @__PURE__ */ new Set([
     ...SKIP_KEYS,
@@ -4110,10 +4119,20 @@ ${line2}` : line1;
     "application",
     "Application",
     "instance",
-    "singleton"
+    "singleton",
+    "renderer",
+    "composer",
+    "effectComposer",
+    "camera",
+    "scene",
+    "__game",
+    "threeApp",
+    "gameApp",
+    "__app"
   ];
   var CANVAS_HANDLE_KEYS = [
     "__THREE__",
+    "__r3f",
     "userData",
     "__renderer",
     "_renderer",
@@ -4122,6 +4141,7 @@ ${line2}` : line1;
   ];
   var RENDERER_SCENE_KEYS = ["scene", "_scene", "currentScene", "_currentScene"];
   var RENDERER_CAMERA_KEYS = ["camera", "_camera", "currentCamera", "_currentCamera"];
+  var RENDERER_COMPOSER_KEYS = ["composer", "_composer", "effectComposer"];
   var GL_CONTEXT_IDS = ["webgl2", "webgl", "experimental-webgl"];
   function isRecord(value) {
     return typeof value === "object" && value !== null;
@@ -4155,6 +4175,23 @@ ${line2}` : line1;
     if (!isRecord(value)) return false;
     return value.isCamera === true || value.isPerspectiveCamera === true || value.isOrthographicCamera === true;
   }
+  function isComposerLike2(value) {
+    if (!isRecord(value)) return false;
+    if (value.isEffectComposer === true) return true;
+    const hasPasses = Array.isArray(value.passes);
+    const hasClassicTarget = value.renderTarget1 !== void 0 || value.writeBuffer !== void 0;
+    const hasPmndrsTarget = value.inputBuffer !== void 0 || value.outputBuffer !== void 0;
+    return hasPasses && (hasClassicTarget || hasPmndrsTarget);
+  }
+  function pickComposer(from) {
+    if (isComposerLike2(from)) return from;
+    if (!isRecord(from)) return void 0;
+    for (const key of RENDERER_COMPOSER_KEYS) {
+      const value = readKey(from, key);
+      if (isComposerLike2(value)) return value;
+    }
+    return void 0;
+  }
   function readKey(obj, key) {
     if (!isRecord(obj)) return void 0;
     try {
@@ -4182,19 +4219,25 @@ ${line2}` : line1;
     const host = readKey(root, DOCTOR_HOST_KEY);
     if (!isRecord(host) || host.scene == null || host.renderer == null) return void 0;
     const camera = host.camera ?? findCameraInScene(host.scene) ?? {};
-    return { scene: host.scene, camera, renderer: host.renderer, source: "host" };
+    const out = { scene: host.scene, camera, renderer: host.renderer, source: "host" };
+    if (host.composer != null) out.composer = host.composer;
+    return out;
   }
   function fromPelagic(root) {
     const debug = pelagicDebug(root);
     if (!debug || debug.scene == null || debug.renderer == null) return void 0;
     const camera = debug.camera ?? findCameraInScene(debug.scene) ?? {};
-    return { scene: debug.scene, camera, renderer: debug.renderer, source: "pelagic" };
+    const out = { scene: debug.scene, camera, renderer: debug.renderer, source: "pelagic" };
+    const composer = debug.composer ?? debug.effectComposer;
+    if (composer != null) out.composer = composer;
+    return out;
   }
   function mergeHandles(into, extra) {
     if (!extra) return;
     if (into.scene == null && extra.scene != null) into.scene = extra.scene;
     if (into.camera == null && extra.camera != null) into.camera = extra.camera;
     if (into.renderer == null && extra.renderer != null) into.renderer = extra.renderer;
+    if (into.composer == null && extra.composer != null) into.composer = extra.composer;
   }
   function fillFromRenderer(renderer) {
     const out = {};
@@ -4222,6 +4265,8 @@ ${line2}` : line1;
       const camera = readKey(userData, "camera");
       if (isCamera(camera)) out.camera = camera;
     }
+    const composer = pickComposer(renderer) ?? pickComposer(userData);
+    if (composer != null) out.composer = composer;
     return out;
   }
   function keysToVisit(value, includeNonEnumerable) {
@@ -4259,16 +4304,32 @@ ${line2}` : line1;
       const { value, depth } = next;
       if (!isRecord(value) || seen.has(value) || depth > limits.maxDepth) continue;
       if (typeof value.nodeType === "number") continue;
+      if (isTypedArrayOrBuffer(value)) continue;
       seen.add(value);
       visits += 1;
+      let skipExpand = false;
       try {
-        if (!found.renderer && isRenderer(value)) found.renderer = value;
-        if (!found.scene && isScene(value)) found.scene = value;
-        if (!found.camera && isCamera(value)) found.camera = value;
+        if (isRenderer(value)) {
+          found.renderer ??= value;
+          skipExpand = true;
+        }
+        if (isScene(value)) {
+          found.scene ??= value;
+          skipExpand = true;
+        }
+        if (isCamera(value)) {
+          found.camera ??= value;
+          skipExpand = true;
+        }
+        if (isComposerLike2(value)) {
+          found.composer ??= value;
+          skipExpand = true;
+        }
       } catch {
         continue;
       }
       if (found.scene && found.renderer && found.camera) break;
+      if (skipExpand) continue;
       enqueueModuleLike(value, queue, depth, seen);
       let keys = [];
       try {
@@ -4277,10 +4338,11 @@ ${line2}` : line1;
         continue;
       }
       for (const key of keys) {
-        if (SKIP_KEYS.has(key)) continue;
+        if (CHEAP_SKIP_KEYS.has(key)) continue;
         try {
           const child = value[key];
           if (!isRecord(child) || seen.has(child)) continue;
+          if (isTypedArrayOrBuffer(child)) continue;
           queue.push({ value: child, depth: depth + 1 });
         } catch {
           continue;
@@ -4288,6 +4350,10 @@ ${line2}` : line1;
       }
     }
     if (found.renderer && found.scene == null) mergeHandles(found, fillFromRenderer(found.renderer));
+    if (found.composer == null) {
+      const composer = pickComposer(found.renderer);
+      if (composer != null) found.composer = composer;
+    }
     if (!found.scene && !found.renderer) return void 0;
     return found;
   }
@@ -4483,16 +4549,104 @@ ${line2}` : line1;
   }
   function considerValue(into, value, limits) {
     if (value == null) return;
-    if (isRenderer(value)) into.renderer ??= value;
-    if (isScene(value)) into.scene ??= value;
-    if (isCamera(value)) into.camera ??= value;
+    if (isRenderer(value)) {
+      into.renderer ??= value;
+      mergeHandles(into, fillFromRenderer(value));
+      return;
+    }
+    if (isScene(value)) {
+      into.scene ??= value;
+      return;
+    }
+    if (isCamera(value)) {
+      into.camera ??= value;
+      return;
+    }
+    if (isComposerLike2(value)) {
+      into.composer ??= value;
+      return;
+    }
     if (isRecord(value) && typeof value.nodeType !== "number") {
       mergeHandles(into, walk(value, limits));
     }
+    if (into.composer == null) {
+      const composer = pickComposer(value);
+      if (composer != null) into.composer = composer;
+    }
   }
-  function inspectCanvas(canvas) {
+  function canvasArea(canvas) {
+    const gl = peekWebGLContext(canvas);
+    if (!isRecord(gl)) return 0;
+    const width = gl.drawingBufferWidth;
+    const height = gl.drawingBufferHeight;
+    if (typeof width !== "number" || typeof height !== "number") return 0;
+    const area = width * height;
+    return Number.isFinite(area) && area > 0 ? area : 0;
+  }
+  function canvasesToInspect(root) {
+    const all = listCanvases(root);
+    const withGl = all.filter((canvas) => peekWebGLContext(canvas));
+    const pool = withGl.length > 0 ? withGl : all;
+    return [...pool].sort((a, b) => canvasArea(b) - canvasArea(a)).slice(0, MAX_INSPECT_CANVASES);
+  }
+  function rendererOwnsCanvas(renderer, canvas) {
+    return isRenderer(renderer) && readKey(renderer, "domElement") === canvas;
+  }
+  function handlesFromR3fBag(bag) {
+    if (!isRecord(bag)) return void 0;
+    let state = bag;
+    if (typeof bag.getState === "function") {
+      try {
+        state = bag.getState();
+      } catch {
+        return void 0;
+      }
+    }
+    if (!isRecord(state)) return void 0;
+    const out = {};
+    if (isScene(state.scene)) out.scene = state.scene;
+    if (isCamera(state.camera)) out.camera = state.camera;
+    const gl = state.gl ?? state.renderer;
+    if (isRenderer(gl)) out.renderer = gl;
+    if (isComposerLike2(state.composer)) out.composer = state.composer;
+    if (out.scene == null && out.renderer == null) return void 0;
+    return out;
+  }
+  function readR3fState(canvas) {
+    const r3f = readKey(canvas, "__r3f");
+    if (!isRecord(r3f)) return void 0;
+    const bags = [r3f, r3f.store, r3f.root, r3f.fiber];
+    let partial;
+    for (const bag of bags) {
+      const out = handlesFromR3fBag(bag);
+      if (!out) continue;
+      if (out.scene != null && out.renderer != null) return out;
+      partial ??= out;
+    }
+    return partial;
+  }
+  function reverseLookupRendererForCanvas(root, canvas) {
+    if (!isRecord(root)) return void 0;
+    const limits = { maxDepth: 6, maxVisits: 400, includeNonEnumerable: true };
+    for (const key of BUNDLE_ROOT_KEYS) {
+      const value = readKey(root, key);
+      if (value === void 0) continue;
+      const local = {};
+      considerValue(local, value, limits);
+      if (local.renderer && rendererOwnsCanvas(local.renderer, canvas)) {
+        mergeHandles(local, fillFromRenderer(local.renderer));
+        const composer = pickComposer(value) ?? pickComposer(local.renderer);
+        if (composer != null) local.composer ??= composer;
+        return local;
+      }
+    }
+    return void 0;
+  }
+  function inspectCanvas(canvas, root) {
     const found = {};
     const limits = { maxDepth: 4, maxVisits: 200, includeNonEnumerable: true };
+    mergeHandles(found, readR3fState(canvas));
+    if (found.scene != null && found.renderer != null) return found;
     for (const key of CANVAS_HANDLE_KEYS) {
       considerValue(found, readKey(canvas, key), limits);
     }
@@ -4519,13 +4673,16 @@ ${line2}` : line1;
     considerValue(found, readKey(gl, "userData"), limits);
     considerValue(found, readKey(gl, "renderer"), limits);
     considerValue(found, readKey(gl, "__renderer"), limits);
+    if ((found.renderer == null || found.scene == null) && root != null) {
+      mergeHandles(found, reverseLookupRendererForCanvas(root, canvas));
+    }
     if (found.renderer && found.scene == null) mergeHandles(found, fillFromRenderer(found.renderer));
     return found;
   }
   function fromCanvases(root) {
     const found = {};
-    for (const canvas of listCanvases(root)) {
-      mergeHandles(found, inspectCanvas(canvas));
+    for (const canvas of canvasesToInspect(root)) {
+      mergeHandles(found, inspectCanvas(canvas, root));
       if (found.scene && found.renderer) break;
     }
     if (!found.scene && !found.renderer) return void 0;
@@ -4540,6 +4697,8 @@ ${line2}` : line1;
       if (value === void 0) continue;
       probe.bundleRootsPresent.push(key);
       considerValue(found, value, limits);
+      const composer = pickComposer(value);
+      if (composer != null) found.composer ??= composer;
       if (found.scene && found.renderer) break;
     }
     if (!found.scene && !found.renderer) return void 0;
@@ -4587,7 +4746,9 @@ ${line2}` : line1;
     }
     parts.push("Pass them explicitly from this page's console once located:");
     parts.push("  await ThreejsDoctorLiveAttach.attachQualityLadder({ scene, camera, renderer })");
-    parts.push("Or expose window.__THREEJS_DOCTOR_HOST__ = { scene, camera, renderer } before pasting.");
+    parts.push(
+      "Or expose window.__THREEJS_DOCTOR_HOST__ = { scene, camera, renderer, composer } before pasting (composer optional)."
+    );
     parts.push(
       "Default paste skips the deep graph walk. For bundled hosts opt in with window.__THREEJS_DOCTOR_ATTACH__ = { deepWalk: true } (bounded; aborts if the graph is too large)."
     );
@@ -4614,14 +4775,20 @@ ${line2}` : line1;
       probe.tried.push("deep walk skipped (set __THREEJS_DOCTOR_ATTACH__.deepWalk)");
     }
     if (explicit.scene != null && explicit.camera != null && explicit.renderer != null) {
-      const found2 = { scene: explicit.scene, camera: explicit.camera, renderer: explicit.renderer };
+      const found2 = {
+        scene: explicit.scene,
+        camera: explicit.camera,
+        renderer: explicit.renderer,
+        composer: explicit.composer
+      };
       refreshProbe(probe, found2);
       return { ...found2, source: "explicit", probe };
     }
     const found = {
       scene: explicit.scene,
       camera: explicit.camera,
-      renderer: explicit.renderer
+      renderer: explicit.renderer,
+      composer: explicit.composer
     };
     let source = found.scene != null && found.renderer != null ? "explicit" : void 0;
     const host = fromDoctorHost(root);
@@ -4672,6 +4839,10 @@ ${line2}` : line1;
     }
     if (found.scene != null && found.camera == null) {
       found.camera = findCameraInScene(found.scene);
+    }
+    if (found.composer == null && found.renderer != null) {
+      const composer = pickComposer(found.renderer);
+      if (composer != null) found.composer = composer;
     }
     refreshProbe(probe, found);
     return { ...found, probe, ...source ? { source } : {} };
@@ -4727,7 +4898,8 @@ ${line2}` : line1;
       scene: attempt.scene,
       camera: attempt.camera ?? {},
       renderer: attempt.renderer,
-      source: attempt.source ?? "explicit"
+      source: attempt.source ?? "explicit",
+      ...attempt.composer != null ? { composer: attempt.composer } : {}
     };
   }
 
@@ -5035,6 +5207,8 @@ ${line2}` : line1;
           camera: isCamera2(camera) ? camera : camera ?? {},
           renderer: this
         };
+        const composer = isRecord2(this) ? this.composer : void 0;
+        if (composer != null) captured.composer = composer;
         writeHost(root, captured);
         restore();
       }
@@ -5162,7 +5336,7 @@ ${line2}` : line1;
     if (waitFrame) doctorOpts.waitFrame = waitFrame;
     const device = resolveAttachDevice(options.device, renderer);
     if (device) doctorOpts.device = device;
-    const composer = options.composer ?? found.renderer?.composer ?? found.scene?.userData?.composer;
+    const composer = options.composer ?? attempt.composer ?? found.renderer?.composer ?? found.scene?.userData?.composer;
     if (composer !== void 0) doctorOpts.composer = composer;
     if (options.onPixelRatioChange) doctorOpts.onPixelRatioChange = options.onPixelRatioChange;
     const doctor = new Doctor(doctorOpts);

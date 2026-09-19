@@ -4,6 +4,7 @@ export interface CapturedHost {
   scene: unknown
   camera: unknown
   renderer: unknown
+  composer?: unknown
 }
 
 export interface RendererRenderCapture {
@@ -112,6 +113,8 @@ function hookRenderMethod(
         camera: isCamera(camera) ? camera : camera ?? {},
         renderer: this,
       }
+      const composer = isRecord(this) ? this.composer : undefined
+      if (composer != null) captured.composer = composer
       writeHost(root, captured)
       restore()
     }

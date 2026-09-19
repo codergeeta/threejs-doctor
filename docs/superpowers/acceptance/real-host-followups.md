@@ -14,11 +14,11 @@ Round-2 GPU timer (57/60 frames, median 1.39ms on waitFrame), drawn triangles, c
 | 5 Light advice | **Fixed.** `lights/zero-intensity` no longer recommends `visible=false` / `intensity=0`. Advise: keep visible light **count** fixed and move/reassign a small pool; if count must change, pre-compile both variants with `renderer.compile` / `compileAsync`. (intensity=0 still costs; visible=false recompiles — 1.3s freeze measured by the reporter.) |
 | 6 Visual gate acts | **Fixed.** Candidate delta vs control requires a **second** capture to confirm. On reproduced difference: `rollbackAll()`, `visualDelta: true` (does not leave passes applied; does not block as “safe”). `VisualGate.fixedViewpoint` documents that capture must use a fixed camera pose. |
 | 7 Smaller | **Fixed.** Sum top-level wrapped `render()` workMs in a frame (HUD/minimap). Leak tracker: WeakRef + `added` clears; two-scan grace so pooling remove/re-add is not a leak. README: pass `composer` explicitly (shallow auto-discovery). A/B noise = `max(half-range, 1.4826 × MAD)` + optional `control` A-vs-A series. |
-| 1 npm | **Published 0.1.0.** Repo packages are **0.1.1** (real static scan + `ci --min-score`; next publish). Remaining: Trusted Publisher on each package, then delete `NPM_TOKEN`. See [`docs/publish-checklist.md`](../../publish-checklist.md). |
+| 1 npm | **Published 0.1.1** (`threejs-doctor` + `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`). Remaining (optional, not a blocker): Trusted Publisher on each package, then delete `NPM_TOKEN`. See [`docs/publish-checklist.md`](../../publish-checklist.md). |
 
 ### Residual (not this PR)
 
-- **Trusted Publisher** — attach GitHub Actions Trusted Publisher on each published package, then delete `NPM_TOKEN`. See [`docs/publish-checklist.md`](../../publish-checklist.md).
+- **Trusted Publisher** — optional leftover: attach GitHub Actions Trusted Publisher on each published package, then delete `NPM_TOKEN`. Not a blocker. See [`docs/publish-checklist.md`](../../publish-checklist.md).
 - **Phone ocean** — still a follow-up capture, not landed here.
 
 ## Round 2 — arcade racer @60a09ff
@@ -38,7 +38,7 @@ Landed in this PR (must-fix 2–10 + CI partial):
 | 8 `measure()` | **Fixed.** Prefer wrapping host `render` for CPU work (not vsync). Median drawCalls / drawn triangles across sampled frames. |
 | 9 A/B + visual gate | **Fixed.** `compareAbSamples` uses **medians**; A-vs-A control is inside-noise. Default visual `maxChangedRatio` is **0.5%** (was 2% / ~18k px at 720p). `apply: ['safe']` is **not** a visual-safety claim — opt in with `visualGate` (control capture required). Honest README. |
 | 10 Zero-intensity lights | **Fixed.** Copy prefers a fixed-size pool + `intensity`/`visible`; warns that **removing** lights recompiles materials. |
-| 1 / CI (partial) | **This PR:** CI rebuilds the live-attach IIFE and fails on dist drift; Playwright + headless Chromium fixture (real three + EffectComposer + InstancedMesh). **Not this PR:** npm publish (needs tokens) — see [`docs/publish-checklist.md`](../../publish-checklist.md). Reserve unscoped `threejs-doctor`. |
+| 1 / CI (partial) | **Landed.** CI rebuilds the live-attach IIFE and fails on dist drift; Playwright + headless Chromium fixture (real three + EffectComposer + InstancedMesh). **npm 0.1.1 is published.** Remaining (optional): Trusted Publisher — see [`docs/publish-checklist.md`](../../publish-checklist.md). |
 
 ## P1 — measurements that reflect a live scene (done)
 
@@ -75,7 +75,7 @@ Prefer **invalid/incomplete** over a pretty false win. Fixed-clock mocks are not
 - Noise band is `max(half-range, 1.4826 × MAD)` of A (or optional control), not a bootstrap CI. Hosts should still run an A-vs-A control round when they need a tighter claim.
 - Score still starts from findings; cost weighting is a directional correction, not a full profiler.
 - Hidden-tab detection is skipped when the host injects `now()` (unit tests).
-- **npm 0.1.0 is published.** Repo packages are **0.1.1** (next publish). Remaining: Trusted Publisher on each package, then delete `NPM_TOKEN`. See [`docs/publish-checklist.md`](../../publish-checklist.md).
+- **npm 0.1.1 is published.** Remaining (optional, not a blocker): Trusted Publisher on each package, then delete `NPM_TOKEN`. See [`docs/publish-checklist.md`](../../publish-checklist.md).
 - SwiftShader / headless Chromium is correctness for sampler wiring, composer mismatch, instance bounds, and drawn-triangle drop — not a GPU-time number. Delayed GPU readback is covered by fake-GL unit tests.
 - Phone ocean capture remains outstanding.
 
