@@ -119,10 +119,10 @@ importers:
   packages/bench:
     dependencies:
       '@threejs-doctor/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       '@threejs-doctor/runtime':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../runtime
     devDependencies:
       '@types/three':
@@ -141,16 +141,16 @@ importers:
   packages/cli:
     dependencies:
       '@threejs-doctor/bench':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../bench
       '@threejs-doctor/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       '@threejs-doctor/rules':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../rules
       '@threejs-doctor/runtime':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../runtime
     devDependencies:
       typescript:
@@ -178,10 +178,10 @@ importers:
   packages/r3f:
     dependencies:
       '@threejs-doctor/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       '@threejs-doctor/runtime':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../runtime
     devDependencies:
       '@react-three/fiber':
@@ -221,7 +221,7 @@ importers:
   packages/rules:
     dependencies:
       '@threejs-doctor/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
     devDependencies:
       typescript:
@@ -234,10 +234,10 @@ importers:
   packages/runtime:
     dependencies:
       '@threejs-doctor/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       '@threejs-doctor/rules':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../rules
     devDependencies:
       '@types/three':
@@ -252,6 +252,16 @@ importers:
       typescript:
         specifier: ^5.7.3
         version: 5.9.3
+      vitest:
+        specifier: ^3.0.5
+        version: 3.2.7(@types/node@22.20.3)(jsdom@26.1.0)
+
+  packages/threejs-doctor:
+    dependencies:
+      '@threejs-doctor/cli':
+        specifier: workspace:^
+        version: link:../cli
+    devDependencies:
       vitest:
         specifier: ^3.0.5
         version: 3.2.7(@types/node@22.20.3)(jsdom@26.1.0)

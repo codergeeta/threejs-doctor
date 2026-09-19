@@ -1,0 +1,38 @@
+{
+  "name": "threejs-doctor",
+  "version": "0.1.0",
+  "description": "Unscoped CLI alias that reserves the threejs-doctor name and forwards to @threejs-doctor/cli.",
+  "license": "MIT",
+  "author": "codergeeta",
+  "type": "module",
+  "bin": {
+    "threejs-doctor": "./bin/threejs-doctor.js"
+  },
+  "files": ["bin"],
+  "scripts": {
+    "build": "node -e \"process.exit(0)\"",
+    "test": "vitest run",
+    "typecheck": "node -e \"process.exit(0)\""
+  },
+  "dependencies": {
+    "@threejs-doctor/cli": "workspace:^"
+  },
+  "devDependencies": {
+    "vitest": "^3.0.5"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/codergeeta/threejs-doctor.git",
+    "directory": "packages/threejs-doctor"
+  },
+  "homepage": "https://github.com/codergeeta/threejs-doctor#readme",
+  "bugs": {
+    "url": "https://github.com/codergeeta/threejs-doctor/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

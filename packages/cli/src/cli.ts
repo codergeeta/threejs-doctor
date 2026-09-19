@@ -51,10 +51,9 @@ export async function main(
   const write = deps?.write ?? ((t: string) => console.log(t))
   if (args.command === 'help') {
     write(`Usage:
-  # Not published to npm yet. From a git clone after pnpm install && pnpm build:
-  node packages/cli/bin/threejs-doctor.js bench --profile <profile> --budget low [--format human|json]
-  node packages/cli/bin/threejs-doctor.js scan  # not implemented (exits 1)
-  node packages/cli/bin/threejs-doctor.js ci    # not implemented (exits 1)`)
+  npx threejs-doctor bench --profile <profile> --budget low [--format human|json]
+  npx @threejs-doctor/cli bench --profile <profile> --budget low
+  # scan / ci are not implemented (exit 1)`)
     return 0
   }
 

@@ -6,9 +6,22 @@ Inspired by [react-doctor](https://github.com/millionco/react-doctor). Design: [
 
 ## Install / run
 
-**Not on npm yet.** Root `package.json` name is `threejs-doctor` (`private: true`). `npx threejs-doctor` / `npm install threejs-doctor` will not install this repo.
+After npm publish (see [`docs/publish-checklist.md`](docs/publish-checklist.md) — needs the `@threejs-doctor` org or `NPM_TOKEN` once):
 
-### Git install (current)
+```bash
+npm i @threejs-doctor/runtime
+npx threejs-doctor bench --profile product --budget low
+# same CLI:
+npx @threejs-doctor/cli bench --profile product --budget low
+```
+
+```ts
+import { Doctor } from '@threejs-doctor/runtime'
+```
+
+Unscoped `threejs-doctor` is a **name reservation + alias** that depends on `@threejs-doctor/cli`. Until the first publish completes, `npx threejs-doctor` could still hit a squat — install from this repo instead.
+
+### Git install (monorepo)
 
 ```bash
 git clone https://github.com/codergeeta/threejs-doctor.git
@@ -17,18 +30,6 @@ pnpm install
 pnpm build
 node packages/cli/bin/threejs-doctor.js bench --profile product --budget low
 ```
-
-From GitHub (monorepo root, not a published CLI package):
-
-```bash
-pnpm add github:codergeeta/threejs-doctor
-```
-
-Prefer a clone + `pnpm build` until `@threejs-doctor/*` is published. **Not on npm yet.** See [`docs/publish-checklist.md`](docs/publish-checklist.md) (reserve unscoped `threejs-doctor`; publish `@threejs-doctor/*` with provenance). This PR does not publish.
-
-### Security
-
-The npm name `threejs-doctor` is unpublished. `npx threejs-doctor` can run a **different** package if someone squats the name. Until we publish, install only from [github.com/codergeeta/threejs-doctor](https://github.com/codergeeta/threejs-doctor).
 
 ### CLI status
 
@@ -39,8 +40,8 @@ The npm name `threejs-doctor` is unpublished. `npx threejs-doctor` can run a **d
 | `ci` | **Not implemented** — exits 1; **not** a working `--min-score` gate |
 
 ```bash
-node packages/cli/bin/threejs-doctor.js scan ./path --format json   # exits 1
-node packages/cli/bin/threejs-doctor.js ci --min-score 70           # exits 1
+npx threejs-doctor scan ./path --format json   # exits 1
+npx threejs-doctor ci --min-score 70           # exits 1
 ```
 
 ## Monorepo scripts
@@ -60,7 +61,7 @@ pnpm test
 pnpm build
 ```
 
-CI (`.github/workflows/ci.yml`) runs `typecheck`, `test`, `build`, and a **live-attach IIFE checksum** (`pnpm check:iife` rebuilds `examples/live-attach/dist/attach.iife.js` and fails if the committed file drifted). A second job runs Playwright against a real Three.js + EffectComposer + InstancedMesh fixture (SwiftShader is fine; GPU times are still omitted when the timer query has no result). It does **not** run `threejs-doctor ci` (that command is not implemented) and does **not** `npm publish` (see [`docs/publish-checklist.md`](docs/publish-checklist.md)).
+CI (`.github/workflows/ci.yml`) runs `typecheck`, `test`, `build`, and a **live-attach IIFE checksum** (`pnpm check:iife` rebuilds `examples/live-attach/dist/attach.iife.js` and fails if the committed file drifted). A second job runs Playwright against a real Three.js + EffectComposer + InstancedMesh fixture (SwiftShader is fine; GPU times are still omitted when the timer query has no result). It does **not** run `threejs-doctor ci` (that command is not implemented). npm publish is a **manual** workflow (`.github/workflows/publish.yml`) after Trusted Publisher or `NPM_TOKEN` — see [`docs/publish-checklist.md`](docs/publish-checklist.md).
 
 ## Runtime (vanilla Three.js)
 
@@ -114,9 +115,10 @@ import { DoctorCanvas, useDoctor } from '@threejs-doctor/r3f'
 | `@threejs-doctor/core` | Probe, snapshot, metrics |
 | `@threejs-doctor/rules` | Findings + Doctor Score |
 | `@threejs-doctor/runtime` | Doctor API + overlay |
-| `@threejs-doctor/cli` | CLI bin (git clone; not on npm) |
+| `@threejs-doctor/cli` | CLI bin (`npx @threejs-doctor/cli`) |
 | `@threejs-doctor/bench` | Four fixtures + low-end budgets |
 | `@threejs-doctor/r3f` | `DoctorCanvas` / `useDoctor` |
+| `threejs-doctor` | Unscoped alias (`npx threejs-doctor` → CLI) |
 
 ## Bench before/after (low-end budget)
 
