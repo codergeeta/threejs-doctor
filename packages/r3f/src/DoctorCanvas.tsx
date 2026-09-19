@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Canvas, useThree, type CanvasProps } from '@react-three/fiber'
-import { Doctor } from '@threejs-doctor/runtime'
+import { Doctor, waitGpuMacrotask } from '@threejs-doctor/runtime'
 import type { Mode, Profile } from '@threejs-doctor/core'
 import { DoctorProvider } from './useDoctor.js'
 
@@ -39,6 +39,7 @@ function DoctorBridge({
       hostRenderer: gl as never,
       profile,
       mode,
+      waitFrame: waitGpuMacrotask,
       ...(composer !== undefined ? { composer } : {}),
       ...(onPixelRatioChange ? { onPixelRatioChange } : {}),
     })

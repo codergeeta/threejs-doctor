@@ -2,7 +2,26 @@
 
 P0 from the real-host report (dpr-cap NaN, distance-cull hiding nested meshes, honest scan/ci, unpublished npm name) is handled in the runtime/CLI.
 
-## Round 2 — arcade racer @60a09ff (this PR)
+## Round 3 — audit of arcade racer @16976c9 (fixes in this PR)
+
+Round-2 GPU timer (57/60 frames, median 1.39ms on waitFrame), drawn triangles, composer, instance bounds, leaks, measure wrap, and 0.5% visual gate remain **verified good on a real RTX 3050**. This PR lands the still-open correctness from that audit. **Do not merge until the user re-audits.**
+
+| Item | Status |
+|------|--------|
+| 2 GPU query carry-over | **Fixed.** Each `measure()` calls `beginMeasure` (new measure id, delete pending/active) and `endMeasure` (discard leftovers). Harvest collects **every** available result, not one. Tagged mismatches are dropped. Unit test: measure A enqueues; measure B with no work does not report A's times. Never invent `gpuFrameTimeMs`. |
+| 3 Default path without waitFrame | **Fixed.** Live clock + GPU sampler + no `waitFrame`: yield `waitGpuMacrotask` (rAF / `setTimeout(0)`) between frames and drain a few reads, then discard leftovers. Tight `renderFrame` loops set `gpuTimingSkipped` when no result arrived and cannot poison the next measure. r3f `DoctorCanvas` always passes `waitFrame`. |
+| 4 Delayed GPU unit tests | **Fixed.** Fake WebGL2 context with results N frames late covers carry-over and no-waitFrame. Do not rely on SwiftShader EXT in e2e alone. |
+| 5 Light advice | **Fixed.** `lights/zero-intensity` no longer recommends `visible=false` / `intensity=0`. Advise: keep visible light **count** fixed and move/reassign a small pool; if count must change, pre-compile both variants with `renderer.compile` / `compileAsync`. (intensity=0 still costs; visible=false recompiles — 1.3s freeze measured by the reporter.) |
+| 6 Visual gate acts | **Fixed.** Candidate delta vs control requires a **second** capture to confirm. On reproduced difference: `rollbackAll()`, `visualDelta: true` (does not leave passes applied; does not block as “safe”). `VisualGate.fixedViewpoint` documents that capture must use a fixed camera pose. |
+| 7 Smaller | **Fixed.** Sum top-level wrapped `render()` workMs in a frame (HUD/minimap). Leak tracker: WeakRef + `added` clears; two-scan grace so pooling remove/re-add is not a leak. README: pass `composer` explicitly (shallow auto-discovery). A/B noise = `max(half-range, 1.4826 × MAD)` + optional `control` A-vs-A series. |
+| 1 npm | **Not this PR.** No tokens, no publish. Checklist: reserve unscoped `threejs-doctor` **first** as placeholder, then scoped `@threejs-doctor/*` with OIDC `--provenance` from CI. See [`docs/publish-checklist.md`](../../publish-checklist.md). |
+
+### Residual (not this PR)
+
+- **npm unpublished** — reserve unscoped name, then scoped OIDC publish.
+- **Phone ocean** — still a follow-up capture, not landed here.
+
+## Round 2 — arcade racer @60a09ff
 
 Confirmed still good: P0–P14 from round 1 (dpr-cap getPixelRatio+finite; scan/ci not-implemented; distance-cull opt-in world-space; frameloop-demand not on games; composer drawCalls autoReset; hidden/throttled invalid; new rules fire on 3/5 real problems).
 
@@ -23,7 +42,7 @@ Landed in this PR (must-fix 2–10 + CI partial):
 
 ## P1 — measurements that reflect a live scene (done)
 
-- **`measure()` times real frames.** `waitFrame` advances to the next host frame. Doctor wraps `renderer.render` / `composer.render` / `hostRenderer.render` so CPU times are work, not vsync. When `waitFrame` is omitted, Doctor calls `renderFrame` or `composer.render` or `renderer.render(scene, camera)` between `beginFrame` / `endFrame`. `gpuFrameTimeMs` is set only when a **queued** `EXT_disjoint_timer_query_webgl2` result is available on the GL context — never invented.
+- **`measure()` times real frames.** `waitFrame` advances to the next host frame. Doctor wraps `renderer.render` / `composer.render` / `hostRenderer.render` so CPU times are work, not vsync (summed when several top-level `render()` calls run in one frame). When `waitFrame` is omitted, Doctor calls `renderFrame` or `composer.render` or `renderer.render(scene, camera)` between `beginFrame` / `endFrame`, and yields a macrotask if a GPU sampler exists. Pending GPU queries are discarded at measure boundaries. `gpuFrameTimeMs` is set only when a **queued** `EXT_disjoint_timer_query_webgl2` result is available on the GL context — never invented. `gpuTimingSkipped` is set when a sampler existed but this measure produced no times.
 - **EffectComposer drawCalls.** While measuring, `renderer.info.autoReset = false` (restored afterward) and `info.reset()` runs at the start of each sampled frame so composer passes accumulate (133, not 1). Sampled drawCalls / triangles are the **median** across frames, not last-only.
 - **Lights / textures / VRAM.** Default stats walk the scene graph for lights and material maps, plus render targets (`isWebGLRenderTarget` / `width`×`height`). VRAM uses a 4-byte-per-pixel lower bound when dimensions are known; the field is **omitted** when they are not.
 - **`maxTextureSize`.** `readWebglQualitySignals` / `Doctor.getDevice()` read `MAX_TEXTURE_SIZE` from the GL context via `getParameter`. Live-attach `wrapRenderer` forwards `getContext`/`render`/`extensions.get`. Probe still defaults to 2048 only when the context does not report a size.
@@ -37,27 +56,28 @@ No new destructive safe passes. Fields are omitted when they cannot be counted.
 - **Uncullable meshes.** `culling/frustum-disabled` when `frustumCulled === false`. `culling/oversized-bounds` when a world-space bounding-sphere radius is **greater than `camera.far`**. InstancedMesh uses `computeBoundingSphere()`. Oversized finding is omitted without `camera.far` or a bounding sphere.
 - **Shadow-pass cost.** `shadows/expensive-pass` when counted caster triangles (same formula, `castShadow` meshes only) exceed `maxShadowTriangles`. `shadows/casters-outside-frustum` when a caster's **instance-aware** world sphere sits fully outside **every** testable shadow camera. Omitted when no shadow camera matrix/projection can be read.
 - **Composer vs renderer.** Detect `isEffectComposer`, `{ passes, renderTarget1\|writeBuffer }`, or pmndrs `{ passes, inputBuffer\|outputBuffer }`. Pass `DoctorOptions.composer` when the composer is not on the graph. `renderer/composer-resolution-mismatch` when composer pixel ratio differs from `renderer.getPixelRatio()` or composer RT area differs from the drawing buffer by >10%, including after a renderer DPR/size change with a stale composer.
-- **Intensity 0.** `lights/zero-intensity` for lights with `intensity <= 0` that are still `visible !== false`. Prefer a **fixed-size light pool** and disable via intensity/visible. Removing lights recompiles materials and can hitch.
-- **InstancedMesh leaks.** `lifecycle/instance-buffer-growth` when `instanceMatrix`/`instanceColor` byte length grows **or** an InstancedMesh is **removed without dispose()** (listen `removed` / `dispose`; do not rely only on summing buffers still in the graph).
+- **Intensity 0.** `lights/zero-intensity` for lights with `intensity <= 0` that are still `visible !== false`. Keep **visible light count fixed** and move/reassign a small pool. If count must change, pre-compile both variants with `renderer.compile` / `compileAsync`. Do not “fix” this with `intensity = 0` (still costs) or `visible = false` (recompiles; 1.3s freeze measured on the racer).
+- **InstancedMesh leaks.** `lifecycle/instance-buffer-growth` when `instanceMatrix`/`instanceColor` byte length grows **or** an InstancedMesh is **removed without dispose()** for two consecutive scans (listen `added` / `dispose`; WeakRef so pooling is not pinned). A pooled remove/re-add is not a leak.
 
 ## P3 — trustworthy before/after (done, scaffolding)
 
 Prefer **invalid/incomplete** over a pretty false win. Fixed-clock mocks are not proof that a pass is visually safe on a real scene.
 
-- **Stable A/B.** `compareAbSamples({ a, b })` uses **medians** of interleaved rounds and builds a noise band from **A-round spread** (half-range). An A-vs-A control is `inside-noise`. `claimAbDelta` never returns `win` inside that band. `Doctor.compareAb({ rounds, poses, applyB, restoreA })` pins a camera pose and interleaves A/B measures. Moving scenes without fixed poses are high-noise (~50% in the arcade-racer write-up); fixed poses were ~2%. The 2% floor is **not invented as a GPU number** — it is the documented host observation, and the harness uses the measured A variance.
-- **Pixel-diff gate.** Opt-in: `optimize({ apply: ['safe'], visualGate: { capture, maxChangedRatio } })`. Control = capture twice before applying (reproduce-before-safe). If the candidate buffer changes more than `max(control, maxChangedRatio)` pixels, `visualDelta: true` (do not treat the pass as visually safe). Default `maxChangedRatio` is **0.005** (0.5% of pixels, ~4.6k at 720p — tighter than 2% / ~18k). Default runtime does **not** call `readPixels`. `apply: ['safe']` without `visualGate` is **not** a visual-safety claim. Unit tests use mocked RGBA buffers.
+- **Stable A/B.** `compareAbSamples({ a, b, control })` uses **medians** of interleaved rounds. Noise band is `max(half-range of the control-or-A series, 1.4826 × MAD)`. Pass optional `control` A-vs-A rounds; an A-vs-A compare is `inside-noise`. `claimAbDelta` never returns `win` inside that band. `Doctor.compareAb({ rounds, poses, applyB, restoreA, control })` pins a camera pose and interleaves A/B measures. Moving scenes without fixed poses are high-noise (~50% in the arcade-racer write-up); fixed poses were ~2%. The 2% floor is **not invented as a GPU number** — it is the documented host observation, and the harness uses measured A (or control) variance.
+- **Pixel-diff gate.** Opt-in: `optimize({ apply: ['safe'], visualGate: { capture, maxChangedRatio, fixedViewpoint: true } })`. Control = capture twice before applying (reproduce-before-safe). Capture **must** use a fixed viewpoint. If the candidate buffer changes more than `max(control, maxChangedRatio)` pixels, capture **again** to confirm; on a reproduced difference, **roll back** applied passes and set `visualDelta: true` (do not treat the pass as visually safe). Default `maxChangedRatio` is **0.005** (0.5% of pixels, ~4.6k at 720p — tighter than 2% / ~18k). Default runtime does **not** call `readPixels`. `apply: ['safe']` without `visualGate` is **not** a visual-safety claim. Unit tests use mocked RGBA buffers.
 - **Hidden / throttled.** Live `measure()` (no synthetic `now`) sets `invalid` + `incomplete` when `document.visibilityState === 'hidden'`. Frame gaps ≥250ms (≥2 gaps, or any ≥1000ms) set `invalidReason: 'throttled-raf'`. Synthetic clocks used in unit tests are not treated as hidden tabs.
 - **Score by measured cost.** `computeDoctorScore` applies a sliding penalty for **drawn** `triangles` vs the profile budget, and a bonus when a **previous** snapshot shows a ≥20% **drawn** drop or a ≥10% drop in **measured** `gpuFrameTimeMs`. GPU time is never invented. Leftover unused geometry does not block the bonus.
 - **Real-scene testing.** Acceptance is this file plus unpublished fixtures ([`examples/acceptance-fixture`](../../../examples/acceptance-fixture), [`examples/acceptance-fixture-game`](../../../examples/acceptance-fixture-game), Playwright [`examples/real-host-e2e`](../../../examples/real-host-e2e)). See [host-integration.md](./host-integration.md). Headless bench fixtures / fixed `now()` clocks are CI smoke, not evidence that a pass is visually safe.
 
 ### Residual limits
 
-- No default GPU readback; visual gate is opt-in and test-harness sized.
-- Noise band is A-round half-range, not a confidence interval.
+- No default GPU readback; visual gate is opt-in and test-harness sized. On a reproduced visual delta, passes are rolled back.
+- Noise band is `max(half-range, 1.4826 × MAD)` of A (or optional control), not a bootstrap CI. Hosts should still run an A-vs-A control round when they need a tighter claim.
 - Score still starts from findings; cost weighting is a directional correction, not a full profiler.
 - Hidden-tab detection is skipped when the host injects `now()` (unit tests).
-- **npm publish** is still a follow-up (`docs/publish-checklist.md`); no tokens in this PR.
-- SwiftShader / headless Chromium is correctness for sampler wiring, composer mismatch, instance bounds, and drawn-triangle drop — not a GPU-time number.
+- **npm publish** is still a follow-up (`docs/publish-checklist.md`); no tokens in this PR. Reserve unscoped `threejs-doctor` first, then scoped packages with OIDC provenance.
+- SwiftShader / headless Chromium is correctness for sampler wiring, composer mismatch, instance bounds, and drawn-triangle drop — not a GPU-time number. Delayed GPU readback is covered by fake-GL unit tests.
+- Phone ocean capture remains outstanding.
 
 ## Clockwork Climb / continuous RAF games
 

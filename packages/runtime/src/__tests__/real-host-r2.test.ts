@@ -305,10 +305,56 @@ describe('R2: removed-without-dispose InstancedMesh leak', () => {
     objects.length = 0
     for (const fn of listeners.get('removed') ?? []) fn()
     await doctor.measure()
+    await doctor.measure()
     const second = await doctor.diagnose()
     const hit = second.findings.find((f) => f.id === 'lifecycle/instance-buffer-growth')
     expect(hit).toBeDefined()
     expect(Number(hit?.evidence.removedUndisposedInstancedCount)).toBe(1)
+  })
+
+  it('does not treat pooled remove/re-add as a leak when the mesh is added back', async () => {
+    const listeners = new Map<string, Array<() => void>>()
+    const mesh: Record<string, unknown> = {
+      isMesh: true,
+      isInstancedMesh: true,
+      count: 8,
+      geometry: indexedGeometry(4, 'g-pool'),
+      material: { uuid: 'm' },
+      instanceMatrix: { array: new Float32Array(8 * 16), count: 8 },
+      addEventListener(type: string, fn: () => void) {
+        const list = listeners.get(type) ?? []
+        list.push(fn)
+        listeners.set(type, list)
+      },
+    }
+    const objects: object[] = [mesh]
+    const scene = {
+      children: objects,
+      traverse(cb: (o: object) => void) {
+        for (const o of objects) cb(o)
+      },
+    }
+    const doctor = new Doctor({
+      scene: scene as never,
+      camera: {},
+      renderer: {
+        info: { render: { calls: 1, triangles: 40 }, memory: { geometries: 1, textures: 0 } },
+        setPixelRatio() {},
+        render() {},
+      } as never,
+      profile: 'game',
+      measureFrames: 1,
+      now: clock(),
+    })
+    await doctor.measure()
+    objects.length = 0
+    for (const fn of listeners.get('removed') ?? []) fn()
+    await doctor.measure()
+    objects.push(mesh)
+    for (const fn of listeners.get('added') ?? []) fn()
+    await doctor.measure()
+    const report = await doctor.diagnose()
+    expect(report.findings.some((f) => f.id === 'lifecycle/instance-buffer-growth')).toBe(false)
   })
 })
 
@@ -387,6 +433,82 @@ describe('R2: measure wraps host render and uses median drawCalls', () => {
     })
     const sample = await doctor.measure()
     expect(sample.p95FrameTimeMs).toBe(4)
+  })
+
+  it('sums top-level wrapped render() workMs within a frame (HUD + minimap)', async () => {
+    let t = 0
+    const now = () => t
+    const renderer = {
+      info: {
+        render: { calls: 1, triangles: 10 },
+        memory: { geometries: 0, textures: 0 },
+      },
+      setPixelRatio() {},
+      render() {
+        t += 3
+      },
+    }
+    const composer = {
+      isEffectComposer: true,
+      passes: [],
+      renderTarget1: { width: 8, height: 8 },
+      render() {
+        t += 5
+      },
+    }
+    const doctor = new Doctor({
+      scene: { children: [], traverse() {} } as never,
+      camera: {},
+      renderer: renderer as never,
+      composer,
+      profile: 'game',
+      measureFrames: 2,
+      now,
+      waitFrame: async () => {
+        renderer.render()
+        composer.render()
+      },
+    })
+    const sample = await doctor.measure()
+    expect(sample.p95FrameTimeMs).toBe(8)
+  })
+
+  it('does not double-count nested composer.render that calls renderer.render', async () => {
+    let t = 0
+    const now = () => t
+    const renderer = {
+      info: {
+        render: { calls: 1, triangles: 10 },
+        memory: { geometries: 0, textures: 0 },
+      },
+      setPixelRatio() {},
+      render() {
+        t += 4
+      },
+    }
+    const composer = {
+      isEffectComposer: true,
+      passes: [],
+      renderTarget1: { width: 8, height: 8 },
+      render() {
+        renderer.render()
+        t += 1
+      },
+    }
+    const doctor = new Doctor({
+      scene: { children: [], traverse() {} } as never,
+      camera: {},
+      renderer: renderer as never,
+      composer,
+      profile: 'game',
+      measureFrames: 2,
+      now,
+      waitFrame: async () => {
+        composer.render()
+      },
+    })
+    const sample = await doctor.measure()
+    expect(sample.p95FrameTimeMs).toBe(5)
   })
 
   it('uses the median drawCalls across sampled frames, not the last frame only', async () => {

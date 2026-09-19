@@ -56,6 +56,23 @@ describe('compareAbSamples', () => {
     expect(result.deltas.triangles).toBe(0)
   })
 
+  it('widens the noise band beyond half-range using MAD so two close A rounds are not overconfident', () => {
+    const a = [sample({ triangles: 1000 }), sample({ triangles: 1100 })]
+    const b = [sample({ triangles: 1000 }), sample({ triangles: 1100 })]
+    const result = compareAbSamples({ a, b })
+    expect(result.noiseBand.triangles?.abs).toBeGreaterThan(50)
+  })
+
+  it('uses an optional A-vs-A control series for the noise band when provided', () => {
+    const a = [sample({ triangles: 100_000 }), sample({ triangles: 100_000 })]
+    const b = [sample({ triangles: 90_000 }), sample({ triangles: 90_000 })]
+    const control = [sample({ triangles: 80_000 }), sample({ triangles: 120_000 })]
+    const without = compareAbSamples({ a, b })
+    expect(without.claimed.triangles).toBe('win')
+    const withControl = compareAbSamples({ a, b, control })
+    expect(withControl.claimed.triangles).toBe('inside-noise')
+  })
+
   it('uses the median of rounds, not the mean', () => {
     const a = [sample({ triangles: 10_000 }), sample({ triangles: 10_000 }), sample({ triangles: 1_000_000 })]
     const b = [sample({ triangles: 21_000 }), sample({ triangles: 20_000 }), sample({ triangles: 19_000 })]

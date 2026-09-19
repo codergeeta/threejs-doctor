@@ -299,7 +299,10 @@ describe('P2: intensity-0 lights still cost', () => {
     const hit = report.findings.find((f) => f.id === 'lights/zero-intensity')
     expect(hit).toBeDefined()
     expect(Number(hit?.evidence.zeroIntensityLightCount)).toBe(1)
-    expect(hit?.suggestedFix).toMatch(/pool|disable|recompil/i)
+    expect(hit?.suggestedFix).not.toMatch(/visible\s*=\s*false/i)
+    expect(hit?.suggestedFix).not.toMatch(/intensity\s*=\s*0/i)
+    expect(hit?.suggestedFix).toMatch(/pool/i)
+    expect(hit?.suggestedFix).toMatch(/compile/i)
   })
 })
 
