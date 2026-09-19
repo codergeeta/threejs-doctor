@@ -58,7 +58,7 @@ Provenance: the workflow sets `id-token: write` and `NPM_CONFIG_PROVENANCE=true`
 - [x] Run **Publish npm** (confirm `publish`) **or** `pnpm publish:npm`.
 - [x] Confirm `npm view threejs-doctor` and `npm view @threejs-doctor/runtime` (0.1.0).
 - [ ] Attach Trusted Publisher on each package; then delete `NPM_TOKEN`.
-- [x] npm 2FA / org ownership for `@threejs-doctor` and unscoped `threejs-doctor`.
+- [ ] Confirm npm 2FA remains on for org owners (org + packages exist).
 
 ## This PR does not
 
