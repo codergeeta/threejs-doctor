@@ -13,6 +13,7 @@ describe('committed live-attach IIFE', () => {
     expect(text).toMatch(/ThreejsDoctorLiveAttach/)
     expect(text).toMatch(/attachQualityLadder/)
     expect(text).toMatch(/installRendererRenderCapture/)
+    expect(text).toMatch(/wrapWebGLRendererCtor/)
     expect(text).toMatch(/PHONE_CLASS_PROBE/)
     expect(text).toMatch(/device: 'phone'|option === "phone"/)
     expect(text).toContain('WEBGL_debug_renderer_info')

@@ -2,6 +2,7 @@ import {
   attachQualityLadder,
   discoverThreeHandles,
   installRendererRenderCapture,
+  wrapWebGLRendererCtor,
   PHONE_CLASS_PROBE,
   type AttachQualityLadderOptions,
 } from './index.js'
@@ -11,6 +12,7 @@ const g = globalThis as typeof globalThis & {
     attachQualityLadder: typeof attachQualityLadder
     discoverThreeHandles: typeof discoverThreeHandles
     installRendererRenderCapture: typeof installRendererRenderCapture
+    wrapWebGLRendererCtor: typeof wrapWebGLRendererCtor
     PHONE_CLASS_PROBE: typeof PHONE_CLASS_PROBE
   }
   __THREEJS_DOCTOR_ATTACH__?: AttachQualityLadderOptions
@@ -20,6 +22,7 @@ g.ThreejsDoctorLiveAttach = {
   attachQualityLadder,
   discoverThreeHandles,
   installRendererRenderCapture,
+  wrapWebGLRendererCtor,
   PHONE_CLASS_PROBE,
 }
 
