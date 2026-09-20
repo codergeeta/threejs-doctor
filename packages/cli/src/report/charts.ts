@@ -130,7 +130,6 @@ export function deltaBarsSection(input: JsonMap): string {
     badge?: BadgeState
   }
   const rows: Row[] = []
-  let domain = 1
   for (const key of keys) {
     const before = asNumber(baseline[key])
     const afterVal = asNumber(after[key])
@@ -142,25 +141,25 @@ export function deltaBarsSection(input: JsonMap): string {
     if (threshold !== undefined) row.threshold = threshold
     if (badge !== undefined) row.badge = badge
     rows.push(row)
-    domain = Math.max(domain, Math.abs(delta), threshold ?? 0)
   }
   if (rows.length === 0) return ''
 
   const plotLeft = 210
-  const plotRight = 630
+  const plotRight = 500
   const mid = (plotLeft + plotRight) / 2
   const half = (plotRight - plotLeft) / 2
   const rowH = 36
   const top = 8
   const h = top + rows.length * rowH + 8
-  const xAt = (delta: number) => mid + (delta / domain) * half
 
   const body = rows
     .map((row, i) => {
       const y = top + i * rowH
+      const domain = Math.max(1, Math.abs(row.delta), row.threshold ?? 0)
+      const xAt = (delta: number) => mid + (delta / domain) * half
       const xDelta = xAt(row.delta)
       const barX = Math.min(mid, xDelta)
-      const barW = Math.max(1, Math.abs(xDelta - mid))
+      const barW = Math.max(row.delta === 0 ? 0 : 4, Math.abs(xDelta - mid))
       const grow = row.delta < 0 ? 'grow-left' : 'grow-right'
       const marker = row.badge ? badgeMarker(row.badge) : '●'
       const deltaText = formatMetricDelta(row.key, row.before, row.after)
@@ -179,7 +178,7 @@ export function deltaBarsSection(input: JsonMap): string {
         ${band}
         <line x1="${mid}" y1="${y + 4}" x2="${mid}" y2="${y + 28}" stroke="var(--line)"/>
         <rect class="anim-bar ${grow}" x="${barX}" y="${y + 10}" width="${barW}" height="12" rx="2" fill="${fill}"/>
-        <text x="${plotRight}" y="${y + 20}" text-anchor="end" fill="var(--muted)" font-size="11">${escapeHtml(
+        <text x="632" y="${y + 20}" text-anchor="end" fill="var(--muted)" font-size="11">${escapeHtml(
           formatNum(row.before),
         )} → ${escapeHtml(formatNum(row.after))} (${escapeHtml(deltaText)})</text>
       </g>`
@@ -487,8 +486,8 @@ export const REPORT_CHART_CSS = `
 #vis-slider:checked ~ .vis-tabs label[for="vis-slider"],
 #vis-heat:checked ~ .vis-tabs label[for="vis-heat"] { background: var(--line); }
 .compare { --split: 50%; }
-.compare-frame { position: relative; overflow: hidden; background: #020617; border-radius: 8px; }
-.compare-frame img { display: block; width: 100%; height: auto; }
+.compare-frame { position: relative; overflow: hidden; background: #020617; border-radius: 8px; height: 220px; }
+.compare-frame img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .compare-before {
   position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
   clip-path: inset(0 calc(100% - var(--split, 50%)) 0 0);
@@ -506,8 +505,8 @@ export const REPORT_CHART_CSS = `
   a { color: #06c; }
   .card, .finding, svg, table, .compare-frame { break-inside: avoid; }
   .vis-tabs, .vis-ui > input[type=radio], .compare input[type=range] { display: none !important; }
-  .compare-frame { display: flex; gap: 12px; overflow: visible; background: transparent; }
-  .compare-frame img { width: 50%; position: static; }
+  .compare-frame { display: flex; gap: 12px; overflow: visible; background: transparent; height: auto; }
+  .compare-frame img { width: 50%; height: auto; max-height: none; position: static; }
   .compare-before { position: static !important; clip-path: none !important; mix-blend-mode: normal !important; inset: auto; }
   .shots img { max-width: none; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
