@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Report HTML (Part B): `expectedTradeoffs` chips are a neutral **expected trade-off** (never red, never a regression in the verdict strip); integer metrics with a zero delta are **unchanged** (not inside-noise); metric headings use labels with units (`gpuFrameTimeMs` → “GPU frame time (ms)”, unknown keys stay as the raw key); a one-sentence verdict strip under the header; Cost / Scene facts grouping. No version bump. Do not publish from this change.
 - Pre-announce Part A: npm keywords on every publishable package; short package READMEs; `docs/report-json.md`; `threejs-doctor report --example`; unknown top-level report keys warn; CODE_OF_CONDUCT (Contributor Covenant 2.1); PR template; README FAQ; GitHub Pages sample generated from `docs/sample-report.json`.
 - Packages bumped to 0.1.5 (pending publish — keywords ride the next `publish.yml` run). Do not republish 0.1.4.
 

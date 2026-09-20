@@ -25,6 +25,7 @@ export const HTML_REPORT_TOP_LEVEL_KEYS = [
   'history',
   'noiseBand',
   'claimed',
+  'expectedTradeoffs',
 ] as const
 
 /**
