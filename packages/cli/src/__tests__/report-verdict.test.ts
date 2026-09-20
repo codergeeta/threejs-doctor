@@ -232,10 +232,10 @@ describe('HTML report correctness (Part B)', () => {
         },
       }),
     )
-    expect(html).toMatch(/class="verdict loss"[^>]*>loss/)
-    expect(html).toMatch(/class="verdict inside-noise"[^>]*>inside-noise/)
-    expect(html).toMatch(/class="verdict unchanged"[^>]*>unchanged/)
-    expect(html).toMatch(/class="verdict expected-trade-off"[^>]*>expected trade-off/)
+    expect(html).toMatch(/class="verdict loss"[^>]*>[^<]*loss/)
+    expect(html).toMatch(/class="verdict inside-noise"[^>]*>[^<]*inside-noise/)
+    expect(html).toMatch(/class="verdict unchanged"[^>]*>[^<]*unchanged/)
+    expect(html).toMatch(/class="verdict expected-trade-off"[^>]*>[^<]*expected trade-off/)
     expect(html).not.toMatch(/class="verdict loss"[^>]*>[\s\S]{0,40}expected/)
     const tradeCss = html.match(/\.verdict\.expected-trade-off\s*\{[^}]+\}/)?.[0] ?? ''
     expect(tradeCss).toMatch(/background/)
@@ -250,7 +250,7 @@ describe('HTML report correctness (Part B)', () => {
         claimed: { triangles: 'win' },
       }),
     )
-    expect(html).toMatch(/class="verdict not-measured"[^>]*>not measured/)
+    expect(html).toMatch(/class="verdict not-measured"[^>]*>[^<]*not measured/)
     expect(html).toContain('GPU frame time (ms)')
   })
 

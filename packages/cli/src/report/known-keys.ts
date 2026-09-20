@@ -23,6 +23,7 @@ export const HTML_REPORT_TOP_LEVEL_KEYS = [
   'visuals',
   'screenshots',
   'history',
+  'frameTimesMs',
   'noiseBand',
   'claimed',
   'expectedTradeoffs',

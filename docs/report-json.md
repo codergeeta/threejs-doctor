@@ -30,10 +30,11 @@ Unknown **top-level** names produce a **warning** on stderr (exit 0). Typos are 
 | `triangleContributorSummary` | — | Fallback mesh row when mesh arrays are absent (`name:triangles`). Also read from `baseline.triangleContributorSummary` |
 | `gpuPassTimes` | `passGpuMs` | GPU time per pass table |
 | `captures` | `visuals`, `screenshots` | Visuals (`data:image/…` only) |
-| `history` | — | Score trend (needs **two or more** points) |
+| `history` | — | Score trend (needs **two or more** points): line, dots, y ticks, commit labels, area gradient |
 | `noiseBand` | — | Verdicts (`win` / `loss` / `inside-noise`) |
 | `claimed` | — | Explicit verdicts; wins over computed band |
 | `expectedTradeoffs` | — | Metric keys that render as a neutral **expected trade-off** chip (never red; never a regression in the verdict strip) |
+| `frameTimesMs` | — | Frame-time histogram with p50 / p95. Omitted when the array is missing or empty |
 
 Also accepted at the top level (not rendered as their own sections, **no warning**): Doctor fields `deltas`, `appliedPasses`, `failedPasses`, `invalid`, `invalidReason`, `visualDelta`, `gpuTimingSkipped`, `rolledBackDueToVisual`; Quality Ladder fields `phase`, `tier`, `startTier`, `maxTier`, `appliedKnobs`, `unsupportedKnobs`, `floorFailed`, `applyFailed`, `ttfiMs`, `adapterUnavailable`, `recommendedTier`; optional `$schema`.
 
@@ -151,6 +152,22 @@ If the array is empty/absent:
 
 Remote `http(s)` images are ignored (report stays offline).
 
+## Charts (inline SVG)
+
+The HTML report draws charts from measured fields only. Missing inputs omit the chart (or show **not measured**). Every SVG has `viewBox`, `role="img"`, and `aria-label`. Markers use ▲ / ▼ / ● so colour is not the only signal. CSS animates bar `scaleX`, trend `stroke-dashoffset`, and first-paint card `fade-up`. `@media (prefers-reduced-motion: reduce)` and `@media print` set `animation` / `transition` to `none`. Print expands the before/after pair and disables the slider.
+
+| Chart | Source | Notes |
+|-------|--------|-------|
+| Deltas vs noise | `baseline` / `after` / `noiseBand` | Signed bars; translucent rect is the noise threshold |
+| Cost attribution | `gpuPassTimes` / `passGpuMs` | 100% stacked bar + table. Pass names matching `/shadow/i` are hatched |
+| GPU time per pass | same arrays, or `baseline.gpuFrameTimeMs` | Stacked bar + table, or **not measured on this device** |
+| Frame-time histogram | `frameTimesMs` | p50 / p95 from that array |
+| Triangle budget | `after.triangles` (else `baseline`) vs `PROFILE_BUDGETS[profile].maxTriangles` | Omitted when `profile` is not marketing/product/game/cad |
+| Score trend | `history[]` (≥2 points) | Line, dots, y ticks, commit labels, area gradient, per-point `<title>` |
+| Visuals | two `data:image/` captures | CSS range + `clip-path` slider; optional difference-blend radio. One small inline script sets `--split` (default 50% without JS) |
+
+Two-capture reports should stay under ~2 MB (embed compressed `data:image/` only).
+
 ## `history[]` (score trend)
 
 Needs at least two points.
@@ -160,6 +177,10 @@ Needs at least two points.
 | `score` | Required finite number |
 | `commit` | Label (preferred) |
 | `label` | Label if `commit` is missing |
+
+## `frameTimesMs`
+
+Array of finite frame times in milliseconds. When present, the histogram computes p50 and p95 from those values. The example fixture uses times consistent with baseline `p95FrameTimeMs` 40 / ~30 fps — it is not a live capture.
 
 ## What HTML does not invent
 

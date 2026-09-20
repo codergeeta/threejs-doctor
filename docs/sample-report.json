@@ -82,6 +82,7 @@
       "gpuFrameTimeMs": 2.5
     }
   ],
+  "frameTimesMs": [31, 31, 32, 32, 32, 32, 33, 33, 33, 33, 33, 34, 34, 34, 35, 35, 36, 37, 39, 40],
   "captures": [
     {
       "label": "before (1×1 placeholder, not a scene capture)",

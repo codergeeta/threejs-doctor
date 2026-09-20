@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Report HTML (Part C): inline SVG charts (delta bars + noise band, cost-attribution stacked bar with shadow-map hatch, GPU-per-pass or not-measured, frame-time histogram with p50/p95, triangle budget gauge, trend line/dots/gradient) and CSS animation (`scaleX`, `stroke-dashoffset`, first-paint `fade-up`) killed by `prefers-reduced-motion` and print. CSS-only before/after slider (`range` + `clip-path`) with optional difference-blend radio; one small progressive-enhancement script. Self-contained (no CDN). `--example` / `docs/sample-report.json` gain documented `frameTimesMs`. No version bump. Do not publish from this change.
 - Report HTML (Part B): `expectedTradeoffs` chips are a neutral **expected trade-off** (never red, never a regression in the verdict strip); integer metrics with a zero delta are **unchanged** (not inside-noise); metric headings use labels with units (`gpuFrameTimeMs` → “GPU frame time (ms)”, unknown keys stay as the raw key); a one-sentence verdict strip under the header; Cost / Scene facts grouping. No version bump. Do not publish from this change.
 - Pre-announce Part A: npm keywords on every publishable package; short package READMEs; `docs/report-json.md`; `threejs-doctor report --example`; unknown top-level report keys warn; CODE_OF_CONDUCT (Contributor Covenant 2.1); PR template; README FAQ; GitHub Pages sample generated from `docs/sample-report.json`.
 - Packages bumped to 0.1.5 (pending publish — keywords ride the next `publish.yml` run). Do not republish 0.1.4.
