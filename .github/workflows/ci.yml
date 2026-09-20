@@ -40,8 +40,15 @@ jobs:
           grep -q 'Findings' /tmp/s.html
           grep -q 'Expensive meshes' /tmp/s.html
           grep -q 'GPU time per pass' /tmp/s.html
+          grep -q '<h2>Deltas vs noise</h2>' /tmp/s.html
+          grep -q '<h2>Cost attribution</h2>' /tmp/s.html
+          grep -q '<h2>Frame-time histogram</h2>' /tmp/s.html
+          grep -q '<h2>Triangle budget</h2>' /tmp/s.html
+          grep -q 'prefers-reduced-motion' /tmp/s.html
           grep -q 'Visuals' /tmp/s.html
           grep -q 'Score trend' /tmp/s.html
+          grep -q 'type="range"' /tmp/s.html
+          node -e 'const fs=require("fs"); const h=fs.readFileSync("/tmp/s.html","utf8"); const stripped=h.replace(/<a[\s\S]*?<\/a>/gi,""); if(/https?:\/\//i.test(stripped)){ console.error("external http(s)"); process.exit(1);} if(Buffer.byteLength(h)>2*1024*1024){ console.error("over 2MB"); process.exit(1);}'
           node -e 'const fs=require("fs"); const j=JSON.parse(fs.readFileSync("/tmp/s.json","utf8")); j.historry=[]; fs.writeFileSync("/tmp/bad.json", JSON.stringify(j));'
           node packages/cli/bin/threejs-doctor.js report /tmp/bad.json -o /tmp/bad.html 2>/tmp/warn.txt
           grep -qi 'unrecognised' /tmp/warn.txt

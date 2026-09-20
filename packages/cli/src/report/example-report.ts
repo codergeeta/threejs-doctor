@@ -56,6 +56,8 @@ export const EXAMPLE_REPORT = {
   },
   expensiveMeshes: [{ name: 'chunked-trees', triangles: 21_000 }],
   gpuPassTimes: [{ pass: 'shadow', gpuFrameTimeMs: 2.5 }],
+  /** Sample fixture times consistent with baseline p95FrameTimeMs 40 / ~30 fps — not a live capture. */
+  frameTimesMs: [31, 31, 32, 32, 32, 32, 33, 33, 33, 33, 33, 34, 34, 34, 35, 35, 36, 37, 39, 40],
   captures: [
     { label: 'before (1×1 placeholder, not a scene capture)', dataUrl: EXAMPLE_PLACEHOLDER_PNG },
     { label: 'after (1×1 placeholder, not a scene capture)', dataUrl: EXAMPLE_PLACEHOLDER_PNG },

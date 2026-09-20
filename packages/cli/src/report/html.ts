@@ -1,3 +1,16 @@
+import {
+  badgeMarker,
+  budgetGaugeSection,
+  compareEnhancementScript,
+  costAttributionSection,
+  deltaBarsSection,
+  gpuPassChart,
+  gpuPassRows,
+  histogramSection,
+  REPORT_CHART_CSS,
+  trendSection,
+  visualsSection,
+} from './charts.js'
 import { metricLabel } from './metric-labels.js'
 import {
   asNumber,
@@ -101,47 +114,10 @@ function expensiveMeshes(input: JsonMap): Array<{ label: string; triangles?: num
   return []
 }
 
-function gpuPassRows(input: JsonMap): Array<{ pass: string; ms: number }> | undefined {
-  const raw = input.gpuPassTimes ?? input.passGpuMs
-  if (!Array.isArray(raw) || raw.length === 0) return undefined
-  const rows: Array<{ pass: string; ms: number }> = []
-  for (const item of raw) {
-    if (!isRecord(item)) continue
-    const pass = asString(item.pass) ?? asString(item.id) ?? asString(item.name)
-    const ms = asNumber(item.gpuFrameTimeMs) ?? asNumber(item.ms) ?? asNumber(item.gpuMs)
-    if (!pass || ms === undefined) continue
-    rows.push({ pass, ms })
-  }
-  return rows.length > 0 ? rows : undefined
-}
-
-function captures(input: JsonMap): Array<{ label: string; dataUrl: string }> {
-  const raw = input.captures ?? input.visuals ?? input.screenshots
-  if (!Array.isArray(raw)) return []
-  return raw.flatMap((item) => {
-    if (!isRecord(item)) return []
-    const dataUrl = asString(item.dataUrl) ?? asString(item.src)
-    if (!dataUrl || !dataUrl.startsWith('data:image/')) return []
-    return [{ label: asString(item.label) ?? 'capture', dataUrl }]
-  })
-}
-
-function historyPoints(input: JsonMap): Array<{ label: string; score: number }> {
-  const raw = input.history
-  if (!Array.isArray(raw)) return []
-  return raw.flatMap((item) => {
-    if (!isRecord(item)) return []
-    const score = asNumber(item.score)
-    if (score === undefined) return []
-    const label = asString(item.commit) ?? asString(item.label) ?? String(score)
-    return [{ label, score }]
-  })
-}
-
 function verdictChip(input: JsonMap, key: string, afterVal: number | undefined, hasAfter: boolean): string {
   const badge = badgeForMetric(input, key)
   if (badge) {
-    return `<span class="verdict ${escapeHtml(badge)}">${escapeHtml(BADGE_LABEL[badge])}</span>`
+    return `<span class="verdict ${escapeHtml(badge)}">${escapeHtml(badgeMarker(badge))} ${escapeHtml(BADGE_LABEL[badge])}</span>`
   }
   if (hasAfter && afterVal !== undefined) {
     return '<span class="verdict none">no noise band</span>'
@@ -248,6 +224,7 @@ function gpuSection(input: JsonMap): string {
       .map((row) => `<tr><td>${escapeHtml(row.pass)}</td><td>${escapeHtml(String(row.ms))}</td></tr>`)
       .join('')
     return `<section><h2>GPU time per pass</h2>
+      ${gpuPassChart(rows)}
       <table><thead><tr><th>Pass</th><th>ms</th></tr></thead><tbody>${body}</tbody></table>
     </section>`
   }
@@ -257,43 +234,6 @@ function gpuSection(input: JsonMap): string {
   return `<section><h2>GPU time per pass</h2><p>not measured on this device</p>
       <p class="note">GPU ms need EXT_disjoint_timer_query_webgl2. That extension is often missing on iOS Safari and many mobile browsers.</p>
     </section>`
-}
-
-function visualsSection(input: JsonMap): string {
-  const shots = captures(input)
-  if (shots.length === 0) return ''
-  const figs = shots
-    .map(
-      (shot) =>
-        `<figure><img alt="${escapeHtml(shot.label)}" src="${escapeHtml(shot.dataUrl)}"/><figcaption>${escapeHtml(shot.label)}</figcaption></figure>`,
-    )
-    .join('')
-  return `<section><h2>Visuals</h2><div class="shots">${figs}</div></section>`
-}
-
-function trendSection(input: JsonMap): string {
-  const points = historyPoints(input)
-  if (points.length < 2) return ''
-  const scores = points.map((p) => p.score)
-  const min = Math.min(...scores, 0)
-  const max = Math.max(...scores, 100)
-  const span = Math.max(1, max - min)
-  const w = 480
-  const h = 120
-  const poly = points
-    .map((p, i) => {
-      const x = (i / (points.length - 1)) * (w - 16) + 8
-      const y = h - 12 - ((p.score - min) / span) * (h - 24)
-      return `${x},${y}`
-    })
-    .join(' ')
-  const labels = points.map((p) => escapeHtml(p.label)).join(' → ')
-  return `<section><h2>Score trend</h2>
-    <svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Score history ${labels}">
-      <polyline fill="none" stroke="#7dd3fc" stroke-width="3" points="${poly}"/>
-    </svg>
-    <p class="note">${labels}</p>
-  </section>`
 }
 
 const CSS = `
@@ -327,6 +267,7 @@ a { color:#7dd3fc; }
 .shots { display:flex; gap:12px; flex-wrap:wrap; }
 .shots img { max-width: 280px; border-radius: 8px; }
 svg { width: 100%; height: auto; background: var(--card); border-radius: 12px; }
+${REPORT_CHART_CSS}
 `
 
 /** Single-file offline HTML. Never invents metrics; omits empty optional sections. */
@@ -368,13 +309,18 @@ export function formatHtmlReport(report: unknown, options: HtmlReportOptions = {
   ${stripHtml}
   ${scoreLine}
   ${metricCards(input)}
+  ${deltaBarsSection(input)}
+  ${costAttributionSection(input)}
   ${findingsSection(input, merged)}
   ${meshesSection(input)}
   ${gpuSection(input)}
+  ${histogramSection(input)}
+  ${budgetGaugeSection(input)}
   ${visualsSection(input)}
   ${trendSection(input)}
   <p class="note">Offline file. No telemetry. Missing fields were not measured — they are not filled in.</p>
 </main>
+${compareEnhancementScript(input)}
 </body>
 </html>
 `
