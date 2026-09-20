@@ -6,8 +6,13 @@
  * and unit tests never hit the registry).
  *
  * After a real npm publish (publish.yml): `node scripts/check-provenance.mjs --published`
- * Retries `npm view … dist.attestations` with backoff (~2–3 min) when the version is
+ * Retries `npm view … dist.attestations` with backoff (~5–8 min) when the version is
  * not indexed yet (E404) or attestations are still empty, then fails hard.
+ *
+ * Race (0.1.5 / publish.yml run 35489954729): publish itself succeeded and all
+ * seven packages later had non-empty dist.attestations, but the first check went
+ * red after 6 retries because `@threejs-doctor/cli@0.1.5` was still E404. Scoped
+ * npm indexing can lag the unscoped tarball by minutes. Do not republish.
  */
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -26,8 +31,14 @@ export const PUBLISH_ORDER = [
   'packages/r3f',
 ]
 
-/** Sleeps between attempts: 5s + 10s + 20s + 40s + 60s = 135s (~2–3 min budget). */
-export const PROVENANCE_RETRY_DELAYS_MS = [5_000, 10_000, 20_000, 40_000, 60_000]
+/**
+ * Sleeps between attempts: 5+10+20+40+60+90+120+120s = 465s (~8 min).
+ * More attempts than the 0.1.5 flake (6 retries / ~2–3 min) so slow scoped
+ * package indexing does not red the workflow. Still fails hard after this budget.
+ */
+export const PROVENANCE_RETRY_DELAYS_MS = [
+  5_000, 10_000, 20_000, 40_000, 60_000, 90_000, 120_000, 120_000,
+]
 
 export function attestationsMissing(value) {
   if (value == null) return true

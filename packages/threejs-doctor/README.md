@@ -8,4 +8,4 @@ npx threejs-doctor@0.1.5 bench --profile product --budget low
 npm i @threejs-doctor/runtime
 ```
 
-0.1.4 is the current npm line until 0.1.5 is published via `publish.yml`. Do not use a third-party squat of this name. Source: [github.com/codergeeta/threejs-doctor](https://github.com/codergeeta/threejs-doctor).
+0.1.5 is on npm. Do not use a third-party squat of this name. Source: [github.com/codergeeta/threejs-doctor](https://github.com/codergeeta/threejs-doctor).
