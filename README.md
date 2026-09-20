@@ -15,7 +15,7 @@ const doctor = new Doctor({ scene, camera, renderer, waitFrame: () => waitGpuMac
 console.log(await doctor.diagnose())
 ```
 
-**0.1.4** is this source line. Publish it only via [`.github/workflows/publish.yml`](.github/workflows/publish.yml) `workflow_dispatch` (type `publish`). Do **not** run `pnpm publish:npm --go` locally — `scripts/publish.mjs --go` refuses outside GitHub Actions. Until that workflow runs, **0.1.3 is on npm**.
+**0.1.4 is on npm.** First provenance-bearing release via [`.github/workflows/publish.yml`](.github/workflows/publish.yml) (run 35486295010). Do **not** republish 0.1.4. Later versions still publish only via `workflow_dispatch` (type `publish`). Do **not** run `pnpm publish:npm --go` locally — `scripts/publish.mjs --go` refuses outside GitHub Actions.
 
 ## Case study (arcade racer, measured)
 
@@ -41,7 +41,7 @@ Inspired by [react-doctor](https://github.com/millionco/react-doctor). Design: [
 
 ## Install / run
 
-**0.1.3 is on npm** (`threejs-doctor` + `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`). **0.1.4** publishes only via `publish.yml`.
+**0.1.4 is on npm** (`threejs-doctor` + `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`). First provenance-bearing release via `publish.yml`. Do not republish 0.1.4.
 
 ```bash
 npm i @threejs-doctor/runtime
@@ -87,7 +87,7 @@ npx threejs-doctor@0.1.4 ci ./path --min-score 70 --profile marketing --budget l
 
 ### Use in CI
 
-After `pnpm build` (or `npx threejs-doctor@0.1.4` from npm once published):
+After `pnpm build` (or `npx threejs-doctor@0.1.4` from npm):
 
 ```yaml
 - run: npx threejs-doctor@0.1.4 ci ./src --min-score 70 --profile marketing --budget low
@@ -112,7 +112,7 @@ pnpm test
 pnpm build
 ```
 
-CI (`.github/workflows/ci.yml`) runs `typecheck`, `test`, `build`, a **live-attach IIFE checksum** (`pnpm check:iife` rebuilds `examples/live-attach/dist/attach.iife.js` and fails if the committed file drifted), and a **scan/ci smoke** against the CLI fixtures (`ci --min-score` must pass on the healthy fixture and fail on the heavy one; `--format html` is smoked). A second job runs Playwright against a real Three.js + EffectComposer + InstancedMesh fixture (SwiftShader is fine; GPU times are still omitted when the timer query has no result). Weekly [`.github/workflows/provenance.yml`](.github/workflows/provenance.yml) runs `check-provenance.mjs --published --latest`. **0.1.4** publishes only via **manual** `publish.yml` `workflow_dispatch` — see [`docs/publish-checklist.md`](docs/publish-checklist.md).
+CI (`.github/workflows/ci.yml`) runs `typecheck`, `test`, `build`, a **live-attach IIFE checksum** (`pnpm check:iife` rebuilds `examples/live-attach/dist/attach.iife.js` and fails if the committed file drifted), and a **scan/ci smoke** against the CLI fixtures (`ci --min-score` must pass on the healthy fixture and fail on the heavy one; `--format html` is smoked). A second job runs Playwright against a real Three.js + EffectComposer + InstancedMesh fixture (SwiftShader is fine; GPU times are still omitted when the timer query has no result). Weekly [`.github/workflows/provenance.yml`](.github/workflows/provenance.yml) runs `check-provenance.mjs --published --latest`. **0.1.4 is on npm** (first provenance-bearing publish via `publish.yml`). Later versions still publish only via **manual** `publish.yml` `workflow_dispatch` — see [`docs/publish-checklist.md`](docs/publish-checklist.md).
 
 ## Runtime (vanilla Three.js)
 

@@ -48,4 +48,6 @@ jobs:
           fi
           node scripts/publish.mjs --go
       - name: Fail if published tarballs have empty provenance attestations
+        # check-provenance.mjs retries npm view on E404 / empty attestations (~2–3 min)
+        # while the registry finishes indexing a just-published version.
         run: node scripts/check-provenance.mjs --published
