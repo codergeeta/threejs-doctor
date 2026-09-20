@@ -2,11 +2,13 @@
 
 ## Unreleased
 
-- Publish: `check-provenance.mjs --published` retries `npm view … dist.attestations` with backoff (~2–3 min) when the version is missing (E404) or attestations are empty right after publish, then fails hard. Do not republish 0.1.4.
+- Pre-announce Part A: npm keywords on every publishable package; short package READMEs; `docs/report-json.md`; `threejs-doctor report --example`; unknown top-level report keys warn; CODE_OF_CONDUCT (Contributor Covenant 2.1); PR template; README FAQ; GitHub Pages sample generated from `docs/sample-report.json`.
+- Packages bumped to 0.1.5 (pending publish — keywords ride the next `publish.yml` run). Do not republish 0.1.4.
 
 ## 0.1.4
 
 - **0.1.4 is on npm** (`threejs-doctor` + `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`). First provenance-bearing release via `publish.yml` (run 35486295010). Do not republish. 0.1.0–0.1.3 may still have empty `dist.attestations`.
+- Publish: `check-provenance.mjs --published` retries `npm view … dist.attestations` with backoff (~2–3 min) when the version is missing (E404) or attestations are empty right after publish, then fails hard. Do not republish 0.1.4.
 - Publish: `scripts/publish.mjs --go` refuses unless `GITHUB_ACTIONS=true`. Dry-run (`pnpm publish:dry`) still works locally. Later publishes must be `publish.yml` workflow_dispatch (generic “Type publish to release packages to npm”).
 - Docs: provenance can be produced by `npm publish --provenance` in GHA with `id-token: write` **and** `NPM_TOKEN`; Trusted Publisher lets you delete the token later. Weekly `.github/workflows/provenance.yml` runs `check-provenance.mjs --published --latest`.
 - README first screen: three-line quick start, measured arcade-racer case study, limitations (GPU timer often missing on iOS Safari / mobile; static scan is pattern-based), schematic in `docs/assets/`.

@@ -367,6 +367,10 @@ export function formatHtmlReport(report: unknown, options: HtmlReportOptions = {
   const repo = options.repoUrl ?? asString(input.repository)
   const merged: HtmlReportOptions = { ...options }
   if (repo) merged.repoUrl = repo
+  const exampleNote =
+    input.example === true
+      ? '<p class="note">Sample fixture. Numbers are copied from tests and the arcade-racer case study — not a live capture. Missing fields in real reports are omitted, never invented.</p>'
+      : ''
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -381,6 +385,7 @@ export function formatHtmlReport(report: unknown, options: HtmlReportOptions = {
   <p class="muted">profile=${escapeHtml(profile)} · mode=${escapeHtml(mode)}${
     incomplete ? ' · incomplete' : ''
   }</p>
+  ${exampleNote}
   ${scoreLine}
   ${metricCards(input)}
   ${findingsSection(input, merged)}

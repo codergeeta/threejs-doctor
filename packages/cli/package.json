@@ -1,6 +1,6 @@
 {
   "name": "@threejs-doctor/cli",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "threejs-doctor CLI (scan, bench, ci, report)",
   "license": "MIT",
   "author": "codergeeta",
@@ -60,5 +60,17 @@
       "./bin/threejs-doctor.js": "./bin/threejs-doctor.js"
     },
     "provenance": true
-  }
+  },
+  "keywords": [
+    "threejs",
+    "three",
+    "webgl",
+    "webgl2",
+    "performance",
+    "profiler",
+    "optimization",
+    "react-three-fiber",
+    "r3f",
+    "gamedev"
+  ]
 }

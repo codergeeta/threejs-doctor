@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PUBLISH_ORDER, assertPublishGoAllowed } from '../../../../scripts/publish.mjs'
@@ -27,5 +27,49 @@ describe('publish order', () => {
     expect(() => assertPublishGoAllowed(true, { GITHUB_ACTIONS: 'true' })).not.toThrow()
     expect(() => assertPublishGoAllowed(true, {})).toThrow(/publish\.yml/)
     expect(() => assertPublishGoAllowed(true, { GITHUB_ACTIONS: 'false' })).toThrow(/workflow_dispatch/)
+  })
+
+  it('sets the same npm keywords on every publishable package and keeps homepage/bugs', () => {
+    const keywords = [
+      'threejs',
+      'three',
+      'webgl',
+      'webgl2',
+      'performance',
+      'profiler',
+      'optimization',
+      'react-three-fiber',
+      'r3f',
+      'gamedev',
+    ]
+    for (const dir of PUBLISH_ORDER) {
+      const pkg = JSON.parse(readFileSync(path.join(root, dir, 'package.json'), 'utf8')) as {
+        name: string
+        version: string
+        keywords?: string[]
+        homepage?: string
+        bugs?: { url?: string }
+      }
+      expect(pkg.keywords, pkg.name).toEqual(keywords)
+      expect(pkg.homepage, pkg.name).toMatch(/github\.com\/codergeeta\/threejs-doctor/)
+      expect(pkg.bugs?.url, pkg.name).toMatch(/github\.com\/codergeeta\/threejs-doctor\/issues/)
+      expect(pkg.version).toBe('0.1.5')
+    }
+  })
+
+  it('ships community files and the Pages workflow', () => {
+    const files = [
+      'CODE_OF_CONDUCT.md',
+      '.github/pull_request_template.md',
+      '.github/workflows/pages.yml',
+      'docs/report-json.md',
+      'docs/sample-report.json',
+    ]
+    for (const file of files) {
+      expect(existsSync(path.join(root, file)), file).toBe(true)
+    }
+    const coc = readFileSync(path.join(root, 'CODE_OF_CONDUCT.md'), 'utf8')
+    expect(coc).toMatch(/Contributor Covenant/)
+    expect(coc).toMatch(/version 2\.1/)
   })
 })

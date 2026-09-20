@@ -13,6 +13,7 @@
     "test:e2e": "pnpm --filter @threejs-doctor/real-host-e2e test",
     "typecheck": "pnpm -r --filter './packages/*' run typecheck",
     "check:iife": "pnpm --filter @threejs-doctor/live-attach-example build && git diff --exit-code -- examples/live-attach/dist/attach.iife.js",
+    "docs:sample": "node scripts/build-sample-report.mjs",
     "publish:dry": "node scripts/publish.mjs",
     "publish:npm": "node scripts/publish.mjs --go"
   },

@@ -2,11 +2,13 @@
 
 Doctor + optimizer for Three.js: diagnose scenes with deterministic findings, apply safe runtime optimizations for low-end devices, and prove the win with measurable before/after metrics.
 
+[![Sample report](https://img.shields.io/badge/sample_report-live-7dd3fc)](https://codergeeta.github.io/threejs-doctor/sample-report.html)
+
 ## Quick start
 
 ```bash
-npx threejs-doctor@0.1.4 scan .
-npx threejs-doctor@0.1.4 ci . --min-score 70
+npx threejs-doctor@0.1.5 scan .
+npx threejs-doctor@0.1.5 ci . --min-score 70
 ```
 
 ```ts
@@ -15,7 +17,7 @@ const doctor = new Doctor({ scene, camera, renderer, waitFrame: () => waitGpuMac
 console.log(await doctor.diagnose())
 ```
 
-**0.1.4 is on npm.** First provenance-bearing release via [`.github/workflows/publish.yml`](.github/workflows/publish.yml) (run 35486295010). Do **not** republish 0.1.4. Later versions still publish only via `workflow_dispatch` (type `publish`). Do **not** run `pnpm publish:npm --go` locally — `scripts/publish.mjs --go` refuses outside GitHub Actions.
+**0.1.5** is this source line (npm keywords + `report --example`). **0.1.4 is on npm** — first provenance-bearing release via [`.github/workflows/publish.yml`](.github/workflows/publish.yml) (run 35486295010). Do **not** republish 0.1.4. **0.1.5 is not published from this PR**; the coordinator publishes later via `workflow_dispatch` (type `publish`). Do **not** run `pnpm publish:npm --go` locally — `scripts/publish.mjs --go` refuses outside GitHub Actions.
 
 ## Case study (arcade racer, measured)
 
@@ -37,17 +39,29 @@ A motion GIF of live attach is a follow-up (not captured in CI).
 - **Static scan is pattern-based.** The static score often will not move when the real win is runtime (triangles, dispose, DPR). Use the runtime `Doctor` for those.
 - **Never invent metrics.** If a field is missing, it was not measured.
 
+## FAQ
+
+### Why is `gpuFrameTimeMs` missing on my phone?
+
+GPU frame times need the WebGL2 extension `EXT_disjoint_timer_query_webgl2`. **iOS Safari and many mobile browsers do not expose it.** On those devices Doctor still reports draw calls and triangles; GPU ms are omitted (not invented, not zero). A missing field means **not measured**.
+
+### Why didn't the static score move after a real fix?
+
+`scan` / `ci` score **source patterns** in JS/TS/HTML (lights, `setPixelRatio`, constructors, `frustumCulled`). Runtime wins such as triangle chunking, `dispose()`, or composer DPR often do not change those patterns, so the static score stays put. Attach the runtime `Doctor` and compare `baseline` / `after` for those.
+
 Inspired by [react-doctor](https://github.com/millionco/react-doctor). Design: [`docs/superpowers/specs/2026-09-17-threejs-doctor-design.md`](docs/superpowers/specs/2026-09-17-threejs-doctor-design.md). v2 Quality Ladder: [`docs/superpowers/specs/2026-09-17-threejs-doctor-quality-ladder-design.md`](docs/superpowers/specs/2026-09-17-threejs-doctor-quality-ladder-design.md). v1 plan: [`docs/superpowers/plans/2026-09-17-threejs-doctor-v1.md`](docs/superpowers/plans/2026-09-17-threejs-doctor-v1.md). v2 plan: [`docs/superpowers/plans/2026-09-17-threejs-doctor-quality-ladder.md`](docs/superpowers/plans/2026-09-17-threejs-doctor-quality-ladder.md).
 
 ## Install / run
 
-**0.1.4 is on npm** (`threejs-doctor` + `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`). First provenance-bearing release via `publish.yml`. Do not republish 0.1.4.
+**0.1.4 is on npm** (`threejs-doctor` + `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`). **0.1.5** is this source line and publishes only via `publish.yml` after merge.
 
 ```bash
 npm i @threejs-doctor/runtime
-npx threejs-doctor@0.1.4 scan .
-npx threejs-doctor@0.1.4 ci ./path --min-score 70 --profile marketing --budget low
-npx threejs-doctor@0.1.4 report ./doctor-report.json -o report.html
+npx threejs-doctor@0.1.5 scan .
+npx threejs-doctor@0.1.5 ci ./path --min-score 70 --profile marketing --budget low
+npx threejs-doctor@0.1.5 report ./doctor-report.json -o report.html
+npx threejs-doctor@0.1.5 report --example
+```
 ```
 
 ```ts
@@ -73,21 +87,22 @@ node packages/cli/bin/threejs-doctor.js bench --profile product --budget low
 | `bench` | Works after `pnpm build` (headless fixtures) |
 | `scan` | Static JS/TS/HTML scan — **Static Doctor Score** from source patterns (`@threejs-doctor/rules`). Runtime metrics (FPS, draw calls, drawn triangles, VRAM, GPU) are **omitted**; a score of 100 is not a “fast” claim. The static score often **does not move** when the real wins are runtime (triangle chunking, composer DPR sync, dispose) — use the runtime `Doctor` for those. Findings include every `file:line` site. `--format sarif` emits **one result per site** for per-site rules (GitHub annotates the primary location). `--format html` writes a self-contained report. |
 | `ci` | Same scan path; exits non-zero when score `< --min-score` (default 70), on error-severity findings, or when no Three.js is found |
-| `report` | Offline `report.html` from a JSON Doctor / Quality Ladder file (`--output`, `--repo` for GitHub file:line links). No telemetry; missing sections are omitted, never invented. |
+| `report` | Offline `report.html` from a JSON Doctor / Quality Ladder file (`--output`, `--repo` for GitHub file:line links). `report --example` prints a fully-populated sample (fixture, not a live capture). Unknown top-level keys **warn**. No telemetry; missing sections are omitted, never invented. Keys: [`docs/report-json.md`](docs/report-json.md). |
 
 ```bash
-npx threejs-doctor@0.1.4 scan ./path --format json --profile auto --budget low
-npx threejs-doctor@0.1.4 scan ./path --format sarif
-npx threejs-doctor@0.1.4 scan ./path --format html --output report.html
-npx threejs-doctor@0.1.4 report ./doctor-report.json -o report.html
-npx threejs-doctor@0.1.4 ci ./path --min-score 70 --profile marketing --budget low
+npx threejs-doctor@0.1.5 scan ./path --format json --profile auto --budget low
+npx threejs-doctor@0.1.5 scan ./path --format sarif
+npx threejs-doctor@0.1.5 scan ./path --format html --output report.html
+npx threejs-doctor@0.1.5 report --example
+npx threejs-doctor@0.1.5 report ./doctor-report.json -o report.html
+npx threejs-doctor@0.1.5 ci ./path --min-score 70 --profile marketing --budget low
 ```
 
 `scan` / `ci` count constructors and setup in source (lights, shadow casters, `setPixelRatio`, `antialias`, rAF / `setAnimationLoop`, `frustumCulled = false`). They honour `.gitignore` (one batched `git check-ignore --stdin`), skip minified bundles and vendored `three` (`REVISION` banner), and do **not** invent draw-call or triangle totals. `--profile auto` treats a continuous loop (`requestAnimationFrame` + render, `setAnimationLoop`, R3F `<Canvas>`) as **game** and never recommends `frameloop-demand` from static facts alone. For three.js `EffectComposer`, `setSize` alone is **not** DPR sync (`setPixelRatio` is required); pmndrs `postprocessing` may use `setSize` only. For a live scene score, attach the runtime `Doctor`.
 
 ### Use in CI
 
-After `pnpm build` (or `npx threejs-doctor@0.1.4` from npm):
+After `pnpm build` (or `npx threejs-doctor@0.1.4` from npm until 0.1.5 is published):
 
 ```yaml
 - run: npx threejs-doctor@0.1.4 ci ./src --min-score 70 --profile marketing --budget low
@@ -104,6 +119,7 @@ Root `package.json` scripts (pnpm workspaces, Node >= 20):
 | `pnpm test` | Vitest in every `@threejs-doctor/*` package |
 | `pnpm typecheck` | `tsc --noEmit` in every package |
 | `pnpm build` | `tsc` emit to each package `dist/` |
+| `pnpm docs:sample` | Build `_site/sample-report.html` from `docs/sample-report.json` |
 
 ```bash
 pnpm install
@@ -112,7 +128,18 @@ pnpm test
 pnpm build
 ```
 
-CI (`.github/workflows/ci.yml`) runs `typecheck`, `test`, `build`, a **live-attach IIFE checksum** (`pnpm check:iife` rebuilds `examples/live-attach/dist/attach.iife.js` and fails if the committed file drifted), and a **scan/ci smoke** against the CLI fixtures (`ci --min-score` must pass on the healthy fixture and fail on the heavy one; `--format html` is smoked). A second job runs Playwright against a real Three.js + EffectComposer + InstancedMesh fixture (SwiftShader is fine; GPU times are still omitted when the timer query has no result). Weekly [`.github/workflows/provenance.yml`](.github/workflows/provenance.yml) runs `check-provenance.mjs --published --latest`. **0.1.4 is on npm** (first provenance-bearing publish via `publish.yml`). Later versions still publish only via **manual** `publish.yml` `workflow_dispatch` — see [`docs/publish-checklist.md`](docs/publish-checklist.md).
+CI (`.github/workflows/ci.yml`) runs `typecheck`, `test`, `build`, a **live-attach IIFE checksum** (`pnpm check:iife` rebuilds `examples/live-attach/dist/attach.iife.js` and fails if the committed file drifted), a **scan/ci smoke**, and **`report --example` → HTML** (sections must populate; unknown keys warn). A second job runs Playwright against a real Three.js + EffectComposer + InstancedMesh fixture (SwiftShader is fine; GPU times are still omitted when the timer query has no result). Weekly [`.github/workflows/provenance.yml`](.github/workflows/provenance.yml) runs `check-provenance.mjs --published --latest`. **0.1.4 is on npm.** **0.1.5** publishes only via **manual** `publish.yml` `workflow_dispatch` after merge — see [`docs/publish-checklist.md`](docs/publish-checklist.md).
+
+### GitHub Pages sample
+
+The live sample is generated in CI from committed [`docs/sample-report.json`](docs/sample-report.json) (`.github/workflows/pages.yml`). HTML is **not** committed, so it cannot drift.
+
+| What | URL |
+|------|-----|
+| Live sample | https://codergeeta.github.io/threejs-doctor/sample-report.html |
+| Pages homepage (repo settings) | https://codergeeta.github.io/threejs-doctor/ |
+
+Repo settings: **Settings → Pages → Source = GitHub Actions**. Custom domain: none. GitHub topics (same as npm keywords): `threejs`, `three`, `webgl`, `webgl2`, `performance`, `profiler`, `optimization`, `react-three-fiber`, `r3f`, `gamedev`.
 
 ## Runtime (vanilla Three.js)
 
@@ -204,6 +231,10 @@ Live Quality Ladder proof is captured per [`docs/superpowers/acceptance/live-oce
 ## Telemetry
 
 Off by default. No network reporting in v1.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 

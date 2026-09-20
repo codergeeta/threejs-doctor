@@ -1,6 +1,6 @@
 {
   "name": "@threejs-doctor/r3f",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "DoctorCanvas and useDoctor for React Three Fiber",
   "license": "MIT",
   "author": "codergeeta",
@@ -67,5 +67,17 @@
       }
     },
     "provenance": true
-  }
+  },
+  "keywords": [
+    "threejs",
+    "three",
+    "webgl",
+    "webgl2",
+    "performance",
+    "profiler",
+    "optimization",
+    "react-three-fiber",
+    "r3f",
+    "gamedev"
+  ]
 }

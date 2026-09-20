@@ -1,6 +1,6 @@
 {
   "name": "@threejs-doctor/runtime",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Doctor API, overlay, and safe runtime passes for Three.js",
   "license": "MIT",
   "author": "codergeeta",
@@ -58,5 +58,17 @@
       }
     },
     "provenance": true
-  }
+  },
+  "keywords": [
+    "threejs",
+    "three",
+    "webgl",
+    "webgl2",
+    "performance",
+    "profiler",
+    "optimization",
+    "react-three-fiber",
+    "r3f",
+    "gamedev"
+  ]
 }

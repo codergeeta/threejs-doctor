@@ -1,6 +1,6 @@
 {
   "name": "@threejs-doctor/core",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Probe, snapshot, and metrics for threejs-doctor",
   "license": "MIT",
   "author": "codergeeta",
@@ -53,5 +53,17 @@
       }
     },
     "provenance": true
-  }
+  },
+  "keywords": [
+    "threejs",
+    "three",
+    "webgl",
+    "webgl2",
+    "performance",
+    "profiler",
+    "optimization",
+    "react-three-fiber",
+    "r3f",
+    "gamedev"
+  ]
 }
