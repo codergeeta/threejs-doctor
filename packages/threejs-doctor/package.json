@@ -1,6 +1,6 @@
 {
   "name": "threejs-doctor",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Unscoped CLI alias that reserves the threejs-doctor name and forwards to @threejs-doctor/cli.",
   "license": "MIT",
   "author": "codergeeta",
@@ -37,5 +37,17 @@
   "publishConfig": {
     "access": "public",
     "provenance": true
-  }
+  },
+  "keywords": [
+    "threejs",
+    "three",
+    "webgl",
+    "webgl2",
+    "performance",
+    "profiler",
+    "optimization",
+    "react-three-fiber",
+    "r3f",
+    "gamedev"
+  ]
 }

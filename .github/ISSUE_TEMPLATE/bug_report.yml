@@ -48,4 +48,4 @@ body:
     id: version
     attributes:
       label: threejs-doctor version
-      placeholder: "0.1.4 or git SHA"
+      placeholder: "0.1.5 or git SHA"

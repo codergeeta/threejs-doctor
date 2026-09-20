@@ -9,3 +9,4 @@ coverage/
 .env.*
 playwright-report/
 test-results/
+_site/

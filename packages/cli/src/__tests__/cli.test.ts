@@ -190,6 +190,7 @@ describe('cli', () => {
     })
     expect(code).toBe(0)
     expect(chunks.join('')).toContain('scan [path]')
+    expect(chunks.join('')).toContain('report --example')
     expect(chunks.join('')).toContain('ci [path]')
     expect(chunks.join('').toLowerCase()).not.toContain('not implemented')
   })

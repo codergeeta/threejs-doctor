@@ -15,12 +15,14 @@ export interface CliArgs {
   minScore: number
   output?: string
   repo?: string
+  example?: boolean
 }
 
 export interface CliDeps {
   runScan: (args: CliArgs) => Promise<DoctorReport>
   runBench: (args: CliArgs) => Promise<DoctorReport>
   write: (text: string) => void
+  warn?: (text: string) => void
 }
 
 function parseFormat(value: string | undefined): CliArgs['format'] {
@@ -61,6 +63,7 @@ export function parseArgs(argv: string[]): CliArgs {
       const value = argv[++i]
       if (value) args.repo = value
     }
+    if (a === '--example') args.example = true
   }
   return args
 }
@@ -80,9 +83,11 @@ export async function main(
 ): Promise<number> {
   const args = parseArgs(argv)
   const write = deps?.write ?? ((t: string) => console.log(t))
+  const warn = deps?.warn ?? ((t: string) => console.warn(t))
   if (args.command === 'help') {
     write(`Usage:
   npx threejs-doctor scan [path] [--format human|json|sarif|html] [--profile auto|marketing|product|game|cad] [--budget low|mid|high] [--output file]
+  npx threejs-doctor report --example
   npx threejs-doctor report <report.json> [--output report.html] [--repo https://github.com/org/repo]
   npx threejs-doctor bench --profile <profile> --budget low [--format human|json]
   npx threejs-doctor ci [path] [--min-score 70] [--format human|json|html] [--profile auto|marketing|product|game|cad] [--budget low|mid|high]
@@ -97,8 +102,13 @@ export async function main(
 
   if (args.command === 'report') {
     try {
+      if (args.example) {
+        const { formatExampleReportJson } = await import('./report/example-report.js')
+        emit(formatExampleReportJson(), args, write)
+        return 0
+      }
       const { runReport } = await import('./commands/report.js')
-      emit(runReport(args), args, write)
+      emit(runReport(args, warn), args, write)
       return 0
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)

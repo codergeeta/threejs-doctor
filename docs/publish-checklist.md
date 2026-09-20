@@ -2,7 +2,7 @@
 
 Root `package.json` is `@threejs-doctor/monorepo` (`private: true`). Example packages stay private. This repo **does not store registry tokens**.
 
-**0.1.4 is on npm.** First provenance-bearing release via [`.github/workflows/publish.yml`](../.github/workflows/publish.yml) (run 35486295010). Do **not** republish 0.1.4. Later publishes **must** use `workflow_dispatch` (confirm by typing `publish`). `scripts/publish.mjs --go` **refuses** unless `GITHUB_ACTIONS=true`. Do **not** run `pnpm publish:npm --go` locally or from a cloud agent VM. Dry-run is still OK: `pnpm publish:dry`.
+**0.1.4 is on npm.** First provenance-bearing release via [`.github/workflows/publish.yml`](../.github/workflows/publish.yml) (run 35486295010). Do **not** republish 0.1.4. **0.1.5 is this source line and is not published from this PR.** The next publish **must** be `workflow_dispatch` (confirm by typing `publish`). `scripts/publish.mjs --go` **refuses** unless `GITHUB_ACTIONS=true`. Do **not** run `pnpm publish:npm --go` locally or from a cloud agent VM. Dry-run is still OK: `pnpm publish:dry`.
 
 Org: https://www.npmjs.com/org/threejs-doctor.
 
@@ -16,7 +16,7 @@ Publish order is enforced by `scripts/publish.mjs`:
 1. **FIRST** unscoped `threejs-doctor` (name reservation + `npx threejs-doctor` → `@threejs-doctor/cli`)
 2. **THEN** scoped `@threejs-doctor/core`, `rules`, `runtime`, `bench`, `cli`, `r3f` with provenance
 
-`workspace:^` rewrites to `^0.1.4` on pack.
+`workspace:^` rewrites to `^0.1.5` on pack.
 
 ```bash
 pnpm build
@@ -24,7 +24,7 @@ pnpm publish:dry    # no registry write; does not check dist.attestations
 # GitHub → Actions → "publish" → type `publish`  (do not publish from a cloud agent VM)
 ```
 
-Do **not** republish 0.1.3 or 0.1.4.
+Do **not** republish 0.1.3, 0.1.4, or an unpublished 0.1.5 from a cloud agent VM.
 
 Publishable packages set `publishConfig.provenance: true`. **Provenance does not require Trusted Publisher.** `npm publish --provenance` in GitHub Actions with `id-token: write` can produce attestations **with `NPM_TOKEN`**. Trusted Publisher lets you delete `NPM_TOKEN` later. 0.1.0–0.1.3 were token publishes and may have empty `dist.attestations`. **0.1.4 is the first provenance-bearing release** (`npm view <pkg>@0.1.4 dist.attestations` is non-empty).
 
@@ -32,7 +32,7 @@ Publishable packages set `publishConfig.provenance: true`. **Provenance does not
 
 ## Kunal — remaining npm / GitHub steps
 
-**0.1.0–0.1.4 publishes are done.** Do not republish 0.1.4.
+**0.1.0–0.1.4 publishes are done.** Do not republish 0.1.4. **0.1.5 is pending publish** (this source line: npm keywords + `report --example`). Coordinator publishes via `publish.yml` after merge.
 
 ### 1–6. Historical publishes — done
 
@@ -73,6 +73,9 @@ Exact steps (human) for a **future** version:
 - [x] Publish 0.1.4 via `publish.yml` workflow_dispatch only (do not publish from a cloud VM; do not `pnpm publish:npm --go`).
 - [x] Confirm `npm view <pkg>@0.1.4 dist.attestations` is non-empty.
 - [x] `check-provenance.mjs --published` retries E404 / empty attestations after publish (~2–3 min), then fails hard.
+- [x] Bump publishable packages to 0.1.5 (this PR — keywords for npm search).
+- [ ] Publish 0.1.5 via `publish.yml` workflow_dispatch only (coordinator; do not publish from a cloud VM).
+- [ ] Confirm `npm view <pkg>@0.1.5 dist.attestations` is non-empty.
 - [ ] (Optional) Attach Trusted Publisher on each package; then delete `NPM_TOKEN`.
 - [ ] Confirm npm 2FA remains on for org owners.
 
@@ -80,5 +83,5 @@ Exact steps (human) for a **future** version:
 
 - store registry tokens
 - republish 0.1.3 or 0.1.4 to npm
-- npm-publish from a cloud agent VM
+- npm-publish 0.1.5 from a cloud agent VM
 - attach Trusted Publisher or delete `NPM_TOKEN`

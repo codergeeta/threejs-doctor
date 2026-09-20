@@ -128,6 +128,32 @@ describe('HTML report', () => {
     expect(html).not.toContain('not measured on this device')
   })
 
+  it('accepts alias keys for meshes, GPU passes, and captures', () => {
+    const meshes = formatHtmlReport({
+      ...runtimeReport,
+      topMeshes: [{ id: 'hero', drawnTriangles: 9000 }],
+    })
+    expect(meshes).toContain('hero')
+    expect(meshes).toContain('9000')
+    const gpu = formatHtmlReport({
+      ...runtimeReport,
+      passGpuMs: [{ name: 'composer', ms: 1.25 }],
+    })
+    expect(gpu).toContain('composer')
+    expect(gpu).toContain('1.25')
+    const shots = formatHtmlReport({
+      ...runtimeReport,
+      screenshots: [
+        {
+          label: 'frame',
+          src: 'data:image/png;base64,AAAA',
+        },
+      ],
+    })
+    expect(shots).toContain('Visuals')
+    expect(shots).toContain('data:image/png;base64,AAAA')
+  })
+
   it('scan --format html and report subcommand produce a single offline file', async () => {
     expect(parseArgs(['scan', './demo', '--format', 'html']).format).toBe('html')
     expect(parseArgs(['report', 'out.json', '--output', 'out.html', '--repo', 'https://github.com/a/b'])).toEqual(

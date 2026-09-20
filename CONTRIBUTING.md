@@ -1,5 +1,7 @@
 # Contributing
 
+This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Setup
 
 Node >= 20, [pnpm](https://pnpm.io) 9 (see root `packageManager`).
@@ -39,7 +41,7 @@ Do not add `distance-cull` or `frameloop-demand` to default `SAFE_PASSES` for ga
 
 1. Branch from `main`.
 2. Keep the PR focused. One launch pack is OK when the issue says so.
-3. Fill the issue template fields if you are reporting a host bug (three.js version, composer, browser/GPU, JSON report).
+3. Use `.github/pull_request_template.md`. Fill the issue template fields if you are reporting a host bug (three.js version, composer, browser/GPU, JSON report).
 4. Do not publish to npm from your laptop. `pnpm publish:npm --go` is refused outside GitHub Actions. Maintainers run `.github/workflows/publish.yml`.
 
 ## Code style
