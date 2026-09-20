@@ -35,7 +35,8 @@ jobs:
         run: |
           node packages/cli/bin/threejs-doctor.js report --example > /tmp/s.json
           node packages/cli/bin/threejs-doctor.js report /tmp/s.json -o /tmp/s.html
-          grep -q 'Before / after' /tmp/s.html
+          grep -q '<h2>Cost</h2>' /tmp/s.html
+          grep -q '<h2>Scene facts</h2>' /tmp/s.html
           grep -q 'Findings' /tmp/s.html
           grep -q 'Expensive meshes' /tmp/s.html
           grep -q 'GPU time per pass' /tmp/s.html

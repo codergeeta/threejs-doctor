@@ -35,8 +35,8 @@ describe('report --example and unknown keys', () => {
 
     const html = formatHtmlReport(parsed)
     expect(html).toContain('Sample fixture')
-    expect(html).toContain('Cost')
-    expect(html).toContain('Scene facts')
+    expect(html).toContain('<h2>Cost</h2>')
+    expect(html).toContain('<h2>Scene facts</h2>')
     expect(html).toContain('Findings')
     expect(html).toContain('src/Vehicle.js:189')
     expect(html).toContain('Expensive meshes')
