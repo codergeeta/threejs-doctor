@@ -138,7 +138,10 @@ export function deltaBarsSection(input: JsonMap): string {
     const delta = afterVal - before
     const threshold = noiseThreshold(input, key, before)
     const badge = badgeForMetric(input, key)
-    rows.push({ key, before, after: afterVal, delta, threshold, badge })
+    const row: Row = { key, before, after: afterVal, delta }
+    if (threshold !== undefined) row.threshold = threshold
+    if (badge !== undefined) row.badge = badge
+    rows.push(row)
     domain = Math.max(domain, Math.abs(delta), threshold ?? 0)
   }
   if (rows.length === 0) return ''
