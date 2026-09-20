@@ -18,7 +18,7 @@ On a **real phone** (device class in §1). No invented metrics. JSON stays off-r
 4. **Reload.** Pass B: `window.__THREEJS_DOCTOR_ATTACH__ = { mode: 'safe-auto' }`, paste the IIFE again. Save JSON off-repo.
 5. **Validate** against `quality-ladder-report.schema.json`. Do not fill omitted keys.
 
-CLI/runtime for static scan is **`npx threejs-doctor@0.1.3`** (already on npm). The live-attach IIFE is still this repo file — it is not published. Scan/ci is **not** a substitute for this phone capture.
+CLI/runtime for static scan is **`npx threejs-doctor@0.1.4`** (already on npm). The live-attach IIFE is still this repo file — it is not published. Scan/ci is **not** a substitute for this phone capture.
 
 ## 1. Device class for the bar
 
@@ -45,7 +45,7 @@ Acceptance is **not** complete with ocean-simulation alone. After the ocean capt
 
 Use the unpublished IIFE in [`examples/live-attach`](../../../examples/live-attach/README.md): paste `examples/live-attach/dist/attach.iife.js` into DevTools on the live URL. It constructs `Doctor` + `QualityController` (`profile: 'game'`), registers `createOceanAdapter` only when `window.pelagic.debug` exists, then `boot()` + `runLadder()`. Default mode is `advise`. For Pass B, reload and set `window.__THREEJS_DOCTOR_ATTACH__ = { mode: 'safe-auto' }` before pasting again.
 
-A real game should expose `{ scene, camera, renderer, composer? }` as `window.__THREEJS_DOCTOR_HOST__` in one assignment — see [host-integration.md](./host-integration.md). Copy-paste: [`examples/host-shim/expose.js`](../../../examples/host-shim/expose.js). Local unpublished hosts that already do this: [`acceptance-fixture`](../../../examples/acceptance-fixture/README.md) and heavier [`acceptance-fixture-game`](../../../examples/acceptance-fixture-game/README.md). Those are not the §1 phone bar. `npx threejs-doctor@0.1.3` is the published CLI; it does not replace this IIFE.
+A real game should expose `{ scene, camera, renderer, composer? }` as `window.__THREEJS_DOCTOR_HOST__` in one assignment — see [host-integration.md](./host-integration.md). Copy-paste: [`examples/host-shim/expose.js`](../../../examples/host-shim/expose.js). Local unpublished hosts that already do this: [`acceptance-fixture`](../../../examples/acceptance-fixture/README.md) and heavier [`acceptance-fixture-game`](../../../examples/acceptance-fixture-game/README.md). Those are not the §1 phone bar. `npx threejs-doctor@0.1.4` is the published CLI; it does not replace this IIFE.
 
 On a **box / DevTools emulator** that does not expose phone-class
 `maxTouchPoints` / coarse pointer / `deviceMemory ≤ 4` / high DPR, overlay those

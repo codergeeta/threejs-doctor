@@ -1,5 +1,5 @@
 # Fail CI when the latest npm versions lack provenance attestations.
-# Uses --latest so this job does not require the unpublished local version.
+# Uses --latest so this job checks whatever is currently on npm, not package.json.
 name: provenance
 on:
   schedule:
