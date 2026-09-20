@@ -2,10 +2,15 @@
 
 ## Unreleased
 
-- Report HTML (Part C): inline SVG charts (delta bars + noise band, cost-attribution stacked bar with shadow-map hatch, GPU-per-pass or not-measured, frame-time histogram with p50/p95, triangle budget gauge, trend line/dots/gradient) and CSS animation (`scaleX`, `stroke-dashoffset`, first-paint `fade-up`) killed by `prefers-reduced-motion` and print. CSS-only before/after slider (`range` + `clip-path`) with optional difference-blend radio; one small progressive-enhancement script. Self-contained (no CDN). `--example` / `docs/sample-report.json` gain documented `frameTimesMs`. No version bump. Do not publish from this change.
-- Report HTML (Part B): `expectedTradeoffs` chips are a neutral **expected trade-off** (never red, never a regression in the verdict strip); integer metrics with a zero delta are **unchanged** (not inside-noise); metric headings use labels with units (`gpuFrameTimeMs` → “GPU frame time (ms)”, unknown keys stay as the raw key); a one-sentence verdict strip under the header; Cost / Scene facts grouping. No version bump. Do not publish from this change.
+- Publish: `check-provenance.mjs --published` retries `npm view … dist.attestations` with backoff (~5–8 min) when the version is missing (E404) or attestations are empty right after publish, then fails hard. Documents the scoped-package indexing race (0.1.5: `@threejs-doctor/cli` still E404 after 6 retries / ~2–3 min; attestations appeared minutes later). Do not republish 0.1.5.
+
+## 0.1.5
+
+- **0.1.5 is on npm** (`threejs-doctor` + `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`). Keywords, Parts A–C report HTML, GitHub Pages sample. Via `publish.yml` run 35489954729. Non-empty `dist.attestations`. Do not republish. First post-publish provenance check went red after 6 retries (`@threejs-doctor/cli@0.1.5` still E404); minutes later all seven packages had attestations. That first check is still flaky until the longer retry in Unreleased lands.
+- Report HTML (Part C): inline SVG charts (delta bars + noise band, cost-attribution stacked bar with shadow-map hatch, GPU-per-pass or not-measured, frame-time histogram with p50/p95, triangle budget gauge, trend line/dots/gradient) and CSS animation (`scaleX`, `stroke-dashoffset`, first-paint `fade-up`) killed by `prefers-reduced-motion` and print. CSS-only before/after slider (`range` + `clip-path`) with optional difference-blend radio; one small progressive-enhancement script. Self-contained (no CDN). `--example` / `docs/sample-report.json` gain documented `frameTimesMs`.
+- Report HTML (Part B): `expectedTradeoffs` chips are a neutral **expected trade-off** (never red, never a regression in the verdict strip); integer metrics with a zero delta are **unchanged** (not inside-noise); metric headings use labels with units (`gpuFrameTimeMs` → “GPU frame time (ms)”, unknown keys stay as the raw key); a one-sentence verdict strip under the header; Cost / Scene facts grouping.
 - Pre-announce Part A: npm keywords on every publishable package; short package READMEs; `docs/report-json.md`; `threejs-doctor report --example`; unknown top-level report keys warn; CODE_OF_CONDUCT (Contributor Covenant 2.1); PR template; README FAQ; GitHub Pages sample generated from `docs/sample-report.json`.
-- Packages bumped to 0.1.5 (pending publish — keywords ride the next `publish.yml` run). Do not republish 0.1.4.
+- Packages bumped to 0.1.5.
 
 ## 0.1.4
 

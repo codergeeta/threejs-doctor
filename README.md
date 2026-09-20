@@ -17,7 +17,7 @@ const doctor = new Doctor({ scene, camera, renderer, waitFrame: () => waitGpuMac
 console.log(await doctor.diagnose())
 ```
 
-**0.1.5** is this source line (npm keywords + `report --example`). **0.1.4 is on npm** — first provenance-bearing release via [`.github/workflows/publish.yml`](.github/workflows/publish.yml) (run 35486295010). Do **not** republish 0.1.4. **0.1.5 is not published from this PR**; the coordinator publishes later via `workflow_dispatch` (type `publish`). Do **not** run `pnpm publish:npm --go` locally — `scripts/publish.mjs --go` refuses outside GitHub Actions.
+**0.1.5 is on npm** (`threejs-doctor` + `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`). Keywords, Parts A–C report, GitHub Pages sample. Via [`.github/workflows/publish.yml`](.github/workflows/publish.yml) (run 35489954729). Non-empty `dist.attestations`. Do **not** republish 0.1.5. The first post-publish provenance check went red after 6 retries (`@threejs-doctor/cli@0.1.5` still E404); minutes later all seven packages had attestations. That check is still flaky until the longer (~5–8 min) retry lands. Do **not** run `pnpm publish:npm --go` locally — `scripts/publish.mjs --go` refuses outside GitHub Actions.
 
 ## Case study (arcade racer, measured)
 
@@ -53,7 +53,7 @@ Inspired by [react-doctor](https://github.com/millionco/react-doctor). Design: [
 
 ## Install / run
 
-**0.1.4 is on npm** (`threejs-doctor` + `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`). **0.1.5** is this source line and publishes only via `publish.yml` after merge.
+**0.1.5 is on npm** (`threejs-doctor` + `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`). Later versions publish only via `publish.yml` after merge.
 
 ```bash
 npm i @threejs-doctor/runtime
@@ -102,10 +102,10 @@ npx threejs-doctor@0.1.5 ci ./path --min-score 70 --profile marketing --budget l
 
 ### Use in CI
 
-After `pnpm build` (or `npx threejs-doctor@0.1.4` from npm until 0.1.5 is published):
+After `pnpm build` (or `npx threejs-doctor@0.1.5` from npm):
 
 ```yaml
-- run: npx threejs-doctor@0.1.4 ci ./src --min-score 70 --profile marketing --budget low
+- run: npx threejs-doctor@0.1.5 ci ./src --min-score 70 --profile marketing --budget low
 ```
 
 `--budget` is the assumed device tier for rules that need one (DPR cap, antialias-on-low). `--profile auto` classifies from static facts only (not omitted draw calls): a continuous loop is `game`; otherwise it may still default to `marketing`. Point `path` at the app that imports `three`, not a monorepo root that mixes fixtures. A project with no Three.js patterns is **incomplete** and fails `ci` even at `--min-score 0`. Static scan does not unroll `for` loops or resolve `require('three')` unless a Three.js constructor is present.
@@ -128,7 +128,7 @@ pnpm test
 pnpm build
 ```
 
-CI (`.github/workflows/ci.yml`) runs `typecheck`, `test`, `build`, a **live-attach IIFE checksum** (`pnpm check:iife` rebuilds `examples/live-attach/dist/attach.iife.js` and fails if the committed file drifted), a **scan/ci smoke**, and **`report --example` → HTML** (sections must populate; unknown keys warn). A second job runs Playwright against a real Three.js + EffectComposer + InstancedMesh fixture (SwiftShader is fine; GPU times are still omitted when the timer query has no result). Weekly [`.github/workflows/provenance.yml`](.github/workflows/provenance.yml) runs `check-provenance.mjs --published --latest`. **0.1.4 is on npm.** **0.1.5** publishes only via **manual** `publish.yml` `workflow_dispatch` after merge — see [`docs/publish-checklist.md`](docs/publish-checklist.md).
+CI (`.github/workflows/ci.yml`) runs `typecheck`, `test`, `build`, a **live-attach IIFE checksum** (`pnpm check:iife` rebuilds `examples/live-attach/dist/attach.iife.js` and fails if the committed file drifted), a **scan/ci smoke**, and **`report --example` → HTML** (sections must populate; unknown keys warn). A second job runs Playwright against a real Three.js + EffectComposer + InstancedMesh fixture (SwiftShader is fine; GPU times are still omitted when the timer query has no result). Weekly [`.github/workflows/provenance.yml`](.github/workflows/provenance.yml) runs `check-provenance.mjs --published --latest`. **0.1.5 is on npm.** Later versions publish only via **manual** `publish.yml` `workflow_dispatch` — see [`docs/publish-checklist.md`](docs/publish-checklist.md). The first 0.1.5 provenance check was still flaky until the longer (~5–8 min) retry lands.
 
 ### GitHub Pages sample
 

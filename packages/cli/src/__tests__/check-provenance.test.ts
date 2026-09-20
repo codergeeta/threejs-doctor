@@ -55,11 +55,16 @@ describe('provenance attestation check', () => {
     expect(isRetryableProvenanceLookupFailure(new Error('ENOTFOUND registry.npmjs.org'))).toBe(false)
   })
 
-  it('backs off for about 2–3 minutes before failing the post-publish check', () => {
+  // 0.1.5: publish.yml run 35489954729 published all seven packages, then
+  // check-provenance --published went red after 6 retries (~2–3 min) because
+  // @threejs-doctor/cli@0.1.5 was still E404. Minutes later every package had
+  // non-empty dist.attestations. Scoped npm indexing can lag the unscoped
+  // tarball; wait ~5–8 min before the hard fail. Do not republish.
+  it('backs off for about 5–8 minutes before failing the post-publish check', () => {
     const total = PROVENANCE_RETRY_DELAYS_MS.reduce((sum, ms) => sum + ms, 0)
-    expect(PROVENANCE_RETRY_DELAYS_MS.length).toBeGreaterThanOrEqual(4)
-    expect(total).toBeGreaterThanOrEqual(120_000)
-    expect(total).toBeLessThanOrEqual(180_000)
+    expect(PROVENANCE_RETRY_DELAYS_MS.length).toBeGreaterThanOrEqual(7)
+    expect(total).toBeGreaterThanOrEqual(300_000)
+    expect(total).toBeLessThanOrEqual(480_000)
   })
 
   it('retries when the version is not indexed yet, then succeeds', async () => {
@@ -177,5 +182,6 @@ describe('provenance attestation check', () => {
   it('publish.yml still runs the published provenance check after npm publish', () => {
     const yml = readFileSync(resolve(process.cwd(), '../../.github/workflows/publish.yml'), 'utf8')
     expect(yml).toContain('node scripts/check-provenance.mjs --published')
+    expect(yml).toMatch(/~5–8 min/)
   })
 })

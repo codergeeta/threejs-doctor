@@ -2,6 +2,23 @@
 
 P0 from the real-host report (dpr-cap NaN, distance-cull hiding nested meshes, honest scan/ci, unpublished npm name) is handled in the runtime/CLI.
 
+## Round 7 — npm 0.1.5 (keywords, Parts A–C report, Pages)
+
+**npm 0.1.5 is published** (`threejs-doctor` + `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`) via `publish.yml` run 35489954729. Keywords, Parts A–C report HTML, GitHub Pages sample. Non-empty `dist.attestations` on all seven packages. Do **not** republish. The workflow went red only because `check-provenance.mjs --published` still E404'd `@threejs-doctor/cli@0.1.5` after 6 retries (~2–3 min); minutes later every package had attestations. The first provenance check is still flaky until the longer (~5–8 min) retry lands. Remaining (optional, not a blocker): Trusted Publisher on each package, then delete `NPM_TOKEN`. See [`docs/publish-checklist.md`](../../publish-checklist.md).
+
+| Item | Status |
+|------|--------|
+| Publish 0.1.5 via `publish.yml` | **Done.** Keywords + Parts A–C report + Pages. Do not republish. |
+| `dist.attestations` on 0.1.5 | **Non-empty** (confirmed after registry indexing). |
+| Post-publish scoped E404 race | **This follow-up.** `check-provenance.mjs` retries with backoff (~5–8 min), then fails hard. 0.1.5's first check was still on the ~2–3 min budget. |
+
+### Residual (not this PR / backlog)
+
+- Runtime Playwright pose CI vs baseline JSON (strongest next gate now that static score often does not move)
+- GPU time per composer pass / helpers / shader hitch
+- **Trusted Publisher** — optional leftover: attach GitHub Actions Trusted Publisher on each published package, then delete `NPM_TOKEN`. Not a blocker. See [`docs/publish-checklist.md`](../../publish-checklist.md).
+- **Phone ocean** — still a follow-up capture
+
 ## Round 6 — npm 0.1.4 (first CI provenance-bearing release)
 
 **npm 0.1.4 is published** (`threejs-doctor` + `@threejs-doctor/{core,rules,runtime,bench,cli,r3f}`) via `publish.yml` run 35486295010. Non-empty `dist.attestations`. Do **not** republish. The workflow went red only because `check-provenance.mjs --published` hit E404 before npm finished indexing (~45s later OK). Remaining (optional, not a blocker): Trusted Publisher on each package, then delete `NPM_TOKEN`. See [`docs/publish-checklist.md`](../../publish-checklist.md).
@@ -144,7 +161,7 @@ Prefer **invalid/incomplete** over a pretty false win. Fixed-clock mocks are not
 - Noise band is `max(half-range, 1.4826 × MAD)` of A (or optional control), not a bootstrap CI. Hosts should still run an A-vs-A control round when they need a tighter claim.
 - Score still starts from findings; cost weighting is a directional correction, not a full profiler.
 - Hidden-tab detection is skipped when the host injects `now()` (unit tests).
-- **npm 0.1.4 is published.** Remaining (optional, not a blocker): Trusted Publisher on each package, then delete `NPM_TOKEN`. See [`docs/publish-checklist.md`](../../publish-checklist.md).
+- **npm 0.1.5 is published.** Remaining (optional, not a blocker): Trusted Publisher on each package, then delete `NPM_TOKEN`. See [`docs/publish-checklist.md`](../../publish-checklist.md). The first 0.1.5 provenance check is still flaky until the longer retry lands.
 - SwiftShader / headless Chromium is correctness for sampler wiring, composer mismatch, instance bounds, and drawn-triangle drop — not a GPU-time number. Delayed GPU readback is covered by fake-GL unit tests.
 - Phone ocean capture remains outstanding.
 
