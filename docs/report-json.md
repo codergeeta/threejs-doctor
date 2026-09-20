@@ -12,8 +12,6 @@ The committed fixture is [`docs/sample-report.json`](sample-report.json). CI gen
 
 Unknown **top-level** names produce a **warning** on stderr (exit 0). Typos are not dropped silently.
 
-`expectedTradeoffs` is **not** read yet (later punch-list PRs). If you include it today, the report command warns.
-
 ## Top-level keys the HTML formatter reads
 
 | Key | Aliases | Section |
@@ -25,8 +23,8 @@ Unknown **top-level** names produce a **warning** on stderr (exit 0). Typos are 
 | `incomplete` | — | Subtitle suffix `· incomplete` when `true` |
 | `staticScan` | — | Score kind: `true` → `static (source patterns)`; otherwise `runtime (measured)` |
 | `repository` | — | GitHub `blob` links for finding sites when `--repo` is not passed. Must be `https://github.com/org/repo` |
-| `baseline` | — | Before/after metric cards (required for that section) |
-| `after` | — | After values + noise-band verdicts |
+| `baseline` | — | Cost / Scene facts metric cards (required for those sections) |
+| `after` | — | After values + verdict chips |
 | `findings` | — | Findings list |
 | `expensiveMeshes` | `topMeshes` | Expensive meshes table |
 | `triangleContributorSummary` | — | Fallback mesh row when mesh arrays are absent (`name:triangles`). Also read from `baseline.triangleContributorSummary` |
@@ -35,27 +33,62 @@ Unknown **top-level** names produce a **warning** on stderr (exit 0). Typos are 
 | `history` | — | Score trend (needs **two or more** points) |
 | `noiseBand` | — | Verdicts (`win` / `loss` / `inside-noise`) |
 | `claimed` | — | Explicit verdicts; wins over computed band |
+| `expectedTradeoffs` | — | Metric keys that render as a neutral **expected trade-off** chip (never red; never a regression in the verdict strip) |
 
 Also accepted at the top level (not rendered as their own sections, **no warning**): Doctor fields `deltas`, `appliedPasses`, `failedPasses`, `invalid`, `invalidReason`, `visualDelta`, `gpuTimingSkipped`, `rolledBackDueToVisual`; Quality Ladder fields `phase`, `tier`, `startTier`, `maxTier`, `appliedKnobs`, `unsupportedKnobs`, `floorFailed`, `applyFailed`, `ttfiMs`, `adapterUnavailable`, `recommendedTier`; optional `$schema`.
 
+## Verdict strip
+
+When `after` exists, a one-sentence strip is placed under the header. It is built only from **measured** claims (and expected trade-offs). Unmeasured keys are omitted. Unchanged and inside-noise metrics are omitted.
+
+Example:
+
+```
+GPU -12% (outside noise) · triangles -77% · draw calls +13 (expected trade-off)
+```
+
+- GPU / p95 / FPS deltas are percents; a win on those noisy metrics adds `(outside noise)`.
+- Triangle and drawing-buffer deltas are percents; draw-call and light counts are signed integers.
+- A key in `expectedTradeoffs` is never phrased as a loss or regression.
+
 ## `baseline` / `after` metric cards
 
-Each card is shown only when `baseline[key]` is a finite number. `after` is optional.
+Cards are grouped into **Cost** (`gpuFrameTimeMs`, `p95FrameTimeMs`, `avgFps`, `triangles`, `drawCalls`, `drawingBufferPixels`) and **Scene facts** (`lightCount`, `shadowCastingLightCount`). A group is omitted when it has no measured baseline values. Each card is shown only when `baseline[key]` is a finite number. `after` is optional.
 
-| Key | Notes |
-|-----|--------|
-| `avgFps` | Higher is better when scoring a band |
-| `p95FrameTimeMs` | Lower is better |
-| `drawCalls` | Lower is better |
-| `triangles` | Drawn triangles. Lower is better |
-| `gpuFrameTimeMs` | Frame GPU ms from `EXT_disjoint_timer_query_webgl2`. **Omit** when not measured (typical on iOS Safari / many phones) |
-| `lightCount` | |
-| `shadowCastingLightCount` | |
-| `drawingBufferPixels` | Lower is better |
+Headings use a label map with units (`gpuFrameTimeMs` → **GPU frame time (ms)**). Unknown keys fall back to the raw key.
+
+| Key | Label | Group | Notes |
+|-----|-------|-------|-------|
+| `avgFps` | Average FPS | Cost | Higher is better when scoring a band |
+| `p95FrameTimeMs` | p95 frame time (ms) | Cost | Lower is better |
+| `drawCalls` | Draw calls | Cost | Lower is better unless listed in `expectedTradeoffs` |
+| `triangles` | Triangles | Cost | Drawn triangles. Lower is better |
+| `gpuFrameTimeMs` | GPU frame time (ms) | Cost | Frame GPU ms from `EXT_disjoint_timer_query_webgl2`. **Omit** when not measured (typical on iOS Safari / many phones) |
+| `drawingBufferPixels` | Drawing buffer (pixels) | Cost | Lower is better |
+| `lightCount` | Lights | Scene facts | Integer; zero delta → **unchanged** |
+| `shadowCastingLightCount` | Shadow-casting lights | Scene facts | Integer; zero delta → **unchanged** |
 
 Other `MetricsSample` fields (`textureCount`, `estimatedVramBytes`, …) may appear in JSON; the HTML cards do not list them.
 
-If `after[key]` is present but there is no `claimed[key]` and no `noiseBand[key]`, the card shows `no noise band` (not a win).
+## Badge states
+
+| Chip | When |
+|------|------|
+| `win` | Claimed or computed improvement outside the noise band |
+| `loss` | Claimed or computed regression outside the noise band, and the key is **not** in `expectedTradeoffs` |
+| `inside-noise` | Float / claimed wiggle inside the band |
+| `unchanged` | Integer metric (`drawCalls`, `triangles`, `lightCount`, `shadowCastingLightCount`, `drawingBufferPixels`, …) with a **zero** delta — not `inside-noise` |
+| `not measured` | `after` is present but this key has no finite after value |
+| `expected trade-off` | Key is in `expectedTradeoffs` (neutral chip, never red) |
+| `no noise band` | After value present, no `claimed[key]` and no `noiseBand[key]` |
+
+## `expectedTradeoffs`
+
+```json
+"expectedTradeoffs": ["drawCalls"]
+```
+
+String metric keys. Those cards never use the red `loss` chip. The verdict strip never calls them a regression.
 
 ## `noiseBand` / `claimed`
 

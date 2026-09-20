@@ -1,14 +1,18 @@
-import { claimAbDelta, type AbClaim, type NoiseBand } from '@threejs-doctor/core'
+import { metricLabel } from './metric-labels.js'
+import {
+  asNumber,
+  badgeForMetric,
+  BADGE_LABEL,
+  COST_METRICS,
+  formatVerdictStrip,
+  isRecord,
+  SCENE_FACT_METRICS,
+  type JsonMap,
+} from './verdict.js'
 
 export interface HtmlReportOptions {
   repoUrl?: string
   ref?: string
-}
-
-type JsonMap = Record<string, unknown>
-
-function isRecord(value: unknown): value is JsonMap {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function escapeHtml(text: string): string {
@@ -18,10 +22,6 @@ function escapeHtml(text: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
-}
-
-function asNumber(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
 function asString(value: unknown): string | undefined {
@@ -45,39 +45,6 @@ function githubBlobUrl(
 function scoreKind(input: JsonMap): 'static (source patterns)' | 'runtime (measured)' {
   if (input.staticScan === true) return 'static (source patterns)'
   return 'runtime (measured)'
-}
-
-function noiseBandOf(input: JsonMap, key: string): NoiseBand | undefined {
-  const bands = input.noiseBand
-  if (!isRecord(bands)) return undefined
-  const band = bands[key]
-  if (!isRecord(band)) return undefined
-  const abs = asNumber(band.abs)
-  const rel = asNumber(band.rel)
-  if (abs === undefined || rel === undefined) return undefined
-  return { abs, rel }
-}
-
-function claimedOf(input: JsonMap, key: string): AbClaim | undefined {
-  const claimed = input.claimed
-  if (!isRecord(claimed)) return undefined
-  const value = claimed[key]
-  if (value === 'win' || value === 'loss' || value === 'inside-noise') return value
-  return undefined
-}
-
-function verdictFor(input: JsonMap, key: string): AbClaim | undefined {
-  const claimed = claimedOf(input, key)
-  if (claimed) return claimed
-  const baseline = isRecord(input.baseline) ? input.baseline : undefined
-  const after = isRecord(input.after) ? input.after : undefined
-  if (!baseline || !after) return undefined
-  const beforeVal = asNumber(baseline[key])
-  const afterVal = asNumber(after[key])
-  const band = noiseBandOf(input, key)
-  if (beforeVal === undefined || afterVal === undefined || !band) return undefined
-  const direction = key === 'avgFps' ? 'higher-better' : 'lower-better'
-  return claimAbDelta(beforeVal, afterVal, band, direction)
 }
 
 function fileLine(finding: JsonMap): Array<{ file: string; line?: number }> {
@@ -171,43 +138,51 @@ function historyPoints(input: JsonMap): Array<{ label: string; score: number }> 
   })
 }
 
-function metricCards(input: JsonMap): string {
+function verdictChip(input: JsonMap, key: string, afterVal: number | undefined, hasAfter: boolean): string {
+  const badge = badgeForMetric(input, key)
+  if (badge) {
+    return `<span class="verdict ${escapeHtml(badge)}">${escapeHtml(BADGE_LABEL[badge])}</span>`
+  }
+  if (hasAfter && afterVal !== undefined) {
+    return '<span class="verdict none">no noise band</span>'
+  }
+  return ''
+}
+
+function cardsForKeys(input: JsonMap, keys: readonly string[]): string {
   const baseline = isRecord(input.baseline) ? input.baseline : undefined
   const after = isRecord(input.after) ? input.after : undefined
   if (!baseline) return ''
-  const keys = [
-    'avgFps',
-    'p95FrameTimeMs',
-    'drawCalls',
-    'triangles',
-    'gpuFrameTimeMs',
-    'lightCount',
-    'shadowCastingLightCount',
-    'drawingBufferPixels',
-  ]
   const cards: string[] = []
   for (const key of keys) {
     const beforeVal = asNumber(baseline[key])
     if (beforeVal === undefined) continue
     const afterVal = after ? asNumber(after[key]) : undefined
-    const verdict = afterVal === undefined ? undefined : verdictFor(input, key)
-    const verdictHtml = verdict
-      ? `<span class="verdict ${escapeHtml(verdict)}">${escapeHtml(verdict)}</span>`
-      : afterVal !== undefined
-        ? '<span class="verdict none">no noise band</span>'
-        : ''
+    const verdictHtml = verdictChip(input, key, afterVal, after !== undefined)
     cards.push(`<article class="card">
-      <h3>${escapeHtml(key)}</h3>
+      <h3>${escapeHtml(metricLabel(key))}</h3>
       <p class="pair">${escapeHtml(String(beforeVal))}${
         afterVal === undefined ? '' : ` → ${escapeHtml(String(afterVal))}`
       }</p>
       ${verdictHtml}
     </article>`)
   }
-  if (cards.length === 0) return ''
-  return `<section><h2>Before / after</h2><div class="grid">${cards.join('')}</div>
-    <p class="note">Verdicts use the report noise band (max half-range, 1.4826 × MAD). Missing bands are not scored as wins.</p>
-  </section>`
+  return cards.join('')
+}
+
+function metricCards(input: JsonMap): string {
+  const cost = cardsForKeys(input, COST_METRICS)
+  const scene = cardsForKeys(input, SCENE_FACT_METRICS)
+  const parts: string[] = []
+  if (cost) {
+    parts.push(`<section><h2>Cost</h2><div class="grid">${cost}</div>
+    <p class="note">Verdicts use the report noise band (max half-range, 1.4826 × MAD). Missing bands are not scored as wins. Integer metrics with a zero delta are unchanged, not inside-noise.</p>
+  </section>`)
+  }
+  if (scene) {
+    parts.push(`<section><h2>Scene facts</h2><div class="grid">${scene}</div></section>`)
+  }
+  return parts.join('')
 }
 
 function findingsSection(input: JsonMap, options: HtmlReportOptions): string {
@@ -334,10 +309,12 @@ h3 { font-size: 0.95rem; margin: 0 0 6px; }
 .card, .finding { background: var(--card); border:1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin: 0 0 10px; }
 .pair { font-variant-numeric: tabular-nums; margin: 0; }
 .verdict { display:inline-block; margin-top:8px; padding:2px 8px; border-radius: 999px; font-size: 12px; }
+.verdict-strip { font-variant-numeric: tabular-nums; margin: 8px 0 16px; }
 .verdict.win { background:#14532d; color:var(--win); }
 .verdict.loss { background:#7f1d1d; color:var(--loss); }
 .verdict.inside-noise { background:#78350f; color:var(--noise); }
-.verdict.none { background:#1e293b; color:var(--muted); }
+.verdict.unchanged, .verdict.not-measured, .verdict.none { background:#1e293b; color:var(--muted); }
+.verdict.expected-trade-off { background:#1e3a5f; color:#93c5fd; }
 .sev { text-transform: uppercase; font-size: 11px; letter-spacing: .04em; }
 .finding.error { border-color: #fb7185; }
 .finding.warn { border-color: #fbbf24; }
@@ -371,6 +348,8 @@ export function formatHtmlReport(report: unknown, options: HtmlReportOptions = {
     input.example === true
       ? '<p class="note">Sample fixture. Numbers are copied from tests and the arcade-racer case study — not a live capture. Missing fields in real reports are omitted, never invented.</p>'
       : ''
+  const strip = formatVerdictStrip(input)
+  const stripHtml = strip ? `<p class="verdict-strip">${escapeHtml(strip)}</p>` : ''
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -386,6 +365,7 @@ export function formatHtmlReport(report: unknown, options: HtmlReportOptions = {
     incomplete ? ' · incomplete' : ''
   }</p>
   ${exampleNote}
+  ${stripHtml}
   ${scoreLine}
   ${metricCards(input)}
   ${findingsSection(input, merged)}
